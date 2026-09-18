@@ -98,6 +98,16 @@ export function ReaderPage() {
   const [scrollRatio, setScrollRatio] = useState(0);
   /** False until the user picks "continue" / "start over" (or nothing to resume). */
   const [resumeResolved, setResumeResolved] = useState(false);
+  /**
+   * Chapter the page/resume state was last reset for. Guards the progress-save
+   * effect below: on a hop to a prefetched (cached) chapter, `chapterPages.data`
+   * already points at the NEW chapter while `page`/`resumeResolved` still hold
+   * the OLD chapter's values (the reset effect's setStates haven't re-rendered
+   * yet). Without this gate the save effect persists the previous chapter's
+   * page against the new chapter id, and the resume banner ("Continue from
+   * page N?") shows the previous chapter's position on a chapter never read.
+   */
+  const [resetChapter, setResetChapter] = useState(chapterId);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Session-only memory: chapterId -> last page the user was on when leaving that chapter via chapter navigation (exact-page restore in vertical/gallery modes). */
   const chapterPageMemoryRef = useRef<Map<string, number>>(new Map());
@@ -179,6 +189,7 @@ export function ReaderPage() {
       setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
     }
+    setResetChapter(chapterId);
     setScrollRatio(0);
     setSettingsOpen(false);
     window.scrollTo(0, 0);
@@ -415,6 +426,12 @@ export function ReaderPage() {
      above, the unmount flush below, and `pagehide`. */
   useEffect(() => {
     if (!resumeResolved || pageCount === 0 || !chapterPages.data) return;
+    // Skip the transition commit: `page`/`resumeResolved` still belong to the
+    // previous chapter while `chapterPages.data` already points at the new one
+    // (prefetched payload). Saving here would persist the old page against the
+    // new chapter id — see `resetChapter`. The reset effect re-renders with
+    // the correct values right after, and the save fires then.
+    if (resetChapter !== chapterPages.data.chapterId) return;
     const data = chapterPages.data;
     pendingSaveRef.current = {
       panelId: data.panelId,
@@ -429,7 +446,7 @@ export function ReaderPage() {
     pendingSaveRef.current = null;
     if (payload) saveProgress.mutate(payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable; we key on page
-  }, [page, resumeResolved, pageCount, chapterPages.data]);
+  }, [page, resumeResolved, pageCount, chapterPages.data, resetChapter]);
 
   /* Flush on the way out. React cleanups don't run when the tab itself
      closes, and `beforeunload` is unreliable on mobile — `pagehide`
