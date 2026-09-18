@@ -14,7 +14,7 @@ import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconArrowDown, IconArrowUp, IconPause, IconPlay } from '../components/icons';
+import { IconPause, IconPlay } from '../components/icons';
 import { PagedReader } from '../reader/PagedReader';
 import { GalleryReader, type GalleryReaderHandle } from '../reader/GalleryReader';
 import { ReaderSettingsPanel } from '../reader/ReaderSettingsPanel';
@@ -1098,20 +1098,6 @@ export function ReaderPage() {
           onToggleAutoScroll={toggleAutoScroll}
           onOpenSettings={() => setSettingsOpen((open) => !open)}
         />
-
-        {scrollDir && (
-          <div
-            className="reader-auto-scroll reader-auto-scroll--keys"
-            role="status"
-            aria-live="polite"
-            aria-label={`Auto-scrolling ${scrollDir === 'up' ? 'up' : 'down'}`}
-          >
-            <span className="reader-auto-scroll__glyph" aria-hidden="true">
-              {scrollDir === 'up' ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />}
-            </span>
-            <span className="reader-auto-scroll__text">Smooth scroll · {settings.scrollSpeed}</span>
-          </div>
-        )}
 
         {autoScrollActive && settings.autoScrollDelayMs && (
           <div

@@ -239,21 +239,11 @@
   text-transform: capitalize;
 }
 
-/* Paced auto-scroll (T1-2) sits at the bottom centre — distinct from the
-   keyboard smooth-scroll badge (also bottom centre, stacked one badge
-   higher) so both can coexist. Static: the earlier infinite bob animation
-   made the badge visibly shake while reading. */
+/* Paced auto-scroll (T1-2) sits at the bottom centre. Static: the earlier
+   infinite bob animation made the badge visibly shake while reading. */
 .reader-auto-scroll--paced {
   top: auto;
   bottom: calc(var(--reader-footer-height, 56px) + var(--space-3));
-}
-
-/* Keyboard smooth-scroll (Shift+W / Shift+S) badge: same bottom-centre
-   position as the paced badge, one badge-height above it so both are
-   visible if the paced auto-scroll is running at the same time. */
-.reader-auto-scroll--keys {
-  top: auto;
-  bottom: calc(var(--reader-footer-height, 56px) + var(--space-3) + 2.75rem);
 }
 
 /* Toolbar auto-scroll toggle (T1-2). */
