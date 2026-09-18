@@ -1,0 +1,1418 @@
+/* ---------------------------------------------------------------------------
+   Reader: full-viewport reading surface with floating chrome.
+--------------------------------------------------------------------------- */
+
+.reader {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reader--dark {
+  background: #0a0b0e;
+  color: #ecedf1;
+}
+
+.reader--high-contrast {
+  background: #000;
+  color: #fff;
+}
+
+.reader--high-contrast .reader-toolbar,
+.reader--high-contrast .reader-footer {
+  background: color-mix(in srgb, #000 88%, transparent);
+  border-color: #fff;
+}
+
+.reader--high-contrast .reader-image__error {
+  color: #fff;
+}
+
+.reader--light {
+  background: #f4f1ea;
+  color: #1c1e24;
+}
+
+/* --- Toolbar ---------------------------------------------------------------- */
+
+.reader-toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: var(--reader-toolbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  background: color-mix(in srgb, #0a0b0e 78%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ecedf1;
+  transition: transform var(--duration-med) var(--ease-out);
+}
+
+.reader--light .reader-toolbar {
+  background: color-mix(in srgb, #f4f1ea 82%, transparent);
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+  color: #1c1e24;
+}
+
+.reader-toolbar--hidden {
+  transform: translateY(-100%);
+}
+
+.reader-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.reader-toolbar__group--center {
+  flex-shrink: 0;
+}
+
+.reader-toolbar__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reader-toolbar__panel {
+  font-size: var(--font-size-xs);
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34vw;
+}
+
+.reader-toolbar__chapter {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34vw;
+}
+
+.reader-toolbar__counter {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+  opacity: 0.85;
+  background: rgba(127, 127, 127, 0.16);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+}
+
+.reader-toolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  font-size: 1.05rem;
+  color: inherit;
+  transition: background var(--duration-fast);
+  text-decoration: none;
+}
+
+.reader-toolbar__btn:hover {
+  background: rgba(127, 127, 127, 0.2);
+}
+
+.reader-toolbar__btn--disabled {
+  opacity: 0.3;
+}
+
+.reader-toolbar__btn--active {
+  background: rgba(127, 127, 127, 0.2);
+  color: var(--accent);
+}
+
+/* Fullscreen button: drop the red :focus-visible ring (the global
+   --shadow-focus glow) so it doesn't flare around the icon when the button
+   holds keyboard focus. */
+.reader-toolbar__btn--fullscreen:focus,
+.reader-toolbar__btn--fullscreen:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .reader-toolbar__panel {
+    display: none;
+  }
+  .reader-toolbar__chapter {
+    max-width: 30vw;
+  }
+}
+
+/* --- Content ---------------------------------------------------------------- */
+
+.reader-content {
+  flex: 1;
+  padding-bottom: calc(var(--reader-toolbar-height) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+/* Add top padding so content clears the fixed toolbar (desktop & mobile).
+   Controlled by the clearToolbarSpace setting. */
+.reader--toolbar-clear .reader-content {
+  padding-top: var(--reader-toolbar-height);
+}
+
+/* Hide the scrollbar on the reading surface on mobile — the thin dark thumb
+   reads as a stray shadow during scroll, and the reader is navigated via tap
+   zones / keyboard / the progress bar anyway. */
+@media (max-width: 768px) {
+  .reader-content {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .reader-content::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Override: show scrollbar when the user opts in (overrides mobile hide). */
+.reader-content--scrollbar-visible {
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+.reader-content--scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+.reader-content--scrollbar-visible::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+}
+
+/* Prevent the reader content from scrolling while the settings sidebar is open. */
+.reader--sidebar-open .reader-content {
+  overflow: hidden;
+}
+
+/* Auto-scroll indicator: floating badge shown while holding Shift+W / Shift+S. */
+.reader-auto-scroll {
+  position: fixed;
+  top: calc(var(--reader-toolbar-height) + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 14px;
+  background: color-mix(in srgb, #0a0b0e 82%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+  color: #ecedf1;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow-md);
+  animation: page-in var(--duration-fast) var(--ease-out);
+}
+
+.reader--light .reader-auto-scroll {
+  background: color-mix(in srgb, #f4f1ea 86%, transparent);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #1c1e24;
+}
+
+.reader-auto-scroll__glyph {
+  display: inline-flex;
+  line-height: 1;
+}
+
+.reader-auto-scroll__text {
+  text-transform: capitalize;
+}
+
+/* Paced auto-scroll (T1-2) sits at the bottom centre — distinct from the
+   keyboard smooth-scroll badge (also bottom centre, stacked one badge
+   higher) so both can coexist. Static: the earlier infinite bob animation
+   made the badge visibly shake while reading. */
+.reader-auto-scroll--paced {
+  top: auto;
+  bottom: calc(var(--reader-footer-height, 56px) + var(--space-3));
+}
+
+/* Keyboard smooth-scroll (Shift+W / Shift+S) badge: same bottom-centre
+   position as the paced badge, one badge-height above it so both are
+   visible if the paced auto-scroll is running at the same time. */
+.reader-auto-scroll--keys {
+  top: auto;
+  bottom: calc(var(--reader-footer-height, 56px) + var(--space-3) + 2.75rem);
+}
+
+/* Toolbar auto-scroll toggle (T1-2). */
+.reader-toolbar__auto-scroll {
+  position: relative;
+}
+.reader-toolbar__auto-scroll--on {
+  color: var(--accent);
+}
+.reader-toolbar__auto-scroll__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Vertical mode: stacked pages, width controlled by settings (inline width%). */
+.vertical-reader {
+  position: relative;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Optional "image gap" setting: breathing room between stacked pages. */
+.vertical-reader--gap {
+  gap: var(--space-6);
+}
+
+.vertical-reader__page {
+  width: 100%;
+}
+
+/* Gallery mode: responsive grid of all pages; column floor set inline from the
+   width slider (fit 200px ↔ full 480px). */
+.gallery-reader {
+  position: relative;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.gallery-reader--gap {
+  gap: var(--space-6);
+}
+
+.gallery-reader__page {
+  overflow: hidden;
+  border-radius: 0;
+}
+
+/* ReaderImage */
+.reader-image {
+  position: relative;
+  width: 100%;
+  background: rgba(127, 127, 127, 0.06);
+  /* Skip rendering — and lazy-resource fetching — for pages far offscreen.
+     The intrinsic-size hint keeps scroll height stable while the real
+     aspect-ratio box is unknown; `auto` reuses the measured size afterwards. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
+.reader-image__img {
+  width: 100%;
+  height: auto;
+  opacity: 0;
+  transition: opacity var(--duration-med) var(--ease-out);
+  /* User-set page brightness — custom property comes from .reader-content. */
+  filter: brightness(var(--page-brightness, 100%));
+}
+
+.reader-image__img--loaded {
+  opacity: 1;
+}
+
+.reader-image__progress {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: auto;
+  opacity: 1;
+  transition: opacity var(--duration-med) var(--ease-out);
+}
+
+.reader-image__progress--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reader-image__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-4);
+  color: inherit;
+  min-height: 240px;
+  justify-content: center;
+}
+
+/* Paged mode */
+.paged-reader {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+  touch-action: pan-y;
+}
+
+.paged-reader__stage {
+  /* Width-driven stage: the page fills the stage width (so the "Image
+     * width" slider controls how wide the page renders) and scales
+     * proportionally via the reserved aspect-ratio box. Height is capped so
+     * a tall page never overflows the viewport — the stage scrolls vertically
+     * instead, like the vertical reader. (Previously the stage was
+     * height-capped with max-width, so a portrait page's width was locked to
+     * viewportHeight/aspectRatio and the slider had no effect across most of
+     * its range — it only kicked in once the stage narrowed below that width.)
+     */
+  width: var(--paged-stage-width, 100%);
+  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Pinch-to-zoom (T2-1): when a page is magnified past the stage the stage
+     must let the scaled image overflow so the user can pan (drag) around it.
+     The zoom is anchored to the pinch midpoint via transform-origin. */
+  overflow: auto;
+  /* Allow vertical scroll (tall pages) + pinch-zoom on touch; two-finger
+     pinch still reaches the gesture handler since pan-y doesn't block it. */
+  touch-action: pan-y;
+}
+
+.paged-reader__stage .reader-image {
+  transform-box: fill-box;
+  transform-origin: var(--zoom-origin, center center);
+  transition: transform 60ms linear;
+}
+
+.paged-reader__zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 5;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+.paged-reader__zone:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.paged-reader__zone--left {
+  left: 0;
+}
+
+.paged-reader__zone--right {
+  right: 0;
+}
+
+/* Desktop (fine pointer + hover): the zones stay in the DOM (keyboard
+   focusable, still full 50% halves) but stop swallowing mouse events —
+   the mousedown reaches the <img> so pages are natively draggable and
+   right-clickable (copy image / drag to Google Translate). The original
+   left/right-half click behavior is reproduced by each reader's container
+   click handler (halfSideFromClientX), so desktop navigation is unchanged.
+   Touch devices keep the physical zone buttons fully active. */
+@media (hover: hover) and (pointer: fine) {
+  .paged-reader__zone {
+    pointer-events: none;
+  }
+}
+
+/* In double-page mode the click zones shrink to the outer ~18% of the stage
+   so the spine (inner seam) is inert — turning a real book you grab the
+   outer page corners, never the gutter. */
+.paged-reader--double .paged-reader__zone--outer {
+  width: 18%;
+}
+
+/* --- Double-page spread (T1-1) ------------------------------------------------- */
+
+.paged-reader__spread {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.paged-reader__sheet {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Each sheet is pushed toward the outer edge so the two pages lean into
+   the center gutter like a printed book. */
+.paged-reader__sheet--left {
+  justify-content: flex-end;
+  padding-right: 2%;
+}
+.paged-reader__sheet--right {
+  justify-content: flex-start;
+  padding-left: 2%;
+}
+
+/* The gutter: a soft gradient seam down the middle of the spread. */
+.paged-reader__seam {
+  flex: 0 0 3px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(0, 0, 0, 0.55),
+    transparent
+  );
+  border-radius: 2px;
+}
+
+/* Image gap OFF (the default): the two sheets sit flush against the seam
+   and the gutter collapses to zero — a double-page spread renders as one
+   continuous image, no gap in the center. */
+.paged-reader:not(.paged-reader--gap) .paged-reader__sheet--left,
+.paged-reader:not(.paged-reader--gap) .paged-reader__sheet--right {
+  padding: 0;
+}
+.paged-reader:not(.paged-reader--gap) .paged-reader__seam {
+  flex: 0 0 0;
+}
+
+/* When the spread is single (first/last page with no facing page), the stage
+   collapses to one centered page instead of forcing a 50% sheet. */
+.reader--double-page .paged-reader__stage {
+  align-items: center;
+}
+
+.paged-reader__sheet-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(127, 127, 127, 0.05) 0 8px,
+      transparent 8px 16px
+    );
+  border: 1px dashed rgba(127, 127, 127, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Settings sidebar ------------------------------------------------------ */
+
+/* Backdrop overlay that captures clicks to dismiss the sidebar.
+   No `backdrop-filter: blur(...)` on purpose: a full-viewport blur over the
+   reader pages stutters on mobile GPUs during the open animation, which is
+   the dominant cost of opening the settings panel. The semi-transparent
+   black background already dims the page enough. */
+.reader-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-med) var(--ease-out);
+  z-index: 55;
+}
+
+.reader-settings-backdrop--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Base visual styles shared by the settings sidebar and shortcuts dialog. */
+.reader-settings {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 60;
+}
+
+/* Settings sidebar: full-height panel sliding in from the right. */
+.reader-settings--sidebar {
+  position: fixed;
+  top: var(--reader-toolbar-height);
+  right: 0;
+  bottom: 0;
+  width: min(336px, calc(100vw - 2 * var(--space-3)));
+  max-width: 100vw;
+  height: auto;
+  max-height: none;
+  border-left: 1px solid var(--border-strong);
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  border-radius: 0;
+  box-shadow: none;
+  transform: translateX(100%);
+  transition: transform var(--duration-med) var(--ease-out);
+}
+
+.reader-settings--sidebar.reader-settings--open {
+  transform: translateX(0);
+  /* Promote the sliding panel to its own GPU layer for the duration of
+     the open animation. Scoped to the open state so a closed sidebar
+     doesn't hold a permanent compositor layer. */
+  will-change: transform;
+}
+
+/* ShortcutsDialog: floating card anchored under the toolbar (pop-up). */
+.reader-settings--popover {
+  position: fixed;
+  top: calc(var(--reader-toolbar-height) + var(--space-2));
+  right: var(--space-3);
+  z-index: 60;
+  width: min(336px, calc(100vw - 2 * var(--space-3)));
+  max-height: calc(100dvh - var(--reader-toolbar-height) - 2 * var(--space-3));
+  animation: page-in var(--duration-fast) var(--ease-out);
+}
+
+.reader-settings__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: linear-gradient(180deg, var(--surface-2), transparent);
+  border-bottom: 1px solid var(--border);
+}
+
+.reader-settings__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.reader-settings__subtitle {
+  margin: 2px 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+}
+
+.reader-settings__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: -2px -2px 0 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.reader-settings__close:hover {
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--text);
+}
+
+.reader-settings__close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__body {
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  overflow-y: auto;
+}
+
+/* Sidebar body fills the space between header and footer. */
+.reader-settings--sidebar .reader-settings__body {
+  flex: 1;
+}
+
+/* Simple / Advanced category tabs at the top of the sidebar body. */
+.reader-settings__tabs {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.reader-settings__tab {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.reader-settings__tab:hover {
+  color: var(--text);
+}
+
+.reader-settings__tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.reader-settings__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reader-settings__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+
+.reader-settings__group:not(:first-child),
+.reader-settings__row {
+  border-top: 1px solid var(--border);
+}
+
+.reader-settings__group[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.reader-settings__group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.reader-settings__group-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.reader-settings__group-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+/* Segmented control (radio group) */
+.segmented {
+  display: flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+}
+
+.segmented__option {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: calc(var(--radius-md) - 3px);
+  font-size: var(--font-size-sm);
+  color: var(--text-soft);
+  text-align: center;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.segmented__option:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.segmented__option:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.segmented__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.segmented__option--active {
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.switch:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.switch--on {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: #fff;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.switch--on .switch__thumb {
+  transform: translateX(16px);
+}
+
+/* Jump dropdowns in the settings panel */
+.reader-settings__select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.reader-settings__select:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reader-settings--light .reader-settings__select {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #1c1e24;
+}
+
+/* Saved-styles header: preset dropdown with an add (+) toggle beside it.
+   The name field and the per-style / backup buttons only appear on demand
+   so the group stays a single quiet row by default. */
+.reader-settings__styles-head {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.reader-settings__styles-head .reader-settings__select {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader-settings__add-btn {
+  flex-shrink: 0;
+  width: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast),
+    border-color var(--duration-fast);
+}
+
+.reader-settings__add-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.reader-settings__add-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__add-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reader-settings--light .reader-settings__add-btn {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #6b7180;
+}
+
+/* Expanded new-style form: name field with its Save button inline. */
+.reader-settings__style-form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.reader-settings__style-form .reader-settings__number-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Per-style actions for the selected preset (Apply / Export / Delete). */
+.reader-settings__style-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* File-level backup tucked behind a disclosure so Import / Export all
+   don't take up room until needed. */
+.reader-settings__backup {
+  margin-top: var(--space-1);
+}
+
+.reader-settings__backup-toggle {
+  display: inline-block;
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.reader-settings__backup-toggle:hover {
+  color: var(--text);
+}
+
+.reader-settings__backup-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+/* Fixed pixel-size stepper (number input framed by − / + buttons) */
+.reader-settings__number {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.reader-settings__number-btn {
+  width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.reader-settings__number-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.reader-settings__number-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__number-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  text-align: center;
+  appearance: textfield;
+}
+
+.reader-settings__number-input:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__number-unit {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  align-self: center;
+}
+
+.reader-settings--light .reader-settings__number-btn,
+.reader-settings--light .reader-settings__number-input {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #1c1e24;
+}
+
+.reader-settings--light .reader-settings__number-unit {
+  color: #6b7180;
+}
+
+/* Brightness slider row: track + live % readout (+ reset). Native range
+   input tinted with accent-color so it tracks both panel themes. */
+.reader-settings__range-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.reader-settings__range {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.reader-settings__range:focus-visible {
+  outline: none;
+}
+
+.reader-settings__range:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__range-value {
+  flex-shrink: 0;
+  min-width: 42px;
+  text-align: right;
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-settings__range-reset {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast),
+    background var(--duration-fast);
+}
+
+.reader-settings__range-reset:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.reader-settings__range-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Pixel-size field: a labelled stepper. Two are stacked in the settings panel. */
+.reader-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reader-settings__field-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-dim);
+}
+
+.reader-settings__size-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Clear button for the fixed pixel-size fields */
+.reader-settings__clear {
+  margin-top: var(--space-3);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast),
+    opacity var(--duration-fast);
+}
+
+.reader-settings__clear:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.reader-settings__clear:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.reader-settings__clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reader-settings--light .reader-settings__clear {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #6b7180;
+}
+
+/* Full-width row (label left, control right) */
+.reader-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.reader-settings__row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reader-settings__row-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.reader-settings__row-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+}
+
+/* Shortcuts section inside the settings sidebar */
+.reader-settings__shortcuts-title {
+  margin: var(--space-3) 0 var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Footer */
+.reader-settings__footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.reader-settings__reset {
+  width: 100%;
+}
+
+/* Auto-save status indicator (shared server save, shown in settings footer) */
+.reader-settings__save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.reader-settings__save-state--saving::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: save-state-pulse 1.2s ease-in-out infinite;
+}
+.reader-settings__save-state--saved::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success, #34a853);
+  flex-shrink: 0;
+}
+.reader-settings__save-state--error {
+  color: var(--danger, #e5484d);
+}
+.reader-settings__save-state--error::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #e5484d);
+  flex-shrink: 0;
+}
+@keyframes save-state-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* Light reader surface — panel follows the chosen reading background */
+.reader-settings--light {
+  background: #f8f6f0;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #1c1e24;
+}
+
+.reader-settings--light .reader-settings__header,
+.reader-settings--light .reader-settings__footer {
+  background: #efece2;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.reader-settings--light .reader-settings__group:not(:first-child),
+.reader-settings--light .reader-settings__row,
+.reader-settings--light .reader-settings__shortcuts-title {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.reader-settings--light .segmented {
+  background: #e6e2d7;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.reader-settings--light .segmented__option {
+  color: #6b7180;
+}
+
+.reader-settings--light .segmented__option:hover:not(:disabled) {
+  color: #1c1e24;
+}
+
+.reader-settings--light .segmented__option--active {
+  background: #ffffff;
+  color: #1c1e24;
+}
+
+.reader-settings--light .reader-settings__group-hint,
+.reader-settings--light .reader-settings__row-hint {
+  color: #6b7180;
+}
+
+.reader-settings--light .switch {
+  background: #d9d4c8;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.reader-settings--light .switch__thumb {
+  background: #ffffff;
+}
+
+.reader-settings--light .reader-settings__close:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.reader-settings--light .btn--ghost {
+  background: #e6e2d7;
+  color: #1c1e24;
+}
+
+.reader-settings--light .btn--ghost:hover:not(:disabled) {
+  background: #dcd7ca;
+}
+
+/* --- Light reader surface: keyboard shortcuts ----------------------------------- */
+
+.reader-settings--light .shortcuts-group__title {
+  color: #6b7180;
+}
+
+.reader-settings--light .shortcuts-table td {
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #6b7180;
+}
+
+.reader-settings--light .shortcuts-table__keys kbd,
+.reader-settings--light .reader-settings__subtitle kbd {
+  background: #f4f1ea;
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1c1e24;
+}
+
+.reader-settings--light .shortcuts-table__keys kbd + kbd::before {
+  color: #8b90a0;
+}
+
+/* --- Resume banner ------------------------------------------------------------- */
+
+.reader-resume {
+  position: fixed;
+  top: calc(var(--reader-toolbar-height) + var(--space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3) var(--space-4);
+  animation: page-in var(--duration-med) var(--ease-out);
+  max-width: calc(100vw - 2 * var(--space-4));
+}
+
+.reader-resume__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 560px) {
+  .reader-resume {
+    flex-direction: column;
+    gap: var(--space-2);
+    text-align: center;
+  }
+}
+
+/* --- Misc ------------------------------------------------------------------------ */
+
+.reader-error-actions {
+  display: flex;
+  justify-content: center;
+  padding-bottom: var(--space-7);
+}
+
+/* --- Footer / progress ------------------------------------------------------- */
+
+.reader-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) calc(var(--space-2) + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, #0a0b0e 78%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ecedf1;
+  transition: transform var(--duration-med) var(--ease-out);
+}
+
+.reader--light .reader-footer {
+  background: color-mix(in srgb, #f4f1ea 82%, transparent);
+  border-top-color: rgba(0, 0, 0, 0.08);
+  color: #1c1e24;
+}
+
+.reader-footer--hidden {
+  transform: translateY(100%);
+}
+
+.reader-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+  position: relative;
+}
+
+.reader-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.reader-progress__fill {
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transform-origin: left center;
+  transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+  box-shadow:
+    0 0 8px var(--accent),
+    0 0 16px var(--accent);
+}
+
+/* While the footer is hidden, freeze the fill so revealing it mid-chapter
+   shows the exact current position instead of animating from a stale width. */
+.reader-footer--hidden .reader-progress__fill {
+  transition: none;
+}
+
+/* Reduced motion: disable progress bar animation */
+@media (prefers-reduced-motion: reduce) {
+  .reader-progress__fill {
+    transition: none;
+  }
+  .reader-auto-scroll__glyph {
+    animation: none;
+  }
+}

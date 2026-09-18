@@ -1,0 +1,4732 @@
+/* Page-level styles: home, search, panel details, bookmarks. */
+
+.page {
+  animation: page-in var(--duration-med) var(--ease-out);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-header {
+  margin-bottom: var(--space-5);
+}
+
+.page-header--split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page-header__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Stack split headers on phones so full-width controls (e.g. the source
+ * filter chip strip) get their own row instead of squeezing the title. */
+@media (max-width: 640px) {
+  .page-header--split {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+}
+
+.page-header h1 {
+  font-size: var(--font-size-2xl);
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  color: var(--text-dim);
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: var(--space-5) 0;
+}
+
+.page-header .pagination {
+  margin: 0;
+}
+
+.pagination__page {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  min-width: 64px;
+  text-align: center;
+}
+
+.pagination__disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+/* --- Home ------------------------------------------------------------------- */
+
+/* Search-engine layout: fill the viewport (minus header, main padding and
+   footer) and center the hero block both axes. `overflow-x: clip` contains
+   the oversized ambient glow so it can bleed to the viewport edges without
+   ever creating a horizontal scrollbar; unlike `hidden` it keeps sticky
+   positioning working inside the page. */
+.home-page {
+  overflow-x: clip;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  min-height: min(
+    680px,
+    calc(100dvh - var(--header-height) - var(--space-5) - var(--space-8) - 3.5rem)
+  );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: clamp(2rem, 6vh, 4rem) var(--space-2);
+  text-align: center;
+}
+
+/* Ambient glow pinned to the viewport so the gradient covers the entire
+   page edge-to-edge at any scroll position (percentage-radius ellipses, not
+   fixed pixel circles, so it scales cleanly from phones to ultra-wide). */
+.home-hero__glow {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(38% 52% at 30% 32%, rgba(229, 72, 77, 0.16), transparent 70%),
+    radial-gradient(46% 58% at 71% 62%, rgba(82, 169, 255, 0.12), transparent 70%),
+    radial-gradient(30% 40% at 50% 50%, rgba(255, 255, 255, 0.04), transparent 75%);
+  pointer-events: none;
+}
+
+.home-hero__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.home-hero__badge svg {
+  color: var(--accent);
+}
+
+/* The wordmark � oversized like a search engine logo. */
+.home-hero__title {
+  margin: var(--space-2) 0 0;
+  font-size: clamp(2.4rem, 6.5vw, 4.25rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.home-hero__title-accent {
+  background: linear-gradient(120deg, var(--accent), #ff8a4c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Quiet tagline between the wordmark and the search bar. */
+.home-hero__subtitle {
+  margin: 0 auto;
+  color: var(--text-dim);
+  max-width: 52ch;
+  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+  line-height: 1.6;
+}
+
+.home-hero .search-bar {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* Desktop only: the wrapper div (not the form) is the hero's flex child and
+   is shrink-to-fit, so stretch it first — then let the pill grow past the
+   shared 640px cap that .search-bar applies everywhere else. Below 1024px
+   (tablet/mobile) the bar keeps its default sizing so nothing shifts. */
+@media (min-width: 1024px) {
+  .home-hero .search-bar__wrapper {
+    width: 100%;
+  }
+  .home-hero .search-bar {
+    max-width: 900px;
+  }
+}
+
+.home-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* ---- Local image cache (collapsible, best-effort) ---- */
+.home-hero__cache {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  width: min(560px, 100%);
+}
+
+.home-hero__cache-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.home-hero__cache-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.home-hero__cache-toggle:hover,
+.home-hero__cache-toggle:focus-visible {
+  color: var(--text-primary);
+  outline: none;
+}
+.home-hero__chevron {
+  display: inline-flex;
+  transition: transform var(--duration-fast) var(--ease-out);
+  transform: rotate(-90deg);
+}
+.home-hero__cache-toggle[aria-expanded="true"] .home-hero__chevron {
+  transform: rotate(0deg);
+}
+
+.home-hero__cache-label {
+  color: var(--text-dim);
+}
+.home-hero__cache-size,
+.home-hero__cache-cap {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.home-hero__cache-cap {
+  color: var(--text-dim);
+}
+
+.home-hero__cache-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  overflow: hidden;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.home-hero__cache-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: width var(--duration-medium) var(--ease-out);
+}
+.home-hero__cache-bar__label {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.home-hero__cache-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+.home-hero__cache-actions .btn--sm {
+  flex: 0 1 auto;
+}
+
+.home-hero__cache-toast {
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+}
+
+/* Recently-viewed rail (T2-4): a single horizontal carousel of cover cards
+   that auto-advances and can be slid manually (arrows / swipe / scroll). */
+.home-recent {
+  margin: var(--space-8) auto 0;
+  max-width: var(--content-max);
+  width: 100%;
+}
+.home-recent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.home-recent__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.home-recent__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+  margin: 0;
+}
+.home-recent__clear {
+  font-size: var(--font-size-xs);
+}
+.home-recent__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.home-recent__arrow:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.home-recent__arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.home-recent__arrow:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.home-recent__rail {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  /* Smooth slide + card-aligned snapping for manual scrolling/swiping. */
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  /* Grab-to-slide: the mouse cursor invites dragging. */
+  cursor: grab;
+  user-select: none;
+  padding-bottom: var(--space-2);
+  scrollbar-width: thin;
+}
+.home-recent__rail--dragging {
+  cursor: grabbing;
+  /* Live 1:1 drag tracking feels better than snapped/smoothed motion. */
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
+.home-recent__rail--dragging * {
+  pointer-events: none;
+}
+.home-recent__rail > * {
+  /* 5 cards per view on desktop, matching the shared panel-grid sizing. */
+  flex: 0 0 calc((100% - var(--space-4) * 4) / 5);
+  min-width: 0;
+  scroll-snap-align: start;
+  /* Cards are links; disable native drag so grab-to-slide works. */
+  -webkit-user-drag: none;
+}
+/* Wide mode: use the exact same minimum card size as .panel-grid's wide-mode
+   track — (content-max - 6 x space-4) / 5 — so cards on the home rail render
+   at the same width as cards on the latest/search/bookmarks grids. */
+.app-shell--wide .home-recent__rail > * {
+  flex-basis: calc((var(--content-max) - var(--space-4) * 6) / 5);
+}
+@media (max-width: 560px) {
+  .home-recent__rail {
+    gap: var(--space-3);
+  }
+  .home-recent__rail > * {
+    flex-basis: calc((100% - var(--space-3) * 2) / 3);
+  }
+  .app-shell--wide .home-recent__rail > * {
+    flex-basis: calc((100% - var(--space-3) * 2) / 3);
+  }
+}
+
+.latest-header {
+  margin-bottom: var(--space-3);
+}
+
+/* Source filter row on the latest page. */
+.latest-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+/* Match the search toolbar's pills · filters · search layout. The filters
+   carry `margin-left: auto` so they sit to the right of the pills (with
+   whitespace), and the search field docks after them at a fixed size —
+   the same row composition as the search page. */
+.latest-toolbar .source-filter {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.latest-toolbar .search-filters {
+  margin-left: auto;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+@media (min-width: 641px) {
+  .latest-toolbar .search-filters {
+    order: 2;
+  }
+  .latest-toolbar .latest-toolbar__search {
+    order: 3;
+  }
+}
+@media (max-width: 640px) {
+  .latest-toolbar .search-filters {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .latest-toolbar .latest-toolbar__search {
+    order: 4;
+  }
+}
+/* Hero search docked to the toolbar's right: same fluid-but-capped width
+   as the search page's toolbar bar (280px–900px). Regular (non-large)
+   bar so its height matches the pill strip. */
+.latest-page .latest-toolbar__search {
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 900px;
+}
+.latest-page .latest-toolbar__search .search-bar__wrapper {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.latest-page .latest-toolbar__search .search-bar {
+  max-width: none;
+}
+@media (max-width: 640px) {
+  .latest-page .latest-toolbar__search {
+    flex-basis: 100%;
+  }
+}
+
+/* Search toolbar: source pill strip on the left, refinement dropdowns
+   pinned to the right on one row. Wraps on narrow screens (the strip
+   takes its own swipeable row, the dropdowns right-align beneath). */
+/* Search field docked in the toolbar row (search page): fluid width
+   between the pills and the refinement selects, capped like Latest.
+   Hero wrapper caps neutralised inside the row; regular bar height
+   matches the pills. */
+.search-toolbar__search {
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 900px;
+}
+.search-toolbar__search .search-bar__wrapper {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.search-toolbar__search .search-bar {
+  max-width: none;
+}
+/* Desktop only: refinement selects sit between the pills and the field
+   (pills · selects · search). Mobile keeps the DOM stack order. */
+@media (min-width: 641px) {
+  .search-toolbar .search-filters {
+    order: 2;
+  }
+  .search-toolbar .search-toolbar__search {
+    order: 3;
+  }
+}
+@media (max-width: 640px) {
+  /* Mobile stack order: pill strip, search field, refinement selects. */
+  .search-toolbar__search {
+    flex-basis: 100%;
+  }
+}
+.latest-page .search-bar__wrapper {
+  /* Left-aligned hero field: cap the wrapper (the history dropdown's positioning
+     context) so the bar and its dropdown stay aligned, with breathing room
+     above like the home hero. */
+  max-width: 640px;
+  margin-inline: 0;
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+/* Desktop only: match the homepage hero one-to-one — the pill grows past
+   the shared 640px cap to 900px. Below 1024px both keep default sizing. */
+@media (min-width: 1024px) {
+  .latest-page .search-bar__wrapper {
+    width: 100%;
+    max-width: 900px;
+  }
+  .latest-page .search-bar {
+    max-width: 900px;
+  }
+}
+@media (max-width: 640px) {
+  .latest-page .search-bar__wrapper {
+    margin-top: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+}
+.search-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.search-toolbar .source-filter {
+  /* Shrink-wrapped like the Latest page strip — no stretch, so the pills
+     render at exactly the same size; the dropdown group still pins right
+     via its own margin-left. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Inline variant: no longer a standalone section — it hugs the toolbar's
+   right edge with zero bottom margin so the row stays compact. */
+.search-toolbar .search-filters {
+  margin-left: auto;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+/* Search refinement filters (T2-5). */
+.search-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.search-filters__select {
+  appearance: none;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  padding: 9px var(--space-6) 9px var(--space-4);
+  min-height: 40px;
+  max-width: 220px;
+  cursor: pointer;
+  /* Long selected values (e.g. a catalog genre) clip instead of
+     stretching the pill. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b90a0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.search-filters__select:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+/* A chosen (non-default) value reads as an applied filter chip. */
+.search-filters__select--active {
+  border-color: var(--accent);
+  color: var(--text);
+  background-color: var(--accent-soft);
+}
+.search-filters__select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+/* Phones: the source strip takes its own swipeable row (see
+   .source-filter). The refinement selects form their own deterministic
+   2-column grid below — status + genre side by side, exclude spanning the
+   full row — so the layout never depends on how long a source's genre
+   catalog is. Applies to both the search and latest toolbars. */
+@media (max-width: 640px) {
+  .search-toolbar {
+    row-gap: var(--space-2);
+  }
+  .search-toolbar .search-filters {
+    margin-left: 0;
+    width: 100%;
+  }
+  .search-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .search-filters__select {
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+  }
+  /* Exclude genre (always 3rd) and the Clear-filters button span the row. */
+  .search-filters__select:nth-child(3),
+  .search-filters > .btn {
+    grid-column: 1 / -1;
+  }
+  .search-filters > .btn {
+    justify-self: start;
+  }
+}
+
+/* Bookmark folder selector (T2-8): a hamburger trigger in the bookmarks
+   toolbar that opens a dropdown panel with the folder list. */
+.bookmarks-header {
+  gap: var(--space-4);
+}
+.bookmark-folder-selector {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 0;
+}
+/* Icon-only trigger sized to match the neighbouring source-filter pill
+   strip so the two sit on one even row instead of the small misaligned
+   box seen next to the "All / MangaKatana / …" chips. */
+.bookmark-folder-selector__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.bookmark-folder-selector__trigger:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.bookmark-folder-selector__trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.bookmark-folder-selector__trigger--open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+/* Must beat `.bookmark-folder-selector__trigger:hover` (higher specificity
+   via the pseudo-class), otherwise hovering the open trigger falls back to
+   the dark closed-state hover style. */
+.bookmark-folder-selector__trigger--open:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+.bookmark-folder-selector__trigger-name {
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+/* Left-anchored: the trigger sits at the toolbar's left edge, so a
+   right-anchored panel hangs off-screen. Anchor left so the dropdown
+   always opens inside the viewport. The kebab popover renders with
+   position:fixed from the parent's coordinates, so the panel can scroll
+   internally without clipping the popover. */
+.bookmark-folder-selector__panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: auto;
+  z-index: 60;
+  min-width: min(260px, calc(100vw - var(--space-5)));
+  max-width: calc(100vw - var(--space-5));
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, 420px);
+}
+.bookmark-folder-selector__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-2);
+}
+.bookmark-folder-selector__head h2 {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.bookmark-folder-selector__create {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-1) var(--space-2);
+}
+.bookmark-folder-selector__rename {
+  display: flex;
+  gap: var(--space-1);
+  padding: 4px;
+}
+.bookmark-folder-selector__create input,
+.bookmark-folder-selector__rename input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85rem;
+}
+.bookmark-folder-selector__create input:focus,
+.bookmark-folder-selector__rename input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Folder list rows. Each row is one menuitem (the `__pick` button)
+   paired with a kebab action button that opens a small overflow menu.
+   The kebab stays hidden until hover or focus-within so the list reads
+   as a clean list of folders until the user goes looking for actions. */
+.bookmark-folder-selector__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The list scrolls internally so the kebab popover can overflow the
+     row without being clipped by the panel's max-height. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.bookmark-folder-selector__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  /* Left accent strip becomes visible on hover/active — a subtle
+     alternative to the old full-row border. */
+  box-shadow: inset 3px 0 0 transparent;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.bookmark-folder-selector__row:hover,
+.bookmark-folder-selector__row:focus-within {
+  background: var(--surface-2);
+}
+.bookmark-folder-selector__row--active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.bookmark-folder-selector__pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.bookmark-folder-selector__pick:focus-visible {
+  outline: none;
+}
+.bookmark-folder-selector__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bookmark-folder-selector__row-actions {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+}
+/* Kebab button fades in on row hover/focus so the default list reads as
+   folder names only; explicit focus on the kebab (tab navigation) keeps
+   it visible too. */
+.bookmark-folder-selector__kebab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  cursor: pointer;
+}
+.bookmark-folder-selector__row:hover .bookmark-folder-selector__kebab,
+.bookmark-folder-selector__kebab:focus-visible,
+.bookmark-folder-selector__row:focus-within .bookmark-folder-selector__kebab {
+  opacity: 1;
+}
+.bookmark-folder-selector__kebab:hover,
+.bookmark-folder-selector__kebab:focus-visible {
+  background: var(--surface);
+  color: var(--text);
+}
+/* Star button: marks the user's chosen default folder. Always visible
+   (it's the only indicator — the folder name has no badge) and sits in
+   the same slot as the kebab would. Clicking it opens the same kebab
+   popover, where "Unset default" / "Set as default" is the first action. */
+.bookmark-folder-selector__star-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent-hover);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.bookmark-folder-selector__star-btn:hover,
+.bookmark-folder-selector__star-btn:focus-visible {
+  background: var(--surface);
+  outline: none;
+}
+/* Touch devices don't fire hover — keep the kebab always visible so the
+   per-folder actions stay reachable without long-press tricks. */
+@media (hover: none), (pointer: coarse) {
+  .bookmark-folder-selector__kebab {
+    opacity: 1;
+  }
+}
+
+/* Per-folder overflow popover. Rendered with `position: fixed` from the
+   parent (coordinates computed against the kebab's getBoundingClientRect)
+   so it escapes any scrollable ancestor and the panel's max-height —
+   the whole menu is always visible without scrolling the list. */
+.bookmark-folder-selector__menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  animation: bookmark-folder-menu-pop var(--duration-fast) var(--ease-out);
+}
+@keyframes bookmark-folder-menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.bookmark-folder-selector__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.bookmark-folder-selector__menu-item:hover,
+.bookmark-folder-selector__menu-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.bookmark-folder-selector__menu-item--danger {
+  color: var(--danger, #f87171);
+}
+.bookmark-folder-selector__menu-item--danger:hover,
+.bookmark-folder-selector__menu-item--danger:focus-visible {
+  background: color-mix(in srgb, var(--danger, #f87171) 12%, transparent);
+  color: var(--danger, #f87171);
+}
+
+/* Keep the trigger a fixed 44px touch target on phones so it stays
+   vertically centred against the taller swipeable chip strip. */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  .bookmark-folder-selector__trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .home-hero__actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .home-hero__actions .btn--lg {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.home-section {
+  margin-top: var(--space-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.home-section__header h2 {
+  font-size: var(--font-size-xl);
+  letter-spacing: -0.01em;
+}
+
+.home-section__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.home-section__more:hover {
+  color: var(--accent-hover);
+}
+
+.home-section__error {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  padding: var(--space-4) 0;
+}
+
+@media (max-width: 480px) {
+  .home-hero {
+    min-height: calc(100dvh - var(--header-height) - var(--space-5) - var(--space-8) - 3.5rem);
+    gap: var(--space-3);
+  }
+  .home-hero__actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .home-hero__actions .btn--lg {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ============================================================================
+   PANEL DETAILS PAGE — Modern Professional UI/UX
+   ============================================================================ */
+
+.panel-details {
+  max-width: var(--layout-max);
+  margin: 0 auto;
+}
+
+/* --- Breadcrumb ----------------------------------------------------------- */
+.breadcrumb {
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) 0;
+}
+
+.breadcrumb__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+}
+
+.breadcrumb__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.breadcrumb__separator {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.breadcrumb__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  transition: color var(--duration-fast);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.breadcrumb__link:hover {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.breadcrumb__item--current {
+  color: var(--text);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* --- Hero Section --------------------------------------------------------- */
+.panel-details__hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: var(--space-7);
+  padding-bottom: var(--space-7);
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+
+/* T3-8: blurred cover-as-backdrop with a gradient wash. Sits behind the hero
+   content (z-index -1 via the hero's isolation) so text contrast is untouched. */
+.panel-details__backdrop {
+  position: absolute;
+  inset: calc(-1 * var(--space-6));
+  z-index: -1;
+  background-size: cover;
+  background-position: center 20%;
+  filter: blur(42px) saturate(1.25) brightness(0.55);
+  opacity: 0.45;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+.panel-details__backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.75));
+}
+
+@media (max-width: 1024px) {
+  .panel-details__hero {
+    grid-template-columns: 300px 1fr;
+    gap: var(--space-5);
+  }
+}
+
+@media (max-width: 768px) {
+  .panel-details__hero {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
+    /* Full-bleed info column like Synopsis below — the cover keeps its
+       own centered cap (see cover-wrapper), only the text/actions row
+       was starved by the old 360px squeeze. */
+    max-width: none;
+    margin: 0 0 var(--space-5);
+  }
+}
+
+.panel-details__cover-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .panel-details__cover-wrapper {
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+  }
+}
+
+.panel-details__cover {
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  aspect-ratio: 3 / 4;
+  background: var(--surface-2);
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  transition:
+    transform var(--duration-med) var(--ease-out),
+    box-shadow var(--duration-med) var(--ease-out);
+}
+
+/* Fallback background - always visible */
+.panel-details__cover .panel-card__cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-faint);
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+  z-index: 1;
+}
+
+/* Cover image overlay */
+.panel-details__cover .cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition:
+    opacity var(--duration-med) var(--ease-out),
+    transform var(--duration-long) var(--ease-out);
+  transform: scale(1.02);
+  z-index: 2;
+}
+
+.panel-details__cover .cover-image.loaded {
+  opacity: 1;
+}
+
+.panel-details__cover .cover-image.loading {
+  opacity: 0;
+}
+
+/* Status badge on cover */
+.panel-details__status-badge {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.panel-details__status-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+}
+
+.panel-details__status-badge--completed {
+  background: rgba(70, 167, 88, 0.95);
+  color: #fff;
+  border: 1px solid rgba(70, 167, 88, 0.3);
+}
+
+.panel-details__status-badge--ongoing {
+  background: rgba(82, 169, 255, 0.95);
+  color: #fff;
+  border: 1px solid rgba(82, 169, 255, 0.3);
+}
+
+.panel-details__status-badge--hiatus {
+  background: rgba(240, 180, 41, 0.95);
+  color: #000;
+  border: 1px solid rgba(240, 180, 41, 0.3);
+}
+
+/* Cover gradient overlay for depth */
+.panel-details__cover-gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(0, 0, 0, 0.15) 60%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+/* --- Info Panel ----------------------------------------------------------- */
+.panel-details__info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.panel-details__header {
+  margin-bottom: var(--space-2);
+}
+
+.panel-details__title {
+  font-size: clamp(var(--font-size-2xl), 4vw, var(--font-size-4xl));
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0;
+  color: var(--text);
+  background: linear-gradient(135deg, var(--text) 0%, var(--text-soft) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@media (max-width: 768px) {
+  .panel-details__title {
+    font-size: clamp(1.15rem, 5.5vw, 1.4rem);
+    text-align: center;
+  }
+}
+
+.meta-value--alt {
+  color: var(--text-faint);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  font-weight: var(--font-weight-medium);
+}
+
+/* Meta Information */
+.panel-details__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 480px) {
+  .panel-details__meta {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
+.meta-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.meta-label {
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.meta-value {
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  font-weight: var(--font-weight-medium);
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--info);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  transition: color var(--duration-fast);
+  padding: var(--space-1) 0;
+}
+
+.source-link:hover {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+.link-external-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: transform var(--duration-fast);
+}
+
+.source-link:hover .link-external-icon {
+  transform: translate(2px, -2px);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  text-transform: capitalize;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  border: 1px solid var(--border);
+}
+
+.status-pill--completed {
+  color: var(--success);
+  background: rgba(70, 167, 88, 0.12);
+  border-color: rgba(70, 167, 88, 0.2);
+}
+
+.status-pill--ongoing {
+  color: var(--info);
+  background: rgba(82, 169, 255, 0.12);
+  border-color: rgba(82, 169, 255, 0.2);
+}
+
+.status-pill--hiatus {
+  color: var(--warning);
+  background: rgba(240, 180, 41, 0.12);
+  border-color: rgba(240, 180, 41, 0.2);
+}
+
+/* --- Genres --------------------------------------------------------------- */
+.panel-details__genres {
+  margin-top: var(--space-2);
+}
+
+.genre-list-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.genre-list-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.genre-count {
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  background: var(--surface-2);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.genre-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.genre-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  transition: all var(--duration-fast);
+  font-weight: var(--font-weight-medium);
+}
+
+.genre-chip:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.genre-chip--toggle {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  cursor: pointer;
+}
+
+.genre-chip--toggle:hover {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+/* --- Actions -------------------------------------------------------------- */
+/* Two clean rows: primary read buttons, then a unified toolbar of secondary
+   controls in one bordered group, then the tag editor on its own row. */
+.panel-details__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.panel-details__primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+/* Unified toolbar: bookmark / rating / status / share in one bordered strip
+   with hairline dividers instead of a row of floating mismatched boxes. */
+.panel-details__toolbar {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.panel-details__toolbar-item {
+  display: flex;
+  align-items: center;
+}
+
+.panel-details__toolbar-item + .panel-details__toolbar-item {
+  border-left: 1px solid var(--border);
+}
+
+/* Flatten the individual controls so they read as segments of one bar.
+   Every button here is a peer — the bookmark toggle, the rating, the
+   icon actions, the share button — and the bar only feels unified when
+   they all share the same flat, hairline-divided treatment. The active
+   (bookmarked) state is expressed as a subtle pressed/selected segment
+   (soft accent tint + accent icon/text) rather than a solid fill, so
+   the selected control reads as part of the system instead of breaking
+   out of it. */
+.panel-details__toolbar .btn {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 var(--space-4);
+}
+
+.panel-details__toolbar .btn:hover:not(:disabled),
+.panel-details__toolbar .btn:focus-visible {
+  background: var(--surface-2);
+}
+
+/* Fill the toolbar segment so the hover (and active) backgrounds cover
+   the entire button area, not just the text+icon content box. The share
+   button does this naturally via btn--icon-only's 44px width; the
+   bookmark is a sized-to-content button and would otherwise leave the
+   segment margins unfilled on hover. */
+.panel-details__toolbar .bookmark-btn {
+  width: 100%;
+}
+
+/* Active bookmark toggle: the standard "selected segment" treatment
+   used by segmented controls everywhere (iOS, Material, Linear). A soft
+   accent tint marks the segment as selected, and the icon + label flip
+   to the accent colour so the saved state is legible without needing
+   a solid block of colour that would fight the bar. */
+.panel-details__toolbar .bookmark-btn--active,
+.panel-details__toolbar .bookmark-btn--active:hover:not(:disabled),
+.panel-details__toolbar .bookmark-btn--active:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+.panel-details__toolbar .bookmark-btn--active .bookmark-btn__icon svg {
+  fill: var(--accent-hover);
+  stroke: var(--accent-hover);
+}
+
+.panel-details__toolbar .btn--icon-only {
+  width: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.panel-details__toolbar-item--rating .star-rating {
+  height: 100%;
+  padding: 0 var(--space-3);
+}
+
+.panel-details__toolbar-item--status .reading-list-status {
+  height: 100%;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.panel-details__toolbar-item--status .reading-list-status__btn {
+  height: 28px;
+  border-radius: var(--radius-sm);
+}
+/* --- Light theme rebalance (detail page only) ------------------------------
+   The hero backdrop (blurred cover + dark gradient wash) and the floating
+   cards are tuned for the charcoal dark theme. On light paper the backdrop
+   turns into a muddy gray smear and faint uppercase labels lose contrast.
+   These overrides apply only under [data-theme='light'] — dark is untouched. */
+[data-theme='light'] .panel-details__backdrop {
+  filter: blur(52px) saturate(1.5) brightness(1.05);
+  opacity: 0.55;
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 40%, transparent 92%);
+}
+
+[data-theme='light'] .panel-details__backdrop::after {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.88) 100%
+  );
+}
+
+/* Frosted panels: hero content sits on its own translucent white surface
+   instead of directly on the pastel wash. */
+[data-theme='light'] .panel-details__meta,
+[data-theme='light'] .panel-details__toolbar {
+  background: rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme='light'] .panel-details__primary-actions .btn--outline {
+  background: rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+[data-theme='light'] .panel-details__cover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* Genre chips read better as white pills over the pastel wash */
+[data-theme='light'] .panel-details .genre-chip {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: var(--border-strong);
+  color: var(--text-soft);
+}
+
+[data-theme='light'] .panel-details .genre-chip:hover {
+  background: #ffffff;
+}
+
+/* Faint uppercase labels (GENRES / TAGS / meta labels) need more ink when
+   they sit over the pastel wash instead of the dark backdrop. */
+[data-theme='light'] .panel-details .genre-list-label,
+[data-theme='light'] .panel-details .meta-label {
+  color: var(--text-dim);
+}
+
+/* Desktop: put the secondary toolbar on the same row as the read buttons,
+   pushed to the far right edge (per design). Tablet/mobile keep it stacked
+   below, where there isn't enough width to fit both groups side by side. */
+@media (min-width: 768px) {
+  .panel-details__actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-details__primary-actions {
+    width: auto;
+  }
+  .panel-details__toolbar {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel-details__actions {
+    align-items: stretch;
+  }
+  .panel-details__primary-actions {
+    flex-direction: column;
+  }
+  .panel-details__primary-actions .btn--lg {
+    width: 100%;
+    justify-content: center;
+  }
+  /* Mobile: stack the toolbar vertically as a single-column pill — one
+     full-width row per control (bookmark + folder, rating, reading
+     status, share). Each row gets the full mobile width so text labels
+     breathe and the segmented controls (rating stars, reading status)
+     sit on their own line instead of being squeezed into a 2×2 grid
+     next to a wider neighbour. The bookmark + folder picker pair is
+     fused into a single shared row using an explicit grid template so
+     the icon-only folder sits flush next to the text-bearing toggle.
+     Rows are separated by 1px hairlines that match the existing
+     border colour so the stack reads as one unified pill. */
+  .panel-details__toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      'bookmark'
+      'rating'
+      'status'
+      'share';
+    gap: 1px;
+    height: auto;
+    min-height: 0;
+    width: 100%;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+  /* When the folder picker is present (panel is bookmarked), split the
+     bookmark row into two grid columns so the icon-only folder sits
+     flush next to the text-bearing toggle. The remaining rows stay
+     single-column below. */
+  .panel-details__toolbar:has(.panel-details__toolbar-item--bookmark-folders) {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'bookmark folders'
+      'rating rating'
+      'status status'
+      'share share';
+  }
+  .panel-details__toolbar-item--bookmark {
+    grid-area: bookmark;
+  }
+  .panel-details__toolbar-item--bookmark-folders {
+    grid-area: folders;
+  }
+  .panel-details__toolbar-item--rating {
+    grid-area: rating;
+  }
+  .panel-details__toolbar-item--status {
+    grid-area: status;
+  }
+  .panel-details__toolbar-item--share {
+    grid-area: share;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  /* Hairline between the fused bookmark + folder pair (mobile only). */
+  .panel-details__toolbar:has(.panel-details__toolbar-item--bookmark-folders)
+    .panel-details__toolbar-item--bookmark {
+    border-right: 1px solid var(--border);
+  }
+  .panel-details__toolbar-item {
+    min-height: 48px;
+    background: var(--surface);
+  }
+  .panel-details__toolbar-item + .panel-details__toolbar-item {
+    border-left: 0;
+  }
+  .panel-details__toolbar .btn {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    padding: 0 var(--space-3);
+  }
+  /* Icon-only segments (folder, share) size to a comfortable 44px tap
+     target on mobile instead of stretching to fill the full row, so the
+     row height stays consistent with the text-bearing segments. */
+  .panel-details__toolbar .btn--icon-only {
+    width: 44px;
+    align-self: center;
+  }
+  .panel-details__toolbar-item--rating .star-rating,
+  .panel-details__toolbar-item--status .reading-list-status {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    padding: 0 var(--space-3);
+  }
+  .panel-details__toolbar .star-rating__star svg {
+    width: 16px;
+    height: 16px;
+  }
+  .panel-details__toolbar .star-rating__value {
+    margin-left: var(--space-1);
+    white-space: nowrap;
+  }
+}
+
+/* --- Tablet band (iPad Air 820×1180, iPad 768×1024, etc.) ------------------
+   The existing breakpoints either (a) force the desktop side-by-side hero +
+   one-row action bar (min-width: 768px) or (b) stack everything into a narrow
+   single column (max-width: 768px). At 820px viewport the page falls into a
+   no-man's-land: the hero is fine but the meta `<dl>` only fits 2 cramped
+   columns and the Continue/Start buttons + 4-segment bookmark/rating/status/
+   share toolbar overflow into an awkward 3-row wrap. This band sits between
+   the two existing layouts and rebalances both. */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Hero: keep the cover at 280px so it stays visibly large, but still
+     leave the info column enough room for the meta + actions row
+     (788px content − 280px cover − 32px gap ≈ 476px for meta + actions). */
+  .panel-details__hero {
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-6);
+  }
+
+  /* Meta: 3 columns at tablet so Author / Artist / Status / Updated /
+     Chapters / Source each get their own tile, instead of the auto-fit
+     that yields a cramped 2-column wrap at ~544px content. */
+  .panel-details__meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4);
+  }
+
+  /* Actions: stack primary buttons above the secondary toolbar — like the
+     mobile layout — BUT keep the toolbar in its inline-flex horizontal strip
+     (NOT the 2×2 mobile grid), so it reads as a clean two-row tablet layout
+     instead of one cramped row that wraps awkwardly. */
+  .panel-details__actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+  .panel-details__primary-actions {
+    width: 100%;
+  }
+  .panel-details__toolbar {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  /* Chapter section controls: prevent wrapping so sort + filter share a
+     single row, and widen the filter input slightly so it doesn't look
+     squished next to the segmented sort toggle. */
+  .section-controls {
+    flex-wrap: nowrap;
+  }
+  .chapter-filter-wrapper {
+    max-width: 440px;
+  }
+
+  /* Slight horizontal gutter so the content doesn't feel pressed against
+     the iPad edges at 820px. */
+  .panel-details {
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+}
+
+.btn--lg {
+  padding: 14px 28px;
+  font-size: var(--font-size-md);
+  border-radius: var(--radius-md);
+}
+
+.btn-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-text-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.btn-text {
+  display: block;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+}
+
+.btn-subtext {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  opacity: 0.8;
+}
+
+.btn--continue {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(229, 72, 77, 0.3);
+}
+
+.btn--continue:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 6px 24px rgba(229, 72, 77, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn--outline {
+  background: transparent;
+  border: 2px solid var(--border);
+  color: var(--text);
+}
+
+.btn--outline:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.btn--icon-only {
+  padding: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn--icon-only svg {
+  pointer-events: none;
+}
+
+/* --- Section Styles ------------------------------------------------------- */
+.panel-details__section {
+  margin-top: var(--space-8);
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  transition: all var(--duration-fast);
+}
+
+/* Variant: section title + result-count chip on the left, filter input on
+   the right. Used by the "Your panel" section on /settings/cache so a search
+   bar can sit inline with the heading on desktop and wrap below it on phones. */
+.section-header__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.section-header--with-search {
+  align-items: center;
+}
+.section-header--with-search .filter-search-bar {
+  flex: 1 1 220px;
+  max-width: 360px;
+  /* `align-self: center` keeps the input vertically centered when the title
+     row above wraps to two lines on very narrow screens. */
+  align-self: center;
+}
+@media (max-width: 640px) {
+  .section-header--with-search .filter-search-bar {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+.section-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--text);
+}
+
+.section-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: var(--space-2);
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.section-count__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* --- Synopsis ------------------------------------------------------------- */
+.panel-details__synopsis .panel-details__description {
+  color: var(--text-soft);
+  line-height: 1.8;
+  white-space: pre-line;
+  font-size: var(--font-size-md);
+  margin: 0;
+}
+
+.panel-details__description-wrapper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  position: relative;
+}
+
+.panel-details__description {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+  transition: max-height var(--duration-med) var(--ease-out);
+}
+
+.panel-details__description:not(.truncated) {
+  max-height: none;
+}
+
+.panel-details__description.truncated::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(180deg, transparent 0%, var(--surface) 100%);
+  pointer-events: none;
+}
+
+.btn--expand {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* --- Chapter Section Controls -------------------------------------------- */
+.section-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .section-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Segmented sort toggle */
+.sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+
+.sort-toggle__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sort-toggle__option:hover:not(.sort-toggle__option--active) {
+  color: var(--text-soft);
+}
+
+.sort-toggle__option--active {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.sort-toggle__option:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.view-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+
+.view-mode-toggle .btn--icon-only {
+  background: transparent;
+  border: none;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition: all var(--duration-fast);
+}
+
+.view-mode-toggle .btn--icon-only.active {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.view-mode-toggle .btn--icon-only:not(.active):hover {
+  color: var(--text-dim);
+  background: var(--surface-3);
+}
+
+.chapter-filter-wrapper {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+@media (max-width: 640px) {
+  .chapter-filter-wrapper {
+    order: 3;
+    width: 100%;
+    max-width: none;
+    margin-top: var(--space-2);
+  }
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  right: var(--space-3);
+  color: var(--text-faint);
+  pointer-events: none;
+  z-index: 1;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.search-input-wrapper:focus-within .search-icon {
+  color: var(--accent);
+}
+
+/* The clear button takes the icon's spot once text is entered. */
+.search-input-wrapper:has(.search-clear) .search-icon {
+  display: none;
+}
+
+.chapter-filter {
+  width: 100%;
+  padding: 9px 42px 9px 14px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.chapter-filter:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.search-clear {
+  position: absolute;
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.search-clear:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.chapters-loading {
+  padding: var(--space-5) 0;
+}
+
+/* --- Chapter List Container ---------------------------------------------- */
+.chapter-list-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.chapter-list-container.grid-view {
+  padding: var(--space-4);
+}
+
+/* ============================================================================
+   VOLUME-BASED CHAPTER LIST � Modern Professional UI
+   ============================================================================ */
+
+.chapter-list,
+.chapter-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* --- Simple Chapter List Items -------------------------------------------- */
+.chapter-list__item-wrapper {
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-list__item-wrapper:last-child {
+  border-bottom: none;
+}
+
+.chapter-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: transparent;
+  border: none;
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--duration-fast);
+}
+
+.chapter-list__item:hover {
+  background: var(--surface-2);
+}
+
+.chapter-list__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.chapter-list__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-list__title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chapter-list__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-list__progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.chapter-list__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.chapter-list__date {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Reading-list status control (T1-5) ------------------------------------ */
+/* Compact segmented pill, vertically centred against the other action
+   controls on the details page. */
+
+.reading-list-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+
+.reading-list-status__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.reading-list-status__btn:hover:not(:disabled),
+.reading-list-status__btn:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+}
+
+.reading-list-status__btn--active {
+  background: var(--accent);
+  color: var(--text-on-accent, #fff);
+}
+
+.reading-list-status__btn--remove {
+  width: 24px;
+  color: var(--danger);
+}
+
+.reading-list-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.reading-list-pill--want_to_read {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 14%, transparent);
+}
+
+.reading-list-pill--reading {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.reading-list-pill--completed {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.chapter-list__item--read {
+  opacity: 0.7;
+}
+
+.chapter-list__item--read .chapter-list__title {
+  color: var(--text-dim);
+}
+
+/* Filler marker (T2-7): small badge next to the chapter title. */
+.chapter-list__marker {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.chapter-list__marker--filler {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* Long-press (T2-3): the row being held gets a subtle "lifted" state so the
+   user knows the menu is coming. */
+.chapter-list__item--pressing {
+  background: var(--surface-2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* Multi-select: the row currently toggled in via the select-checkbox
+   gets a left accent bar + faint accent-soft background so the picked
+   chapter is obvious at a glance. The bar is positioned over the wrapper
+   border so the row still looks like one unit. */
+.chapter-list__item--selected {
+  background: color-mix(in srgb, var(--accent, #7864dc) 8%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent, #7864dc);
+}
+
+.chapter-list__item--selected.chapter-list__item--read {
+  /* Keep selected more prominent than the read dimming. */
+  opacity: 1;
+}
+
+.chapter-list__item--selected .chapter-list__title {
+  color: var(--text);
+}
+
+/* Chapter context menu (long-press quick-action menu, T2-3). */
+.chapter-context-menu {
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chapter-context-menu__item {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.chapter-context-menu__item:hover {
+  background: var(--surface-2);
+}
+
+/* --- Volume Section ------------------------------------------------------- */
+.chapter-volume {
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-volume:last-child {
+  border-bottom: none;
+}
+
+.chapter-volume--grid {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Volume Header (List View) */
+.chapter-volume__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.chapter-volume__header:hover {
+  background: var(--surface-2);
+}
+
+.chapter-volume__header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chapter-volume__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.chapter-volume__toggle:hover {
+  background: var(--surface-2);
+}
+
+.chapter-volume__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chapter-volume__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  border-radius: var(--radius-sm);
+  transition:
+    transform var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.chapter-volume__icon svg {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chapter-volume__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-volume__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+  margin: 0 0 var(--space-1);
+}
+
+.chapter-volume__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+}
+
+.chapter-volume__divider {
+  color: var(--text-faint);
+}
+
+.chapter-volume__progress-text {
+  color: var(--info);
+  font-weight: var(--font-weight-medium);
+}
+
+.chapter-volume__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.chapter-volume__progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.chapter-volume__progress-bar::before {
+  content: '';
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  border-radius: var(--radius-full);
+  transition: width var(--duration-med) var(--ease-out);
+}
+
+.chapter-volume__progress-pct {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Volume Chapters List */
+.chapter-volume__chapters {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  transition:
+    max-height var(--duration-med) var(--ease-out),
+    opacity var(--duration-fast);
+}
+
+.chapter-volume__chapters.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+}
+
+/* Grid View Chapters Inner */
+.chapter-volume__chapters .chapter-grid__inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+@media (max-width: 480px) {
+  .chapter-volume__chapters .chapter-grid__inner {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Chapter Item (List View) --------------------------------------------- */
+.chapter-volume__item-wrapper:not(:last-child) .chapter-volume__item {
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-volume__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--duration-fast);
+}
+
+.chapter-volume__item:hover {
+  background: var(--surface-2);
+}
+
+.chapter-volume__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.chapter-volume__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-volume__title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chapter-volume__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-faint);
+  padding: 4px 10px;
+  white-space: nowrap;
+  transition: all var(--duration-fast);
+}
+
+.chapter-volume__item:hover .chapter-volume__badge {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chapter-volume__title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.chapter-volume__item--read {
+  opacity: 0.7;
+}
+
+.chapter-volume__item--read .chapter-volume__badge {
+  background: var(--success);
+  color: #fff;
+  border-color: var(--success);
+}
+
+.chapter-volume__item--read .chapter-volume__title {
+  color: var(--text-dim);
+}
+
+.chapter-volume__progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.chapter-volume__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.chapter-volume__date {
+  font-variant-numeric: tabular-nums;
+}
+
+.chapter-volume__chevron {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition:
+    transform var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.chapter-volume__item:hover .chapter-volume__chevron {
+  transform: translateX(4px);
+  color: var(--text-dim);
+}
+
+/* --- Chapter Card (Grid View) --------------------------------------------- */
+.chapter-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow: hidden;
+  transition: all var(--duration-fast);
+}
+
+.chapter-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.chapter-card--read {
+  opacity: 0.7;
+  border-color: var(--success);
+}
+
+.chapter-card__link {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-4);
+  text-decoration: none;
+  color: inherit;
+}
+
+.chapter-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.chapter-card__title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chapter-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-faint);
+  padding: 4px 10px;
+  white-space: nowrap;
+  transition: all var(--duration-fast);
+}
+
+.chapter-card:hover .chapter-card__badge {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chapter-card__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.chapter-card__progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  align-self: flex-start;
+}
+
+.chapter-card__meta {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.chapter-card__date {
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Chapter Grid (Legacy fallback) --------------------------------------- */
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+  padding: 0;
+}
+
+@media (max-width: 480px) {
+  .chapter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Empty State --------------------------------------------------------- */
+.empty-state {
+  text-align: center;
+  padding: var(--space-10) var(--space-5);
+  color: var(--text-faint);
+}
+
+.empty-state svg {
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-4);
+  opacity: 0.4;
+}
+
+.empty-state h3 {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-dim);
+  margin: 0 0 var(--space-2);
+}
+
+.empty-state p {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+@media (max-width: 768px) {
+  .panel-details__hero {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
+    max-width: none;
+    margin: 0 0 var(--space-5);
+  }
+  .panel-details__primary-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+  .panel-details__primary-actions .btn--lg {
+    width: 100%;
+    justify-content: center;
+  }
+  .section-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .view-mode-toggle {
+    width: fit-content;
+    margin: 0 auto;
+  }
+  .chapter-filter-wrapper {
+    width: 100%;
+    max-width: none;
+  }
+  .chapter-list--grid {
+    grid-template-columns: 1fr;
+  }
+  .breadcrumb {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .view-mode-toggle {
+    display: none;
+  }
+  .sort-toggle {
+    width: 100%;
+  }
+  .sort-toggle__option {
+    flex: 1;
+    justify-content: center;
+  }
+  /* Actions shares the segmented bar evenly with Newest/Oldest. */
+  .sort-toggle .chapter-actions-toggle {
+    flex: 1;
+    justify-content: center;
+  }
+  .panel-details__meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Bookmarks (card grid) ----------------------------------------------- */
+
+.bookmarks-header {
+  margin-bottom: var(--space-3);
+}
+
+/* Unified filter toolbar: folder chips + source/tag filters + search, all on
+   one wrapping row under the page title. */
+.bookmarks-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+/* On desktop the chip strip keeps its natural content width, exactly like
+   the Latest page's toolbar. Only on touch/small screens — where the strip
+   becomes a scrollable full-row element — does it flex into the remaining
+   space beside the folder trigger instead of fighting it for the row
+   ("Nihon…" cut off). */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  .bookmarks-toolbar .source-filter {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    align-self: center;
+  }
+}
+
+/* Title filter reuses the hero search-bar pill. Sits at the right end of the
+   toolbar on desktop; gets its own full-width row once the toolbar wraps on
+   phones (640px) so it never squeezes the chip strip's swipe room. */
+.bookmarks-toolbar .filter-search-bar {
+  flex: 1 1 220px;
+  max-width: 380px;
+}
+
+/* Refinement selects cluster right, docked before the search field —
+   the same pills · filters · search composition as the latest toolbar.
+   The group carries the auto margin (not the search field) so the three
+   dropdowns stay together instead of floating mid-row. */
+.bookmarks-toolbar .search-filters {
+  margin-left: auto;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+/* Panel foot: bookmark-level actions (import/export/edit) below the
+   folder list, separated by a hairline. Rows match the folder items so
+   the whole menu reads as one list. */
+.bookmark-folder-selector__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bookmark-folder-selector__display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--space-1);
+}
+
+.bookmark-folder-selector__display-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text);
+}
+.bookmark-folder-selector__action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.bookmark-folder-selector__action:hover:not(:disabled),
+.bookmark-folder-selector__action:focus-visible:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+}
+.bookmark-folder-selector__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.bookmark-folder-selector__action.bookmark-manage-toggle--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .bookmarks-toolbar .filter-search-bar {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+/* Title + mobile edit-mode toggle on one line. */
+.bookmarks-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Mobile edit-mode toggle: desktop keeps hover-revealed actions, so the
+   button itself is meaningless there. */
+.bookmark-manage-toggle {
+  display: none;
+}
+.bookmark-manage-toggle--active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  /* Header stacking (title above controls) comes from the shared
+     .page-header--split rule at 640px � do NOT re-align to flex-start here,
+     or the full-width source-filter strip inside the controls row gets
+     shrink-wrapped and loses its swipe room. */
+  .bookmarks-header .sort-toggle {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .bookmarks-header .sort-toggle__option {
+    justify-content: center;
+  }
+}
+
+/* Grid layout (columns/gap) lives with the shared card grid in
+   components.css so bookmarks stay in sync with latest/search. */
+.bookmark-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.bookmark-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Stretched link (BookmarksPage): an invisible anchor covering the entire
+   card so a click anywhere opens the details page, matching the latest
+   page's card behaviour. Interactive elements above it get z-index: 2. */
+.bookmark-card__stretched {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  outline-offset: -2px;
+}
+.bookmark-card__stretched:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.bookmark-card__media {
+  position: relative;
+}
+
+.bookmark-card__cover {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.bookmark-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bookmark-card__fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-faint);
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+}
+
+.bookmark-card__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(10, 11, 15, 0.55), transparent 45%);
+  pointer-events: none;
+}
+
+/* Actions overlay the cover so the card body (title + meta) keeps the exact
+   same height as the latest-page cards. Revealed on hover (desktop); always
+   visible on touch devices. */
+.bookmark-card__actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  padding: var(--space-2);
+  background: linear-gradient(
+    to top,
+    rgba(10, 11, 15, 0.88),
+    rgba(10, 11, 15, 0.55) 70%,
+    transparent
+  );
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-med) var(--ease-out),
+    transform var(--duration-med) var(--ease-out);
+}
+
+.bookmark-card:hover .bookmark-card__actions,
+.bookmark-card:focus-within .bookmark-card__actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.bookmark-card__actions .btn {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.bookmark-card__actions .btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.bookmark-card__actions .btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.bookmark-card__actions .btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.bookmark-card__actions .btn--danger-ghost {
+  background: rgba(229, 72, 77, 0.2);
+}
+
+.bookmark-card__actions .btn--danger-ghost:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.35);
+}
+
+.bookmark-card__remove {
+  flex: 0 0 auto !important;
+  width: 34px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.bookmark-card__action-label {
+  display: none;
+}
+
+.bookmark-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: var(--space-3);
+}
+
+/* Hover accent removed: the card no longer changes the title colour on hover. */
+
+/* Folder membership pills (T2-8) — overlaid on the cover's bottom-right
+   corner so the bookmark card body stays a single title/progress line.
+   Caps at 3 visible + a "+N" overflow. */
+.bookmark-card__folders {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  z-index: 4;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(100% - var(--space-4));
+  pointer-events: none;
+}
+.bookmark-card__folder-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--text-soft);
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+.bookmark-card__folder-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bookmark-card__folder-pill--more {
+  color: var(--text-dim);
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+}
+/* Hovering the card reveals the action strip on the same bottom band —
+   fade the folder pill out so the buttons stay readable. */
+.bookmark-card:hover .bookmark-card__folders,
+.bookmark-card:focus-within .bookmark-card__folders {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+/* Drag-and-drop affordances: when a card is being dragged it dims slightly
+   so the user can see which card the drop targets belong to. */
+.bookmark-card[draggable='true'] {
+  cursor: grab;
+}
+.bookmark-card[draggable='true']:active {
+  cursor: grabbing;
+}
+.bookmark-card--dragging {
+  opacity: 0.5;
+}
+
+/* Per-card "Move to folder" button — same chip row as Continue/Open. */
+.bookmark-card__folder {
+  color: var(--text);
+}
+.bookmark-card__folder:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Drop overlay — full-screen layer that appears the moment a bookmark
+   card starts dragging. Lists every custom folder as a large drop
+   target; releasing the drag on one moves the bookmark there. The
+   backdrop dims the page but uses pointer-events: none so it never
+   intercepts the drag itself — only the folder tiles are interactive. */
+.drag-folder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  animation: drag-folder-overlay-fade var(--duration-fast) var(--ease-out);
+}
+.drag-folder-overlay__chrome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+.drag-folder-overlay__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-md);
+}
+.drag-folder-overlay__title {
+  color: var(--text);
+  font-weight: var(--font-weight-medium);
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drag-folder-overlay__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 640px;
+  pointer-events: none;
+}
+.drag-folder-overlay__target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  min-height: 120px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  text-align: center;
+  pointer-events: auto;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    border-style var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.drag-folder-overlay__target:hover {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+.drag-folder-overlay__target--over,
+.drag-folder-overlay__target[aria-drop='over'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent-hover);
+  transform: scale(1.02);
+}
+.drag-folder-overlay__name {
+  word-break: break-word;
+}
+.drag-folder-overlay__cancel {
+  pointer-events: auto;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.drag-folder-overlay__cancel:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+@keyframes drag-folder-overlay-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Mobile: bottom-sheet style — folders stack at the bottom of the
+   screen with a single column, so the user can drop without aiming
+   precisely. The hint chip slides above the folder list. */
+@media (max-width: 560px) {
+  .drag-folder-overlay {
+    justify-content: flex-end;
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+  .drag-folder-overlay__list {
+    grid-template-columns: 1fr;
+    max-width: 100%;
+  }
+  .drag-folder-overlay__target {
+    min-height: 64px;
+    padding: var(--space-3) var(--space-4);
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+}
+
+/* Touch + mobile: pull the actions out of the cover and into the card flow
+   (cover ? title/meta ? actions) so they never obstruct the image. */
+@media (hover: none), (max-width: 560px) {
+  .bookmark-card__media {
+    display: contents;
+  }
+  .bookmark-card__body {
+    order: 2;
+  }
+  .bookmark-card__actions {
+    display: none;
+  }
+  .bookmark-card__actions .btn {
+    flex: 1;
+    color: var(--text);
+  }
+  .bookmark-card__actions .btn--ghost {
+    background: var(--surface-2);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .bookmark-card__actions .btn--ghost:hover:not(:disabled) {
+    background: var(--surface-3);
+  }
+  .bookmark-card__actions .btn--danger-ghost {
+    background: transparent;
+    color: var(--danger);
+    border-color: transparent;
+  }
+  .bookmark-card__actions .btn--danger-ghost:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
+  .bookmark-card__actions .bookmark-card__continue {
+    flex: 1 1 100%;
+  }
+  /* Redundant on mobile � the cover and title already open the panel. */
+  .bookmark-card__open {
+    display: none;
+  }
+  .bookmark-card__remove {
+    flex: 0 0 auto !important;
+    width: auto;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  /* Remove buttons appear only while edit-mode is active.
+     Pin the toggle to the far right edge of the header row. */
+  .bookmark-manage-toggle {
+    display: inline-flex;
+    margin-left: auto;
+  }
+  .bookmark-card__actions .bookmark-card__remove {
+    display: none;
+  }
+  .bookmark-grid--manage .bookmark-card__actions .bookmark-card__remove {
+    display: inline-flex;
+  }
+  .bookmark-card__action-label {
+    display: inline;
+  }
+}
+
+/* ============================================================================
+   IMAGE CACHE WIDGET (home page) + SETTINGS PAGE
+   ============================================================================ */
+
+/* --- Home widget: now a slim badge with a link to the dedicated page --- */
+.home-hero__cache-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.home-hero__cache-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  transition: color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.home-hero__cache-manage:hover,
+.home-hero__cache-manage:focus-visible {
+  color: var(--accent-hover);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+  transform: translateY(-1px);
+}
+.home-hero__cache-manage:active {
+  transform: translateY(0);
+}
+
+/* The unused collapse/toast styles from the previous design are kept here as
+   dead code-pending removal; they no longer have any JSX counterpart on the
+   home page but are harmless if reintroduced. */
+.home-hero__cache-toggle,
+.home-hero__cache-actions,
+.home-hero__cache-toast {
+  display: none;
+}
+
+/* --- Cache settings page (/settings/cache) ------------------------------- */
+.cache-settings {
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.cache-settings__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cache-settings__back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  width: max-content;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.cache-settings__back-link:hover,
+.cache-settings__back-link:focus-visible {
+  color: var(--text);
+  background: var(--bg-elevated);
+  outline: none;
+}
+
+.cache-settings__title {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.cache-settings__subtitle {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  max-width: 60ch;
+}
+
+.cache-settings__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cache-settings__section {
+  margin-top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cache-settings__help {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  max-width: 70ch;
+}
+
+/* --- Usage overview --- */
+.cache-settings__usage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cache-settings__usage-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cache-settings__usage-size {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.cache-settings__usage-cap {
+  color: var(--text-dim);
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-settings__usage-percent {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-settings__bar {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+.cache-settings__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width var(--duration-medium) var(--ease-out);
+}
+
+.cache-settings__breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.cache-settings__breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.cache-settings__breakdown-row dt {
+  font-size: var(--font-size-xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+}
+.cache-settings__breakdown-row dd {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.cache-settings__breakdown-row dd strong {
+  font-size: var(--font-size-md);
+  font-variant-numeric: tabular-nums;
+}
+.cache-settings__breakdown-meta {
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Maximum size --- */
+.cache-settings__limit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+.cache-settings__limit-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+}
+.cache-settings__limit-input {
+  width: 7rem;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.cache-settings__limit-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cache-settings__limit-input:disabled {
+  opacity: 0.55;
+}
+.cache-settings__limit-meta {
+  margin: var(--space-2) 0 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Clear actions --- */
+.cache-settings__actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.cache-settings__action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.cache-settings__action:hover:not(:disabled),
+.cache-settings__action:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  outline: none;
+}
+.cache-settings__action:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.cache-settings__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cache-settings__action--danger {
+  border-color: rgba(229, 72, 77, 0.4);
+}
+.cache-settings__action--danger:hover:not(:disabled),
+.cache-settings__action--danger:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cache-settings__action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.cache-settings__action-title {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+}
+.cache-settings__action-meta {
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-settings__source-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* (Tablet/mobile responsive rules for the cache page have moved to the
+   .cache-settings__panel-list / __modal / __tags section near the bottom
+   of this file, alongside the other page-specific responsive overrides.) */
+/* --- Your panel list (per-panel / per-chapter selective clear) --- */
+
+/*
+ * "Your panel" section is collapsible by default — the per-panel list can
+ * grow into the hundreds on heavy users, and the user only needs it for
+ * selective clearing. Collapsing it keeps the headline stats + bulk-clear
+ * actions above the fold on first visit. Native <details>/<summary> gives
+ * keyboard + screen-reader behaviour for free; the chevron is purely visual.
+ */
+.cache-settings__section--collapsible {
+  /* Host element behaves like a normal section; only the summary line
+     is interactive. Strip the default disclosure marker — we draw our
+     own caret-disc via the inner span. */
+}
+.cache-settings__section--collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.cache-settings__section--collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+.cache-settings__section--collapsible > summary::marker {
+  content: '';
+}
+.cache-settings__section--collapsible > summary:focus {
+  outline: none;
+}
+.cache-settings__section--collapsible > summary:focus-visible .cache-settings__section-summary {
+  box-shadow: var(--shadow-focus);
+  border-color: var(--accent);
+}
+
+/* Disclosure summary (inventory status strip). Grid: caret · title-stack ·
+   counter. The filter field lives in the collapsible body toolbar below,
+   so the header stays a clean one-line ledger entry on every viewport and
+   no interactive control is nested inside <summary> (which would toggle
+   the section on tap). */
+.cache-settings__section-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  column-gap: calc(var(--space-3) + 2px);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  list-style: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.cache-settings__section-summary:hover {
+  border-color: var(--border-strong);
+}
+
+.cache-settings__caret {
+  grid-column: 1;
+}
+.cache-settings__section-title {
+  grid-column: 2;
+}
+.cache-settings__section-counter {
+  grid-column: 3;
+}
+
+/* Open/close stamp: an outlined rounded-square chevron while collapsed;
+   once the list is open it fills solid accent with a white chevron, so
+   the sheet's state reads at a glance. */
+.cache-settings__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  flex-shrink: 0;
+  background: var(--bg);
+  transition:
+    transform var(--duration-med) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.cache-settings__section--collapsible[open] > summary .cache-settings__caret {
+  transform: rotate(-90deg);
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cache-settings__section-summary:hover .cache-settings__caret {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.cache-settings__section--collapsible[open]
+  > summary:hover
+  .cache-settings__caret {
+  color: var(--accent-contrast);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* Title stack — a tiny kicker above the heading, so the left reads like a
+   document header ("INVENTORY / Your panel") rather than a toolbar. */
+.cache-settings__section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Eyebrow — uppercase, wide tracking, dim. */
+.cache-settings__eyebrow {
+  font-size: 0.6rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Heading — quieter than the page title; ledger row, not headline. */
+.cache-settings__section-heading {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Toolbar pinned to the top of the collapsible body: full-width quiet
+   field with a 44px touch target. Sits above the help copy so filtering
+   is the first thing a thumb reaches after expanding the section. */
+.cache-settings__panel-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.cache-settings__panel-toolbar .filter-search-bar {
+  width: 100%;
+  max-width: none;
+  background: var(--bg);
+  border-color: var(--border);
+}
+.cache-settings__panel-toolbar .filter-search-bar:focus-within {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+.cache-settings__panel-toolbar .filter-search-bar input {
+  min-height: 24px;
+  font-size: var(--font-size-md);
+}
+
+/* Footnote counter — mirrors each row's footprint column (number over a
+   small-caps caption): the sheet's headline count up top, its state ("n
+   cached", "matching") beneath. */
+.cache-settings__section-counter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cache-settings__section-counter-num {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--text-soft);
+}
+.cache-settings__section-counter-num span {
+  font-weight: var(--font-weight-regular);
+  color: var(--text-dim);
+}
+.cache-settings__section-counter-caption {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Phones: roomier header card, kicker hidden, counter pinned right.
+   The toolbar field below stretches edge to edge with a full 44px hit
+   area so it never sits cramped beside the count. */
+@media (max-width: 720px) {
+  .cache-settings__section-summary {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+  .cache-settings__section-heading {
+    font-size: var(--font-size-md);
+  }
+  .cache-settings__eyebrow {
+    display: none;
+  }
+  .cache-settings__section-counter {
+    align-items: flex-end;
+    min-width: 64px;
+  }
+  .cache-settings__section-counter-num {
+    font-size: var(--font-size-md);
+  }
+  .cache-settings__panel-toolbar .filter-search-bar {
+    padding: 10px 10px 10px var(--space-4);
+  }
+  .cache-settings__panel-toolbar .filter-search-bar input {
+    min-height: 28px;
+    font-size: var(--font-size-md);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cache-settings__caret,
+  .cache-settings__section-summary {
+    transition: none;
+  }
+}
+
+.cache-settings__empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Disclosure body (orchestrated open/close) --- */
+
+/* Wrap the body in a grid row whose track-size we animate from 0fr to
+   1fr, so the whole list expands in one fluid motion instead of
+   per-line. The inner <div> holds min-height: 0 so the grid track is
+   allowed to collapse. */
+.cache-settings__section--collapsible > .cache-settings__section-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows var(--duration-med) var(--ease-out),
+    margin-top var(--duration-med) var(--ease-out),
+    opacity var(--duration-med) var(--ease-out);
+  margin-top: 0;
+  opacity: 0;
+}
+.cache-settings__section--collapsible[open] > .cache-settings__section-body {
+  grid-template-rows: 1fr;
+  margin-top: var(--space-3);
+  opacity: 1;
+}
+.cache-settings__section--collapsible > .cache-settings__section-body > .cache-settings__section-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Staggered row reveal. Each row gets `--row-index` set in JSX;
+   delay = index * 28ms, capped at 12 so a 500-row list doesn't take
+   forever to appear. */
+.cache-settings__panel-row {
+  animation: ledger-row-in var(--duration-med) var(--ease-out) both;
+  animation-delay: calc(min(var(--row-index, 0), 12) * 28ms);
+}
+@keyframes ledger-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cache-settings__panel-row {
+    animation: none;
+  }
+  .cache-settings__section--collapsible > .cache-settings__section-body {
+    transition: none;
+  }
+}
+
+/* --- "Your panel" — inventory of the cache's own stock --- */
+
+/* Each row stands for one bookmarked title: title + source on the left,
+   footprint (bytes + files) in the middle, clear-chips on the right.
+   Rows stack on a single hairline so the list reads as one continuous
+   sheet. */
+.cache-settings__panel-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+
+.cache-settings__panel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    opacity var(--duration-med) var(--ease-out);
+}
+.cache-settings__panel-row:hover,
+.cache-settings__panel-row:has(:focus-visible) {
+  background: var(--surface-2);
+}
+.cache-settings__panel-row:last-child {
+  border-bottom: 0;
+}
+
+/* Primary target: title + source. Clicks open the per-chapter drill-in;
+   the chevron on the far side says "more inside". */
+.cache-settings__panel-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.cache-settings__panel-info:focus-visible {
+  outline: none;
+}
+
+.cache-settings__panel-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cache-settings__panel-title {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+  font-size: var(--font-size-md);
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cache-settings__panel-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+}
+
+/* Source code pill — mono chip in the meta line. */
+.cache-settings__source-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+.cache-settings__source-name {
+  color: var(--text-soft);
+}
+
+/* Drill-in affordance: quiet chevron that nudges right and reddens
+   when the row's focusable detail is under the pointer/keyboard. */
+.cache-settings__panel-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-faint);
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.cache-settings__panel-info:hover .cache-settings__panel-chevron,
+.cache-settings__panel-info:focus-visible .cache-settings__panel-chevron {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Footprint column — bytes are the secondary headline; file count reads
+   as a quiet caption beneath. Tabular so the numbers line up down the
+   sheet. */
+.cache-settings__panel-footprint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 96px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cache-settings__panel-bytes {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-soft);
+  letter-spacing: -0.01em;
+}
+.cache-settings__panel-files {
+  font-size: var(--font-size-xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Zero-footprint rows dim out, so the sheet visibly shows what clearing
+   a title does to it. */
+.cache-settings__panel-row--uncached {
+  opacity: 0.72;
+}
+.cache-settings__panel-row--uncached .cache-settings__panel-bytes,
+.cache-settings__panel-row--uncached .cache-settings__panel-files {
+  color: var(--text-faint);
+}
+
+/* Clear chips — compact bordered pills; the destructive colour only
+   appears at the moment of intent (hover/focus). The two chips keep the
+   per-kind split usable without leaving the list. */
+.cache-settings__panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.cache-settings__row-action {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  margin: 0;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.cache-settings__row-action:hover:not(:disabled),
+.cache-settings__row-action:focus-visible:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--accent-soft);
+  outline: none;
+}
+.cache-settings__row-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cache-settings__panel-chevron {
+    transition: none;
+  }
+}
+
+/* --- Tag index (collapsible raw view) --- */
+.cache-settings__tags-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.cache-settings__tags-summary {
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  font-weight: var(--font-weight-medium);
+  list-style: none;
+  user-select: none;
+}
+.cache-settings__tags-summary::-webkit-details-marker {
+  display: none;
+}
+.cache-settings__tags-summary::before {
+  content: '\25B8  ';
+  display: inline-block;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+details[open] > .cache-settings__tags-summary::before {
+  content: '\25BE  ';
+}
+.cache-settings__tags-summary:hover {
+  color: var(--text);
+}
+.cache-settings__tags-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.cache-settings__tags-subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  font-weight: var(--font-weight-semibold);
+}
+.cache-settings__tags-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.cache-settings__tag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cache-settings__tag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+.cache-settings__tag-row code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-size-xs);
+}
+
+/* Filter toolbar pinned to the top of the drill-in chapter list: the
+   "Cached only" toggle on the left, a live "n of m" count on the right.
+   Plain row (no card border) so it reads as a control, not a chapter. */
+.cache-settings__list-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+.cache-settings__list-filter .cache-settings__tag-select-all {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
+}
+
+/* --- Drill-in modal (per-panel) --- */
+.cache-settings__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  animation: page-in var(--duration-fast) var(--ease-out);
+}
+
+.cache-settings__modal {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 720px;
+  width: 100%;
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cache-settings__modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.cache-settings__modal-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.cache-settings__modal-subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cache-settings__modal-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+.cache-settings__modal-close:hover,
+.cache-settings__modal-close:focus-visible {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  outline: none;
+}
+
+.cache-settings__modal-body {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.cache-settings__modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Tablet (769-1024px) — match the panel-details tablet rules. */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .cache-settings__actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cache-settings__actions-grid > .cache-settings__action--danger {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .cache-settings__usage-percent {
+    margin-left: 0;
+  }
+  .cache-settings__actions-grid {
+    grid-template-columns: 1fr;
+  }
+  .cache-settings__breakdown {
+    grid-template-columns: 1fr;
+  }
+  .cache-settings__panel-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-3);
+    padding: var(--space-4);
+  }
+  /* Two-line title clamp instead of a single truncated line, so long
+     titles stay readable without pushing the footprint off-screen. */
+  .cache-settings__panel-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.35;
+  }
+  .cache-settings__panel-chevron {
+    display: none;
+  }
+  .cache-settings__panel-footprint {
+    min-width: 72px;
+  }
+  /* Thumb-friendly actions: two equal full-width buttons with a 44px
+     hit area, instead of small right-aligned chips. */
+  .cache-settings__panel-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+    justify-content: stretch;
+  }
+  .cache-settings__row-action {
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: var(--font-size-sm);
+  }
+  .cache-settings__modal {
+    max-height: 90vh;
+  }
+}
+/* --- Chapter multi-select (drill-in dialog) --- */
+.cache-settings__tag-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.cache-settings__tag-checkbox input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+.cache-settings__tag-checkbox:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cache-settings__tag-row--head {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-weight-semibold);
+}
+.cache-settings__tag-row--head .cache-settings__tag-select-all {
+  color: var(--text-dim);
+}
+
+.cache-settings__tag-row--selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.cache-settings__tag-row--selected code {
+  color: var(--accent-hover);
+}
+
+/* Chapter-aware rows (drill-in dialog). Un-cached chapters stay in the
+   list so the user can see the full chapter index but show as muted and
+   disable their checkbox. */
+.cache-settings__tag-row--uncached {
+  opacity: 0.65;
+}
+.cache-settings__chapter-row {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.cache-settings__chapter-label {
+  color: var(--text);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.cache-settings__chapter-meta {
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cache-settings__chapter-meta--muted {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.cache-settings__row-clear {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+.cache-settings__row-clear:hover:not(:disabled),
+.cache-settings__row-clear:focus-visible:not(:disabled) {
+  color: var(--danger, #d93025);
+  background: var(--bg);
+  border-color: var(--danger, #d93025);
+  outline: none;
+}
+.cache-settings__row-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.cache-settings__row-clear--placeholder {
+  display: inline-block;
+  /* Reserve space so cached/uncached rows align. */
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+}
+
+.cache-settings__modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.cache-settings__modal-foot-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+}
+.cache-settings__modal-foot-summary strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-md);
+}

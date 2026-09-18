@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="A clean, fast panel reader." />
+    <title>Panel Reader</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Apply the saved theme before React mounts to avoid a dark flash.
+      try {
+        if (localStorage.getItem('panel-reader:theme:v1') === 'light') {
+          document.documentElement.dataset.theme = 'light';
+        }
+      } catch {}
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

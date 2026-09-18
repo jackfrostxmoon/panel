@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+tmp
+bun.lock
+package-lock.json
+database/migrations
+*.html

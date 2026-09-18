@@ -1,0 +1,1291 @@
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import type { PanelPage, SaveProgressInput } from '@panel/shared';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
+import { api } from '../api/client';
+import { useDelayedLoading } from '../hooks/useDelayedLoading';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { ErrorState } from '../components/StateView';
+import { useToast } from '../components/Toast';
+import { IconArrowDown, IconArrowUp, IconPause, IconPlay } from '../components/icons';
+import { PagedReader } from '../reader/PagedReader';
+import { GalleryReader, type GalleryReaderHandle } from '../reader/GalleryReader';
+import { ReaderSettingsPanel } from '../reader/ReaderSettingsPanel';
+import { ReaderToolbar } from '../reader/ReaderToolbar';
+import { nextReadingMode, scrollSpeedPx, DEFAULT_READER_SETTINGS, type ReaderSettings, type ReadingMode, type GlidePreset } from '../reader/settings';
+import { VerticalReader, type VerticalReaderHandle } from '../reader/VerticalReader';
+import { proxiedPageUrl } from '../utils/format';
+import {
+  applyIntent,
+  clampPage,
+  intentForKey,
+  isEditableKeyTarget,
+  nextSpreadPage,
+  prevSpreadPage,
+  progressFraction,
+  smoothProgressFraction,
+  wheelPageStep,
+} from '../reader/navigation';
+import { glideScrollTo } from '../reader/glideScroll';
+
+
+const EMPTY_PAGES: PanelPage[] = [];
+
+/**
+ * The reader — orchestrates pages, navigation (keyboard / touch / buttons),
+ * chapter transitions, settings, fullscreen and progress persistence.
+ */
+export function ReaderPage() {
+  const { chapterId = '' } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const chapterPages = useChapterPages(chapterId);
+  const showPagesLoading = useDelayedLoading(chapterPages.isLoading);
+  const prefetchChapterPages = usePrefetchChapterPages();
+  const pages = chapterPages.data?.pages ?? EMPTY_PAGES;
+  const pageCount = pages.length;
+  const panelId = chapterPages.data?.panelId ?? '';
+
+  // Tab title: "Chapter 17 · Mousou Shoujo" — falls back to "Panel Reader" while loading.
+  useDocumentTitle(
+    chapterPages.data
+      ? [chapterPages.data.chapterTitle, chapterPages.data.panelTitle]
+          .filter((s): s is string => Boolean(s))
+          .join(' · ') || null
+      : null,
+  );
+
+  const chapters = useChapters(panelId, { enabled: panelId.length > 0 });
+  const progress = useProgress(panelId, chapterId, { enabled: panelId.length > 0 });
+  const saveProgress = useSaveProgress();
+  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+
+  // Load once from server file on mount; auto-instant save on every change.
+  useEffect(() => {
+    api.getReaderSettings()
+      .then((saved) => {
+        setSettings(saved);
+      })
+      .catch(() => {
+        // Keep defaults if file is missing.
+      });
+  }, []);
+
+  const update = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      setSettings((current) => {
+        const next = { ...current, ...patch };
+        // Auto-instant save: write to file immediately.
+        void api.saveReaderSettings(next);
+        return next;
+      });
+    },
+    [],
+  );
+  const switchMode = useCallback((mode: ReadingMode) => {
+    setSettings((current) => ({ ...current, mode }));
+  }, []);
+
+  const [page, setPage] = useState(0);
+  const [scrollRatio, setScrollRatio] = useState(0);
+  /** False until the user picks "continue" / "start over" (or nothing to resume). */
+  const [resumeResolved, setResumeResolved] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Session-only memory: chapterId -> last page the user was on when leaving that chapter via chapter navigation (exact-page restore in vertical/gallery modes). */
+  const chapterPageMemoryRef = useRef<Map<string, number>>(new Map());
+  /** Paged-mode chapter transitions land on a fixed page: the next chapter opens
+      at its first page, the previous chapter at its last. Keyed by the destination
+      chapter id; consumed by the reset effect on arrival. */
+  const chapterLandingRef = useRef<Map<string, 'first' | 'last'>>(new Map());
+  /** A paged backward transition targets the previous chapter's last page, which
+      is only known once that chapter's pages arrive — hold the destination id here
+      until a parallel effect can jump to the final page. */
+  const lastPageChapterRef = useRef<string | null>(null);
+  /** The panel is heavy (shortcuts tables, dropdowns) — keep it out of the
+      initial DOM so it can't drag down LCP; mount on first open and leave it
+      mounted afterwards so close/reopen still animates. */
+  const [settingsEverOpened, setSettingsEverOpened] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Active smooth-scroll direction (Shift+W / Shift+S); null = stopped. */
+  const [scrollDir, setScrollDir] = useState<'up' | 'down' | null>(null);
+  /** Hands-free auto-scroll timer (T1-2). */
+  const [autoScrollActive, setAutoScrollActive] = useState(false);
+  /** Paused at the last page while the toggle is still on. */
+  const [autoScrollPaused, setAutoScrollPaused] = useState(false);
+  /** True while auto-scroll is actually advancing pages. */
+  const autoScrollRunning = autoScrollActive && !autoScrollPaused;
+
+  useEffect(() => {
+    if (settingsOpen) setSettingsEverOpened(true);
+  }, [settingsOpen]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const verticalRef = useRef<VerticalReaderHandle>(null);
+  const galleryRef = useRef<GalleryReaderHandle>(null);
+  const hideTimerRef = useRef<number | undefined>(undefined);
+  /**
+   * Timestamp until which programmatic keyboard-nav scrolls are ignored by
+   * the toolbar's scroll-hide logic. Set ONLY by upward keyboard navigation
+   * (step-up / Shift+W smooth-up) and consumed by the auto-hide effect's
+   * `onScroll`. Downward keyboard nav must hide the toolbar, so it clears
+   * this gate and lets its scroll events reach `hideNow()` immediately —
+   * gating downward scrolls is what kept the toolbar pinned on screen while
+   * spamming scroll-down keys. Mouse-wheel and touch scrolls don't touch
+   * this ref, so they keep the hide-on-scroll-down behavior as before.
+   */
+  const navScrollUntilRef = useRef<number>(0);
+  // Refs keep the rAF loop current without restarting on every settings change.
+  const scrollDirRef = useRef<'up' | 'down' | null>(null);
+  const isScrollingRef = useRef<boolean>(false);
+  const glideAnimRef = useRef<number>(0);
+  const rafRef = useRef<number>(0);
+  const scrollSpeedRef = useRef(scrollSpeedPx(settings.scrollSpeed));
+  /** Latest page index for timers/handlers that must not re-subscribe on page change. */
+  const pageRef = useRef(page);
+  scrollDirRef.current = scrollDir;
+  scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
+  pageRef.current = page;
+
+  /* Reset when switching chapters. The reader scrolls inside .reader-content
+     (not the window), so reset both so a cached chapter never opens mid-way.
+     A paged-mode directed transition chooses the landing position: the next
+     chapter opens at its first page, the previous chapter at its last page.
+     Otherwise, if we have a saved page for this chapter from a previous
+     chapter navigation (vertical/gallery), restore it instead of starting
+     from page 0. */
+  useEffect(() => {
+    const landing = chapterLandingRef.current.get(chapterId);
+    chapterLandingRef.current.delete(chapterId);
+    if (landing) {
+      // Directed paged-mode transition — the position is decided for us, so
+      // suppress the resume prompt. The previous chapter's last page needs the
+      // payload's page count, which isn't known yet; hold the destination id in
+      // lastPageChapterRef and let the page-load effect apply it below.
+      lastPageChapterRef.current = landing === 'last' ? chapterId : null;
+      setResumeResolved(true);
+      setPage(0);
+    } else {
+      const savedPage = chapterPageMemoryRef.current.get(chapterId);
+      setPage(savedPage ?? 0);
+      setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
+      lastPageChapterRef.current = null;
+    }
+    setScrollRatio(0);
+    setSettingsOpen(false);
+    window.scrollTo(0, 0);
+    const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
+    content?.scrollTo({ top: 0 });
+    content?.focus();
+  }, [chapterId]);
+
+  /* Paged-mode backward transitions land on the previous chapter's last page.
+     pageCount is 0 while the payload is loading, so wait for the pages to arrive
+     (this effect re-runs once pages/pageCount are known) and jump to the final
+     one. Must run after the reset effect so it sees lastPageChapterRef. */
+  useEffect(() => {
+    if (lastPageChapterRef.current === chapterId && pageCount > 0) {
+      lastPageChapterRef.current = null;
+      setPage(pageCount - 1);
+    }
+    // Once the new chapter's pages load, make sure the scroller is at the top.
+    if (pages.length > 0 && pageCount > 0) {
+      const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
+      content?.scrollTo({ top: 0 });
+      window.scrollTo(0, 0);
+    }
+  }, [pages, pageCount, chapterId]);
+
+  /** Toggle fullscreen on the reader container. */
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void containerRef.current?.requestFullscreen();
+    }
+  }, []);
+
+  /** Toggle paced hands-free auto-scroll (T1-2). Restarting from the last
+      page begins at the first page instead of looping in place. Requires an
+      interval to be configured in the settings panel. */
+  const toggleAutoScroll = useCallback(() => {
+    if (!autoScrollActive && !settings.autoScrollDelayMs) {
+      toast('Set an auto-scroll interval in reader settings first.', 'info');
+      return;
+    }
+    // Restarting from the last page begins at the first page. The reset is
+    // performed outside the state updater (updaters must be pure and run
+    // twice under StrictMode). Sync the ref immediately so the interval's
+    // first tick — which reads pageRef — starts from page 0.
+    if (!autoScrollActive && pageCount > 0 && pageRef.current >= pageCount - 1) {
+      if (settings.mode === 'vertical') {
+        verticalRef.current?.scrollToPage(0, 'instant');
+      } else if (settings.mode === 'gallery') {
+        galleryRef.current?.scrollToPage(0, 'instant');
+      }
+      pageRef.current = 0;
+      setPage(0);
+    }
+    setAutoScrollActive((active) => !active);
+  }, [autoScrollActive, pageCount, settings.autoScrollDelayMs, settings.mode, toast]);
+
+  /* Resume decision: no saved page → start at the beginning immediately.
+     When the chapter is fresh, also seed `pendingSaveRef` at page 0 and
+     resolve resume at the same time. The unload flush (pagehide / unmount /
+     chapter hop) needs a payload to send, and on a brand-new chapter the
+     user can close the tab in <100ms — well before the save effect's 800ms
+     debounce ever fires. Without this, the first read of a chapter leaves
+     no row in `reading_progress` and the Continue button silently
+     disappears after a restart. */
+  useEffect(() => {
+    if (!progress.isSuccess || !chapterPages.data) return;
+    if (progress.data && progress.data.page > 0) return;
+    const data = chapterPages.data;
+    if (!pendingSaveRef.current || pendingSaveRef.current.chapterId !== data.chapterId) {
+      pendingSaveRef.current = {
+        panelId: data.panelId,
+        chapterId: data.chapterId,
+        page: 0,
+        panelTitle: data.panelTitle ?? undefined,
+        coverUrl: data.coverUrl,
+        chapterTitle: data.chapterTitle ?? undefined,
+      };
+    }
+    setResumeResolved(true);
+  }, [progress.isSuccess, progress.data, chapterPages.data]);
+
+  /* Resume decision: the user scrolled past the saved page on their own —
+     the prompt is moot, so dismiss it (and start persisting progress). */
+  useEffect(() => {
+    const savedPage = progress.data?.page ?? 0;
+    if (!resumeResolved && savedPage > 0 && page >= savedPage) {
+      setResumeResolved(true);
+    }
+  }, [page, resumeResolved, progress.data]);
+
+/* Preload every page as soon as the chapter payload arrives — parallel
+      image loading only. Sequential mode lets the browser's lazy loading
+      fetch pages as they approach the viewport. Data-saver (T3-2) forces
+      lazy loading regardless of the image-load setting.
+   *
+   * `fetchpriority="high"` is load-bearing: a detached `new Image()`
+   * without an explicit priority defaults to `low` in Chrome/Firefox,
+   * so the browser queues the request behind the current page's eager
+   * `<img>` and only the on-screen page actually downloads before the
+   * user turns the page. Forcing `high` puts these requests at the top
+   * of the queue, matching the user's "All at once" intent. (See the
+   * paged reader's parallel preloader for the same fix applied to
+   * paged mode.) */
+  useEffect(() => {
+    if (settings.dataSaver) return;
+    if (settings.imageLoad !== 'parallel') return;
+    if (pages.length === 0) return;
+
+    const chapterTag = chapterPages.data?.chapterId ?? null;
+    const preloaders = pages.map((panelPage) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.fetchPriority = 'high';
+      img.referrerPolicy = 'no-referrer';
+      img.src = proxiedPageUrl(panelPage, chapterTag);
+      return img;
+    });
+
+    return () => {
+      for (const img of preloaders) {
+        img.src = '';
+      }
+    };
+  }, [pages, chapterPages.data?.chapterId, settings.imageLoad, settings.dataSaver]);
+
+  const goToPage = useCallback(
+    (target: number, preset?: GlidePreset) => {
+      const clamped = clampPage(target, pageCount);
+      if (settings.mode === 'vertical') {
+        verticalRef.current?.scrollToPage(clamped, preset ?? settings.glidePreset);
+      } else if (settings.mode === 'gallery') {
+        galleryRef.current?.scrollToPage(clamped, preset ?? settings.glidePreset);
+      }
+      setPage(clamped);
+    },
+    [pageCount, settings.mode, settings.glidePreset],
+  );
+
+  /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
+      page — the next chapter opens at its first page, the previous chapter at
+      its last page. In vertical/gallery the exact page the user left off on is
+      restored when they return. */
+  const navigateToChapter = useCallback(
+    (dir: 'next' | 'prev') => {
+      const id =
+        dir === 'next' ? chapterPages.data?.nextChapterId : chapterPages.data?.prevChapterId;
+      if (!id) {
+        toast(
+          dir === 'next' ? 'This is the latest chapter.' : 'This is the first chapter.',
+          'info',
+        );
+        return;
+      }
+      if (settings.mode === 'paged') {
+        chapterLandingRef.current.set(id, dir === 'next' ? 'first' : 'last');
+      } else {
+        // Remember the current page for this chapter so a later backward hop restores it.
+        chapterPageMemoryRef.current.set(chapterId, page);
+      }
+      navigate(`/read/${encodeURIComponent(id)}`);
+    },
+    [chapterPages.data, chapterId, navigate, page, toast, settings.mode],
+  );
+
+  const handleIntent = useCallback(
+    (intent: 'forward' | 'backward') => {
+      // Double-page mode (T1-1): turn whole spreads, not single pages —
+      // stepping by one would re-show the sheet we were just looking at.
+      const next =
+        settings.mode === 'paged' && settings.doublePage
+          ? intent === 'forward'
+            ? nextSpreadPage({ page, pageCount }, settings.direction)
+            : prevSpreadPage({ page, pageCount }, settings.direction)
+          : applyIntent({ page, pageCount }, intent);
+      if (next !== null) {
+        goToPage(next);
+        return;
+      }
+      // At the chapter boundary → hop to the adjacent chapter.
+      navigateToChapter(intent === 'forward' ? 'next' : 'prev');
+    },
+    [page, pageCount, goToPage, navigateToChapter, settings.mode, settings.doublePage, settings.direction],
+  );
+
+  /* Jump straight to the adjacent chapter (tap zones on the page / vertical & gallery arrows). */
+  const goToChapter = useCallback(
+    (dir: 'next' | 'prev') => navigateToChapter(dir),
+    [navigateToChapter],
+  );
+
+  /* Jump to an arbitrary chapter picked from the settings dropdown. */
+  const goToChapterById = useCallback(
+    (id: string) => {
+      if (id && id !== chapterId) navigate(`/read/${encodeURIComponent(id)}`);
+    },
+    [chapterId, navigate],
+  );
+
+  /**
+   * Latest unsent progress payload. The debounced save below only fires
+   * 800ms after the user settles on a page — this ref lets the unload
+   * flush send the freshest position even when the timer never fired.
+   */
+  const pendingSaveRef = useRef<SaveProgressInput | null>(null);
+
+  /**
+   * Best-effort flush of the pending progress save. Idempotent (nulls the
+   * ref after sending) so the debounce cleanup, chapter hops, unmount,
+   * and `pagehide` can all call it without double-sending.
+   */
+  const flushProgress = useCallback(() => {
+    const payload = pendingSaveRef.current;
+    if (!payload) return;
+    pendingSaveRef.current = null;
+    void api.saveProgressBeacon(payload);
+  }, []);
+
+  /* Flush the previous chapter's pending position on chapter hops.
+     Declared BEFORE the save effect so it runs first: a fast hop
+     (< 800ms) would otherwise drop the old chapter's timer without ever
+     sending it. */
+  const saveChapterRef = useRef(chapterId);
+  useEffect(() => {
+    if (saveChapterRef.current !== chapterId) {
+      saveChapterRef.current = chapterId;
+      flushProgress();
+    }
+  });
+
+  /* Persist progress (debounced) once the resume decision was made. The
+     cleanup only clears the timer — exits are covered by the hop flush
+     above, the unmount flush below, and `pagehide`. */
+  useEffect(() => {
+    if (!resumeResolved || pageCount === 0 || !chapterPages.data) return;
+    const data = chapterPages.data;
+    pendingSaveRef.current = {
+      panelId: data.panelId,
+      chapterId: data.chapterId,
+      page,
+      panelTitle: data.panelTitle ?? undefined,
+      coverUrl: data.coverUrl,
+      chapterTitle: data.chapterTitle ?? undefined,
+    };
+    // Instant save — no debounce.
+    const payload = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (payload) saveProgress.mutate(payload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable; we key on page
+  }, [page, resumeResolved, pageCount, chapterPages.data]);
+
+  /* Flush on the way out. React cleanups don't run when the tab itself
+     closes, and `beforeunload` is unreliable on mobile — `pagehide`
+     fires in both cases. Without this, closing the browser inside the
+     debounce window silently drops the latest position (and for short
+     reads, the ONLY position), so "Continue Reading" goes missing after
+     a restart. The unmount cleanup below covers in-app navigation away
+     from the reader. */
+  useEffect(() => {
+    window.addEventListener('pagehide', flushProgress);
+    return () => window.removeEventListener('pagehide', flushProgress);
+  }, [flushProgress]);
+  useEffect(() => () => {
+    flushProgress();
+  }, [flushProgress]);
+
+  /* Keyboard navigation. */
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      // Typing in a text-entry control (style name, number fields, dropdowns)
+      // must never trigger shortcuts — and must keep focus, so return before
+      // the stale-focus blur below (blurring first would drop focus after the
+      // first keystroke and route the next keys to the reader).
+      if (isEditableKeyTarget(target)) return;
+      // Blur any focused control inside the settings panel so stale/visible
+      // range sliders don't intercept arrow keys and cause layout glitching
+      // (rapid imageWidth changes) or block reader navigation.
+      const active = document.activeElement as HTMLElement | null;
+      if (active && document.querySelector('.reader-settings')?.contains(active)) {
+        active.blur();
+      }
+      // Mark upcoming UPWARD programmatic scroll as keyboard-driven so
+      // the toolbar's auto-hide listener ignores it. Downward nav clears
+      // the gate so its scroll events hide the toolbar immediately.
+      // See `navScrollUntilRef` for rationale.
+      const markNavScroll = (durationMs = 500) => {
+        navScrollUntilRef.current = performance.now() + durationMs;
+      };
+      const clearNavScroll = () => {
+        navScrollUntilRef.current = 0;
+      };
+
+      if (event.key === 'q' || event.key === 'Q') {
+        setSettingsOpen((open) => !open);
+        return;
+      }
+      if (event.key === 'f' || event.key === 'F') {
+        // Rotate the reading mode: vertical -> paged -> gallery -> vertical.
+        // Per-mode settings memory (T2-9) restores each mode's last values.
+        event.preventDefault();
+        switchMode(nextReadingMode(settings.mode));
+        return;
+      }
+      if (event.key === 'e' || event.key === 'E') {
+        // Toggle fullscreen — available in every reading mode.
+        event.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode);
+      if (intent === 'toggleGap') {
+        // Breathing room between pages: vertical + gallery stack pages,
+        // paged pairs the two sheets of a spread. All three modes honor
+        // the same toggle — paged mode used to hardcode a center gutter
+        // that ignored it entirely.
+        event.preventDefault();
+        update({ imageGap: !settings.imageGap });
+        return;
+      }
+      if (intent === 'exit') {
+        target?.blur();
+        if (panelId) navigate(`/panel/${encodeURIComponent(panelId)}`);
+        return;
+      }
+      if (intent === 'scrollUp' || intent === 'scrollDown') {
+        // Smooth continuous scroll — vertical mode only.
+        if (settings.mode !== 'vertical') return;
+        event.preventDefault();
+        if (intent === 'scrollUp') markNavScroll(50);
+        else clearNavScroll();
+        setScrollDir(intent === 'scrollUp' ? 'up' : 'down');
+        return;
+      }
+      if (intent === 'stepUp' || intent === 'stepDown') {
+        // Vertical: mirror the mouse-wheel behavior (T1-3) — one keypress is
+        // `keyPagesPress` whole pages, using the same goToPage/scrollToPage
+        // ('smooth') path the wheel uses, so keys and wheel land on identical
+        // positions. 0 = native: smooth viewport scroll (80% of viewport).
+        if (settings.mode === 'vertical') {
+          event.preventDefault();
+          if (intent === 'stepUp') markNavScroll();
+          else clearNavScroll();
+          const content = containerRef.current?.querySelector(
+            '.reader-content',
+          ) as HTMLElement | null;
+          if (!content) return;
+
+          if (settings.keyPagesPress <= 0) {
+            // Native: smooth viewport scroll (80% of viewport height).
+            // Use scrollTo with behavior: 'smooth' for consistency with
+            // scrollToPage and to avoid conflicting rAF loops.
+            const step = content.clientHeight * 0.8;
+            const targetScrollTop = Math.max(
+              0,
+              Math.min(
+                content.scrollHeight - content.clientHeight,
+                content.scrollTop + (intent === 'stepUp' ? -step : step),
+              ),
+            );
+            glideScrollTo(content, targetScrollTop, glideAnimRef, settings.glidePreset);
+            return;
+          }
+          goToPage(
+            page +
+              (intent === 'stepUp'
+                ? -settings.keyPagesPress
+                : settings.keyPagesPress),
+            settings.glidePreset,
+          );
+          return;
+        }
+        // Gallery: smooth step scroll with native smooth scroll.
+        if (settings.mode !== 'gallery') return;
+        event.preventDefault();
+        if (intent === 'stepUp') markNavScroll();
+        else clearNavScroll();
+        const content = containerRef.current?.querySelector(
+          '.reader-content',
+        ) as HTMLElement | null;
+        if (content) {
+          const step = window.innerHeight * 0.8;
+          const targetScrollTop = Math.max(
+            0,
+            Math.min(
+              content.scrollHeight - content.clientHeight,
+              content.scrollTop + (intent === 'stepUp' ? -step : step),
+            ),
+          );
+          glideScrollTo(content, targetScrollTop, glideAnimRef, settings.glidePreset);
+        }
+        return;
+      }
+      // Vertical/gallery: ←/A and →/D hop between chapters.
+      if (intent === 'chapterForward' || intent === 'chapterBackward') {
+        event.preventDefault();
+        target?.blur();
+        goToChapter(intent === 'chapterForward' ? 'next' : 'prev');
+        return;
+      }
+      // Paged: ←/A/→/D and Space turn pages within the chapter.
+      if (intent) {
+        event.preventDefault();
+        // Blur any element that gained focus via mouse click (e.g. the paged
+        // reader zone buttons or footer nav buttons) so the focus-visible
+        // ring doesn't linger once keyboard navigation begins.
+        target?.blur();
+        handleIntent(intent);
+      }
+    };
+    window.addEventListener('keydown', handler);
+
+    // Release-to-stop: letting go of Shift+W / Shift+S halts the scroll.
+    const stopScroll = () => setScrollDir(null);
+    window.addEventListener('keyup', stopScroll);
+
+    // Cancel any in-flight keyboard scroll when the viewport changes
+    // size (e.g. DevTools opening/shrinking the viewport), so the old
+    // rAF loop — computed with the previous clientHeight / innerHeight
+    // — doesn't keep writing scrollTop with outdated metrics.
+    const onResize = () => {
+      // Native smooth scroll (scrollTo with behavior: 'smooth') handles
+      // resize gracefully; no rAF loop to cancel.
+    };
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keyup', stopScroll);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [settings.direction, settings.mode, settings.imageGap, settings.keyPagesPress, settings.glidePreset, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
+
+  /* Auto-hide controls: hide on scroll down, reveal on scroll up, hide after
+     idle, and stay visible while hovering the toolbar. Pointer movement
+     anywhere else on the page (or outside it) never reveals the toolbar. */
+  useEffect(() => {
+    const clearHideTimer = () => {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = undefined;
+    };
+
+    const reader = containerRef.current;
+    const content = reader?.querySelector('.reader-content') as HTMLElement | null;
+    const toolbar = reader?.querySelector('.reader-toolbar') as HTMLElement | null;
+
+    /* Keep the toolbar pinned while a panel is open. */
+    if (settingsOpen) {
+      setControlsVisible(true);
+      clearHideTimer();
+      return;
+    }
+    if (!content) return;
+
+    const showTemporarily = () => {
+      setControlsVisible(true);
+      clearHideTimer();
+      hideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 2500);
+    };
+    const hideNow = () => {
+      setControlsVisible(false);
+      clearHideTimer();
+    };
+
+    let lastScrollY = content.scrollTop;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const scrollY = content.scrollTop;
+        const delta = scrollY - lastScrollY;
+        lastScrollY = scrollY;
+        // Skip the hide-on-scroll-down branch only for upward keyboard
+        // nav (see `navScrollUntilRef`): downward keyboard scrolls clear
+        // the gate so they hide immediately. Mouse-wheel and touch scrolls
+        // never set the flag, so they keep the hide-on-scroll-down behavior.
+        if (delta > 10 && performance.now() >= navScrollUntilRef.current) {
+          hideNow();
+        } else if (delta < -10) {
+          showTemporarily();
+        }
+        ticking = false;
+      });
+    };
+
+    /* Hovering the toolbar keeps it visible; tapping the content (e.g. page
+       turns) reveals it briefly. Pointer moves elsewhere are ignored — except
+       on mouse/pen: moving into the top edge zone reveals the toolbar (the
+       hidden toolbar is translated off-screen, so it can never receive a
+       pointermove itself; hover-to-reveal must come from the container).
+       Touch devices keep the existing tap/scroll reveal. */
+    const TOP_REVEAL_PX = 64;
+    const onToolbarMove = showTemporarily;
+    const onContainerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+      if (event.clientY <= TOP_REVEAL_PX) showTemporarily();
+    };
+    const onContentClick = (event: MouseEvent) => {
+      // Clicking anywhere on the image/content stops both smooth scroll
+      // (Shift+W/S) and paced hands-free auto-scroll. When auto-scroll is
+      // active, the click must not propagate to child reader components so
+      // it doesn't also turn pages or hop chapters.
+      // N.B. read smooth-scroll state via scrollDirRef (mirrored every
+      // render): depending on the scrollDir *state* here would re-run this
+      // whole effect on every Shift+W/S press AND release — and each run
+      // ends in showTemporarily(), so releasing the keys would pop the
+      // toolbar up even though the user never asked for it.
+      const wasAutoScolling = scrollDirRef.current !== null || autoScrollActive;
+      setScrollDir(null);
+      setAutoScrollActive(false);
+      showTemporarily();
+      if (wasAutoScolling) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+    };
+    // Keyboard nav mirrors the scroll-direction rule: moving up/backward
+    // reveals the toolbar, moving down/forward hides it. The old code showed
+    // the bar on EVERY nav key, so spamming scroll-down (S / ArrowDown /
+    // Space) in vertical mode — or turning pages forward in fullscreen —
+    // pinned the toolbar on screen even though the user never scrolled up.
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (isEditableKeyTarget(target)) return;
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode);
+      if (
+        intent === 'stepUp' ||
+        intent === 'scrollUp' ||
+        intent === 'backward' ||
+        intent === 'chapterBackward'
+      ) {
+        showTemporarily();
+        return;
+      }
+      if (
+        intent === 'stepDown' ||
+        intent === 'scrollDown' ||
+        intent === 'forward' ||
+        intent === 'chapterForward'
+      ) {
+        hideNow();
+        return;
+      }
+      // intentForKey doesn't cover these — map them by scroll direction.
+      if (event.key === 'PageUp' || event.key === 'Home') showTemporarily();
+      else if (event.key === 'PageDown' || event.key === 'End') hideNow();
+    };
+
+    content.addEventListener('scroll', onScroll, { passive: true });
+    content.addEventListener('click', onContentClick);
+    toolbar?.addEventListener('pointermove', onToolbarMove);
+    reader?.addEventListener('pointermove', onContainerMove);
+    window.addEventListener('keydown', onKeyDown);
+
+    showTemporarily();
+
+    // This effect mounts during the loading state, before the toolbar/scroll
+    // container exist, so re-run once the chapter payload arrives. It must
+    // ALSO re-run when showPagesLoading flips back to false: on slow loads
+    // (typical on mobile) the payload arrives while the spinner is still up,
+    // and useDelayedLoading clears its flag one render later — so at the time
+    // the payload-triggered run executes, .reader-content doesn't exist yet.
+    // Without this key, the listeners never attach after a chapter transition
+    // and the toolbar stops hiding on scroll until settings is opened/closed.
+    return () => {
+      clearHideTimer();
+      content.removeEventListener('scroll', onScroll);
+      content.removeEventListener('click', onContentClick);
+      toolbar?.removeEventListener('pointermove', onToolbarMove);
+      reader?.removeEventListener('pointermove', onContainerMove);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [settingsOpen, chapterPages.data, showPagesLoading, settings.direction, settings.mode, autoScrollActive]);
+
+  /* Fullscreen state tracking. */
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement !== null);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  /**
+   * Smooth continuous scroll (Shift+W / Shift+S) — vertical mode only.
+   *
+   * A requestAnimationFrame loop nudges `.reader-content`'s scrollTop by
+   * `scrollSpeedPx × elapsedSeconds` each frame, so it stays smooth and
+   * framerate-independent. The loop self-terminates at the top/bottom
+   * boundary; releasing the key (keyup) also stops it. Speed changes take
+   * effect mid-scroll via the ref.
+   */
+  useEffect(() => {
+    // Start the scroll loop on first press, keep running until key release
+    // or boundary hit. Use isScrollingRef to avoid restarting on key repeat.
+    if (scrollDir !== null && !isScrollingRef.current) {
+      isScrollingRef.current = true;
+      navScrollUntilRef.current = performance.now() + 50;
+    }
+    if (scrollDir === null) {
+      isScrollingRef.current = false;
+      cancelAnimationFrame(rafRef.current);
+      return;
+    }
+
+    const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
+    if (!content) {
+      setScrollDir(null);
+      isScrollingRef.current = false;
+      return;
+    }
+
+    let last = performance.now();
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      const dir = scrollDirRef.current;
+      const speed = scrollSpeedRef.current;
+      if (dir === null) {
+        setScrollDir(null);
+        isScrollingRef.current = false;
+        cancelAnimationFrame(raf);
+        return;
+      }
+
+      const delta = dir === 'up' ? -speed * dt : speed * dt;
+      if (dt <= 0) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      const max = content.scrollHeight - content.clientHeight;
+      if (max <= 0) {
+        setScrollDir(null);
+        isScrollingRef.current = false;
+        cancelAnimationFrame(raf);
+        return;
+      }
+
+      const next = content.scrollTop + delta;
+      if (next <= 0) {
+        content.scrollTop = 0;
+        setScrollDir(null);
+        isScrollingRef.current = false;
+        cancelAnimationFrame(raf);
+        return;
+      }
+      if (next >= max) {
+        content.scrollTop = max;
+        setScrollDir(null);
+        isScrollingRef.current = false;
+        cancelAnimationFrame(raf);
+        return;
+      }
+      content.scrollTop = next;
+      raf = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = raf;
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      isScrollingRef.current = false;
+    };
+  }, [scrollDir, settings.scrollSpeed, containerRef]);
+
+  /**
+   * Hands-free auto-scroll (T1-2): paced advancing while the setting is on,
+   * stopping at the last page (where it pauses rather than looping — the
+   * user re-enables it to restart). Pause when the panel opens.
+   *
+   * Vertical mode glides CONTINUOUSLY instead of page-hopping: a rAF loop
+   * advances the scroller at (one page-height ÷ autoScrollDelayMs) px/s, so
+   * the average pace is exactly "one page per interval" but the motion is a
+   * smooth glide — the old `goToPage(next, 'smooth')` per tick visibly
+   * jumped page to page (and its animation raced the next tick). Paged and
+   * gallery modes keep the discrete page-turn interval.
+   *
+   * The interval/rAF is created ONCE per activation: the current position is
+   * read from the live scroller instead of being a dependency, so scroll
+   * events (which update `page` many times) can never tear down and restart
+   * the timer before it elapses.
+   */
+  useEffect(() => {
+    if (!autoScrollActive) return;
+    if (!settings.autoScrollDelayMs) return;
+    if (!pages.length) return;
+    if (settingsOpen) return;
+
+    if (settings.mode === 'vertical') {
+      const content = containerRef.current?.querySelector(
+        '.reader-content',
+      ) as HTMLElement | null;
+      if (!content) return;
+      const delaySec = settings.autoScrollDelayMs / 1000;
+      let last = performance.now();
+      let raf = 0;
+      setAutoScrollPaused(false);
+      const tick = (now: number) => {
+        // Recompute per tick: scrollHeight grows as lazy pages load, so the
+        // glide speed stays "one page per interval" even mid-load.
+        const perPage = content.scrollHeight / Math.max(pageCount, 1);
+        const pxPerSec = perPage / delaySec;
+        const dt = Math.max((now - last) / 1000, 0);
+        last = now;
+        const max = content.scrollHeight - content.clientHeight;
+        const target = content.scrollTop + pxPerSec * dt;
+        if (max <= 0 || target >= max) {
+          content.scrollTop = Math.max(max, 0);
+          // At the last page: pause instead of looping. The toggle stays on
+          // so re-tapping restarts from the beginning without a detour.
+          setAutoScrollPaused(true);
+          return;
+        }
+        content.scrollTop = target;
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }
+
+    const id = window.setInterval(() => {
+      const current = pageRef.current;
+      // Double-page paged mode turns whole spreads (T1-1).
+      const next =
+        settings.mode === 'paged' && settings.doublePage
+          ? nextSpreadPage({ page: current, pageCount }, settings.direction)
+          : applyIntent({ page: current, pageCount }, 'forward');
+      if (next !== null) {
+        goToPage(next, 'smooth');
+        setAutoScrollPaused(false);
+        return;
+      }
+      // At the last page: pause instead of looping. The toggle stays on so
+      // re-tapping restarts from the beginning without a settings detour.
+      setAutoScrollPaused(true);
+    }, settings.autoScrollDelayMs);
+
+    setAutoScrollPaused(false);
+    return () => window.clearInterval(id);
+  }, [
+    autoScrollActive,
+    settings.autoScrollDelayMs,
+    settings.mode,
+    settings.direction,
+    settings.doublePage,
+    settingsOpen,
+    pages.length,
+    pageCount,
+    goToPage,
+  ]);
+
+  /**
+   * Mouse-wheel smooth scroll (T1-3), vertical mode only. When
+   * `wheelPagesPerNotch` is non-zero the wheel is quantised to whole pages
+   * so a flick never lands mid-page; 0 = native behaviour.
+   *
+   * We attach to the scroller (not the window) so the wheel only acts while
+   * over the reader — scrolling elsewhere (the settings panel, the page
+   * outside) is untouched.
+   */
+  useEffect(() => {
+    if (settings.mode !== 'vertical' || settings.wheelPagesPerNotch <= 0) return;
+    const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
+    if (!content) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const step = wheelPageStep(event.deltaY, settings.wheelPagesPerNotch);
+      if (step === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const next = clampPage(page + step, pageCount);
+      if (next === page) return;
+      verticalRef.current?.scrollToPage(next, 'smooth');
+      setPage(next);
+    };
+
+    content.addEventListener('wheel', onWheel, { passive: false });
+    return () => content.removeEventListener('wheel', onWheel);
+  }, [settings.mode, settings.wheelPagesPerNotch, page, pageCount]);
+
+  /**
+   * Mouse wheel page-turning — paged mode. Accumulates wheel deltas so one
+   * notch (~120 px) — or a trackpad flick — turns exactly one page, without
+   * double-firing on inertial events. While a zoomed page can still be panned
+   * natively (the stage is scrollable and not at its edge in the wheel
+   * direction), the wheel pans the zoomed page instead of turning.
+   */
+  useEffect(() => {
+    if (settings.mode !== 'paged') return;
+    const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
+    if (!content) return;
+
+    let accumulated = 0;
+    const NOTCH_PX = 120;
+    const onWheel = (event: WheelEvent) => {
+      const stage = content.querySelector('.paged-reader__stage') as HTMLElement | null;
+      if (stage) {
+        const scrollable = stage.scrollHeight > stage.clientHeight + 1;
+        const atTop = stage.scrollTop <= 0;
+        const atBottom = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1;
+        if (scrollable && !((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom))) {
+          accumulated = 0; // let the browser pan the zoomed page
+          return;
+        }
+      }
+      accumulated += event.deltaY;
+      event.preventDefault();
+      event.stopPropagation();
+      if (Math.abs(accumulated) < NOTCH_PX) return;
+      const steps = Math.trunc(accumulated / NOTCH_PX);
+      accumulated -= steps * NOTCH_PX;
+      handleIntent(steps < 0 ? 'backward' : 'forward');
+    };
+
+    content.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      content.removeEventListener('wheel', onWheel);
+      accumulated = 0;
+    };
+  }, [settings.mode, handleIntent]);
+
+  /**
+   * Background prefetch of the next chapter (T3-1). Fires once, a couple of
+   * seconds after the current chapter's pages arrive — long enough that the
+   * reader's own image fetches go first. Disabled entirely in data-saver
+   * mode (T3-2).
+   */
+  useEffect(() => {
+    if (settings.dataSaver) return;
+    const nextId = chapterPages.data?.nextChapterId;
+    if (!nextId) return;
+    const timer = window.setTimeout(() => prefetchChapterPages(nextId), 2_000);
+    return () => window.clearTimeout(timer);
+  }, [chapterPages.data?.nextChapterId, settings.dataSaver, prefetchChapterPages]);
+
+  /* ---- render ---------------------------------------------------------- */
+
+  // An actual failure gets the error screen immediately. A query that is
+  // still in flight (no data yet, no error) must never look like a failure:
+  // during the pre-grace window we render nothing (so fast/cached chapters
+  // don't flash a spinner), and only show the delayed spinner once the grace
+  // period expires. This avoids the "need to reload" flash on open.
+  //
+  // The container div is ALWAYS rendered with the same ref: fullscreen is
+  // requested on it, and browsers exit fullscreen as soon as that element
+  // leaves the DOM. Swapping it out for a loading/error wrapper would kick
+  // the user out of fullscreen mid-chapter-transition (most visible on
+  // mobile, where chapter loads are slow enough to show the spinner).
+  let body: ReactNode = null;
+  if (chapterPages.isError) {
+    body = (
+      <>
+        <ErrorState
+          title="Unable to load this chapter."
+          message={chapterPages.error?.message}
+          onRetry={() => chapterPages.refetch()}
+        />
+        <div className="reader-error-actions">
+          {panelId && (
+            <Link to={`/panel/${encodeURIComponent(panelId)}`} className="btn btn--ghost">
+              Back to panel
+            </Link>
+          )}
+        </div>
+      </>
+    );
+  } else if (showPagesLoading) {
+    body = null;
+  } else if (chapterPages.data) {
+    const data = chapterPages.data;
+    const savedPage = progress.data?.page ?? 0;
+    // No banner if the user already finished the chapter (saved page is the
+    // last one) — resuming there is pointless, and a 0/1-page chapter has
+    // nothing to resume from either.
+    const showResumeBanner =
+      !resumeResolved && savedPage > 0 && pageCount > 1 && savedPage < pageCount - 1;
+
+    const currentChapter = chapters.data?.find((c) => c.id === data.chapterId);
+    const sourceTitle = data.chapterTitle?.trim() ?? '';
+    const isGeneric = /^chapter\s+\d+(\.\d+)?\s*$/i.test(sourceTitle);
+    const enhancedChapterTitle = currentChapter?.title ?? (isGeneric ? '' : data.chapterTitle);
+
+    body = (
+      <>
+        <ReaderToolbar
+          panelId={data.panelId}
+          panelTitle={data.panelTitle}
+          chapterTitle={enhancedChapterTitle}
+          chapterId={data.chapterId}
+          chapters={chapters.data ?? []}
+          visible={controlsVisible}
+          isFullscreen={isFullscreen}
+          settingsOpen={settingsOpen}
+          autoScrollActive={autoScrollActive}
+          autoScrollRunning={autoScrollRunning}
+          onToggleFullscreen={toggleFullscreen}
+          onToggleAutoScroll={toggleAutoScroll}
+          onOpenSettings={() => setSettingsOpen((open) => !open)}
+        />
+
+        {scrollDir && (
+          <div
+            className="reader-auto-scroll reader-auto-scroll--keys"
+            role="status"
+            aria-live="polite"
+            aria-label={`Auto-scrolling ${scrollDir === 'up' ? 'up' : 'down'}`}
+          >
+            <span className="reader-auto-scroll__glyph" aria-hidden="true">
+              {scrollDir === 'up' ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />}
+            </span>
+            <span className="reader-auto-scroll__text">Smooth scroll · {settings.scrollSpeed}</span>
+          </div>
+        )}
+
+        {autoScrollActive && settings.autoScrollDelayMs && (
+          <div
+            className="reader-auto-scroll reader-auto-scroll--paced"
+            role="status"
+            aria-live="polite"
+            aria-label={autoScrollRunning ? 'Auto-scrolling' : 'Auto-scroll paused at last page'}
+          >
+            <span className="reader-auto-scroll__glyph" aria-hidden="true">
+              {autoScrollRunning ? <IconPlay size={14} /> : <IconPause size={14} />}
+            </span>
+            <span className="reader-auto-scroll__text">
+              Auto · {(settings.autoScrollDelayMs / 1000).toFixed(1)}s ·{' '}
+              {autoScrollRunning ? 'running' : 'paused at end'}
+            </span>
+          </div>
+        )}
+
+        {settingsEverOpened && (
+          <ReaderSettingsPanel
+            settings={settings}
+            onUpdate={update}
+            onClose={() => setSettingsOpen(false)}
+            open={settingsOpen}
+            page={page}
+            pageCount={pageCount}
+            onPageSelect={(target) => goToPage(target, 'instant')}
+            chapters={chapters.data ?? []}
+            currentChapterId={data.chapterId}
+            onChapterSelect={goToChapterById}
+          />
+        )}
+
+        {showResumeBanner && (
+          <div className="reader-resume" role="dialog" aria-label="Resume reading">
+            <p>
+              Continue from page <strong>{savedPage + 1}</strong>?
+            </p>
+            <div className="reader-resume__actions">
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={() => {
+                  setResumeResolved(true);
+                  goToPage(savedPage, 'instant');
+                }}
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => {
+                  setResumeResolved(true);
+                  goToPage(0, 'instant');
+                }}
+              >
+                Start over
+              </button>
+            </div>
+          </div>
+        )}
+
+        <main
+          className={`reader-content${settings.showScrollbar ? ' reader-content--scrollbar-visible' : ''}`}
+          tabIndex={-1}
+          style={{ '--page-brightness': `${settings.imageBrightness}%` } as CSSProperties}
+        >
+          {settings.mode === 'vertical' ? (
+            <VerticalReader
+              ref={verticalRef}
+              pages={pages}
+              imageWidth={settings.imageWidth}
+              imageWidthPx={settings.imageWidthPx}
+              imageHeightPx={settings.imageHeightPx}
+              imageGap={settings.imageGap}
+              direction={settings.direction}
+              eagerPages={settings.imageLoad === 'parallel' && !settings.dataSaver}
+              preloadAhead={settings.dataSaver ? 1 : settings.preloadAhead}
+              zoom={settings.zoomLevel}
+              onZoomChange={(z) => update({ zoomLevel: z })}
+              onPageChange={setPage}
+              onProgress={(p, ratio) => {
+                setPage(p);
+                setScrollRatio(ratio);
+              }}
+              onChapterNavigate={goToChapter}
+              chapterTag={chapterId}
+            />
+          ) : settings.mode === 'gallery' ? (
+            <GalleryReader
+              ref={galleryRef}
+              pages={pages}
+              imageWidth={settings.imageWidth}
+              imageWidthPx={settings.imageWidthPx}
+              imageHeightPx={settings.imageHeightPx}
+              imageGap={settings.imageGap}
+              direction={settings.direction}
+              zoom={settings.zoomLevel}
+              onZoomChange={(z) => update({ zoomLevel: z })}
+              onPageChange={setPage}
+              onProgress={(p, ratio) => {
+                setPage(p);
+                setScrollRatio(ratio);
+              }}
+              onChapterNavigate={goToChapter}
+              chapterTag={chapterId}
+            />
+          ) : (
+            <PagedReader
+              pages={pages}
+              page={page}
+              direction={settings.direction}
+              doublePage={settings.doublePage}
+              spreadOddPolicy={settings.spreadOddPolicy}
+              autoLandscapeSingle={settings.autoLandscapeSingle}
+              zoom={settings.zoomLevel}
+              onZoomChange={(z) => update({ zoomLevel: z })}
+              onNavigate={handleIntent}
+              chapterTag={chapterId}
+              /* Forward the "Image loading: All at once" setting so paged
+                 mode preloads every page at high priority. Without this,
+                 only the on-screen page finished downloading because the
+                 detached `new Image()` requests were deprioritized behind
+                 the current spread's eager `<img>`. */
+              eagerPages={settings.imageLoad === 'parallel' && !settings.dataSaver}
+              /* Forward the "Image gap" toggle so the center gutter of a
+                 double-page spread can be closed — paged mode used to
+                 hardcode a 2% sheet pad + 3px seam that ignored it. */
+              imageGap={settings.imageGap}
+              /* Narrow the stage so a page never overflows — the same
+                 "Image width" slider as vertical/gallery modes. */
+              imageWidth={settings.imageWidth}
+            />
+          )}
+        </main>
+
+        {/* Bottom bar: progress + mobile-friendly page buttons */}
+        <footer
+          className={`reader-footer${settings.showProgressBar ? '' : ' reader-footer--hidden'}`}
+        >
+          {settings.mode === 'paged' && (
+            <button
+              type="button"
+              className="reader-toolbar__btn"
+              onClick={() => handleIntent('backward')}
+              aria-label="Previous page"
+            >
+              ‹
+            </button>
+          )}
+          <div
+            className="reader-progress"
+            role="progressbar"
+            aria-valuenow={page + 1}
+            aria-valuemin={1}
+            aria-valuemax={pageCount}
+            aria-label="Reading progress"
+          >
+            <div
+              className="reader-progress__fill"
+              style={{
+                transform: `scaleX(${
+                  settings.mode === 'paged'
+                    ? progressFraction(page, pageCount)
+                    : smoothProgressFraction(page, pageCount, scrollRatio)
+                })`,
+              }}
+            />
+          </div>
+          {settings.mode === 'paged' && (
+            <button
+              type="button"
+              className="reader-toolbar__btn"
+              onClick={() => handleIntent('forward')}
+              aria-label="Next page"
+            >
+              ›
+            </button>
+          )}
+        </footer>
+      </>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={`reader reader--${settings.background}${controlsVisible ? '' : ' reader--controls-hidden'}${settingsOpen ? ' reader--sidebar-open' : ''}${scrollDir ? ' reader--auto-scroll' : ''}${autoScrollActive ? ' reader--auto-scroll-paced' : ''}${settings.doublePage ? ' reader--double-page' : ''}${settings.clearToolbarSpace ? ' reader--toolbar-clear' : ''}`}
+    >
+      {body}
+    </div>
+  );
+}

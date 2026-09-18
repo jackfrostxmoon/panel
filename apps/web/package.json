@@ -1,0 +1,31 @@
+{
+  "name": "@panel/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Panel viewer web client — React 19, Vite 8, TanStack Query.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@panel/shared": "*",
+    "@tanstack/react-query": "^5.101.4",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}

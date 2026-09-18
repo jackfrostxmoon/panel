@@ -1,0 +1,2332 @@
+/* ---------------------------------------------------------------------------
+   Shared components: buttons, inputs, header/nav, cards, states, dialogs,
+   toasts. Built entirely on tokens.css.
+--------------------------------------------------------------------------- */
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  border: 1px solid transparent;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  user-select: none;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--ghost {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.btn--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn--danger-ghost {
+  background: transparent;
+  color: var(--danger);
+  border-color: transparent;
+}
+.btn--danger-ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.btn--sm {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.btn--lg {
+  padding: 14px 24px;
+  font-size: var(--font-size-md);
+}
+
+.btn-icon {
+  flex-shrink: 0;
+}
+
+.btn-text {
+  display: block;
+  font-weight: var(--font-weight-semibold);
+}
+
+.btn-subtext {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+/* Visually hidden utility for accessibility */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bookmark-btn {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+/* Active (bookmarked): solid accent fill so the user can see at a glance
+   which panels are saved. The icon and label flip to white-on-accent for
+   contrast, matching the primary-button look used elsewhere. */
+.bookmark-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.bookmark-btn--active .bookmark-btn__icon svg {
+  fill: #fff;
+}
+.bookmark-btn--pop .bookmark-btn__icon {
+  animation: bookmark-pop 0.4s var(--ease-out);
+}
+
+/* Folder-picker icon on the details toolbar. Rendered as its own
+   pill segment next to the bookmark toggle (separated by the toolbar's
+   hairline divider), matching the share icon's flat treatment. */
+.bookmark-btn-folder {
+  color: var(--text-dim);
+}
+
+@keyframes bookmark-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.45);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* --- Inputs --------------------------------------------------------------- */
+
+.input,
+input[type='search'],
+input[type='text'],
+select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: var(--font-size-md);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.input:focus,
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+input::placeholder {
+  color: var(--text-faint);
+}
+
+.input--sm {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+/* --- App shell ------------------------------------------------------------ */
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  height: var(--header-height);
+  transition: transform var(--duration-med) var(--ease-out);
+}
+
+/* Auto-hide on scroll down — mobile only. Desktop keeps the header pinned. */
+@media (max-width: 560px) {
+  .app-header--hidden {
+    transform: translateY(-100%);
+  }
+}
+
+.app-header__inner {
+  max-width: var(--layout-max);
+  margin: 0 auto;
+  height: 100%;
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  justify-content: space-between;
+}
+
+.app-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  letter-spacing: -0.01em;
+}
+
+/* Phones show only the logo mark — the label crowds the compact nav. */
+@media (max-width: 560px) {
+  .app-header__brand-name {
+    display: none;
+  }
+}
+
+.app-nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* Brand (left) | nav + width toggle (right) */
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Global dark/light switch — quiet icon button matching the nav rhythm. */
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+/* --- Hamburger menu (unused — kept for reference) -------------------------- */
+
+.app-nav__link {
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  color: var(--text-soft);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  transition:
+    color var(--duration-fast),
+    background var(--duration-fast);
+}
+
+.app-nav__link:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.app-nav__link--active {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--layout-max);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-8);
+}
+
+.app-footer {
+  border-top: 1px solid var(--border);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  max-width: var(--layout-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Wide mode (the only shell layout): expand the centered content container
+   to the wide token. */
+.app-shell--wide {
+  --layout-max: var(--content-max-wide);
+}
+
+/* The shell's major sections fill the full viewport width instead of the
+   1600px cap, so panel grids span the full screen and pack more cards per
+   row automatically via their auto-fill layouts. */
+.app-shell--wide .app-header,
+.app-shell--wide .app-main,
+.app-shell--wide .app-footer {
+  max-width: none;
+}
+
+/* The header's inner row keeps its own cap — release it too so the brand and
+   nav align with the full-width content edges. */
+.app-shell--wide .app-header__inner {
+  max-width: none;
+}
+
+/* --- Panel cards + grid ---------------------------------------------------- */
+
+/* Shared card grid: fixed 5 columns on desktop so cards render at the same
+   size on every page (home, latest, search, bookmarks); 3 on small screens. */
+.panel-grid,
+.bookmark-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 560px) {
+  .panel-grid,
+  .bookmark-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3);
+  }
+}
+
+/* Wide mode: keep the standard-mode card size and grow the column count with
+   the window via auto-fill. The minimum track mirrors one standard column:
+   (content-max - 6 x space-4) / 5 = (1200 - 96) / 5 = 220.8px. */
+.app-shell--wide .panel-grid,
+.app-shell--wide .bookmark-grid {
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(calc((var(--content-max) - var(--space-4) * 6) / 5), 1fr)
+  );
+}
+
+/* On mobile, pack these grids tighter: 3 cards per row.
+   This also guards against wide-mode being persisted from a desktop session. */
+@media (max-width: 560px) {
+  .app-shell--wide .panel-grid,
+  .app-shell--wide .bookmark-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* 1–5 star rating (T3-3). Gold — the conventional rating hue — rather than
+   the brand red, which reads as "destructive" when lit up. Sized to align
+   with the 36–44px action controls it sits beside on the details page. */
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 var(--space-1);
+}
+.star-rating__star {
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.12s ease, transform 0.12s ease;
+}
+.star-rating__star:hover,
+.star-rating__star:focus-visible {
+  color: var(--bookmark-single);
+  transform: scale(1.12);
+}
+.star-rating__star:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
+}
+.star-rating__star--active {
+  color: var(--bookmark-single);
+}
+.star-rating__star--active:hover,
+.star-rating__star--active:focus-visible {
+  color: var(--bookmark-single);
+}
+.star-rating__value {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom tag editor (T3-4). Sits on the details page directly under the
+   genres block, mirroring its presentation: label + count header, chip row,
+   and a compact chip-style "Add a tag…" input at the end of the row. */
+.tag-editor {
+  margin-top: var(--space-3);
+}
+.tag-editor__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.tag-editor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tag-editor__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  transition: all var(--duration-fast);
+  font-weight: var(--font-weight-medium);
+}
+.tag-editor__chip:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.tag-editor__remove {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px;
+  border-radius: var(--radius-full);
+}
+.tag-editor__remove:hover:not(:disabled) {
+  color: var(--danger);
+}
+.tag-editor__remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tag-editor__empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-faint);
+  padding: var(--space-1) 0;
+}
+.tag-editor__form {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.tag-editor__input {
+  width: 130px;
+  height: 28px;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+}
+.tag-editor__input::placeholder {
+  color: var(--text-faint);
+}
+.tag-editor__input:hover {
+  border-color: var(--text-dim);
+}
+.tag-editor__input:focus-visible {
+  outline: none;
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-focus);
+}
+.tag-editor__form .btn--sm {
+  flex-shrink: 0;
+}
+/* Collapsed state: the "+ Add tag" chip doubles as the disclosure control.
+   Dashed border distinguishes it from real tags/genres. */
+.tag-editor__toggle {
+  border-style: dashed;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+/* Expanded state: ghost icon button to close the form. */
+.tag-editor__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tag-editor__collapse:hover,
+.tag-editor__collapse:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.panel-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.panel-card__cover {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.panel-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.panel-card__cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-faint);
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+}
+
+.panel-card__status {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: capitalize;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+.panel-card__status--completed {
+  color: var(--success);
+}
+
+.panel-card__source {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  color: var(--text-strong);
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+/* Phones: narrow cards squeeze the top-left status chip against the
+   top-right source chip until both truncate ("Ongc…"). Drop the status
+   chip to the bottom-left so each badge owns a corner. Desktop keeps
+   the top row. */
+@media (max-width: 640px) {
+  .panel-card__status {
+    top: auto;
+    bottom: var(--space-2);
+  }
+}
+
+/* Bookmarked highlight (Latest/Search): a filled gold bookmark glyph pinned to
+   the bottom-right of the cover, plus a tinted ring around the whole card so
+   the shelf membership reads at a glance without fighting the status/source
+   badges. Reuses the existing bookmark palette (var(--bookmark-single)) so it
+   matches the star on the details-page toolbar. */
+.panel-card__bookmark-badge {
+  position: absolute;
+  bottom: var(--space-2);
+  right: var(--space-2);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--bookmark-single);
+  color: #241c04;
+  box-shadow: var(--shadow-sm);
+}
+
+.panel-card--bookmarked {
+  box-shadow: 0 0 0 2px var(--bookmark-single), var(--shadow-sm);
+  transition: box-shadow var(--duration-fast) ease;
+}
+
+/* On light paper the gold ring + badge flatten against the white backdrop,
+   so swap the ring for a darker, still-visible stroke. */
+[data-theme='light'] .panel-card--bookmarked {
+  box-shadow: 0 0 0 2px #b8891f, var(--shadow-sm);
+}
+
+/* "Continue reading" overlay on cards that have progress (Latest/Search).
+   Pinned to the bottom-left of the cover, sitting beside the bookmark
+   glyph when both are present. Reuses the accent palette so it reads as
+   a primary action — clicking it jumps straight back into the chapter
+   instead of opening the details page. */
+.panel-card__continue {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.panel-card__continue:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+/* On narrow phones the bookmark glyph + Continue button both want the
+   bottom row — push Continue left a bit so the two don't kiss. */
+@media (max-width: 640px) {
+  .panel-card__continue {
+    bottom: calc(var(--space-2) + 24px);
+  }
+}
+
+/* Stretched link: covers the whole card so a click anywhere opens the
+   details page. The action strip + stretched link both live inside the
+   cover; the strip wins on hover because it sits above in z-order. */
+.panel-card__stretched {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  text-indent: -9999em;
+  overflow: hidden;
+}
+
+/* Action strip — fades in on hover/focus so the default card stays
+   clean. Mirrors the bookmarks grid's hover treatment. */
+.panel-card__actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  padding: var(--space-2);
+  background: linear-gradient(
+    to top,
+    rgba(10, 11, 15, 0.92),
+    rgba(10, 11, 15, 0.6) 70%,
+    transparent
+  );
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-med) var(--ease-out),
+    transform var(--duration-med) var(--ease-out);
+}
+.panel-card--has-actions:hover .panel-card__actions,
+.panel-card--has-actions:focus-within .panel-card__actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.latest-card-actions {
+  display: contents;
+}
+.latest-card-actions .btn {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.latest-card-actions .btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+.latest-card-actions .btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+}
+.latest-card-actions .btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+.latest-card-actions .btn--danger-ghost {
+  background: rgba(229, 72, 77, 0.2);
+  color: #fff;
+}
+.latest-card-actions .btn--danger-ghost:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.35);
+  color: #fff;
+}
+/* Hide button labels on wider screens (icon-only strip) to mirror the
+   bookmark card's behavior. Below the mobile breakpoint the labels
+   return so the four-button row stays legible. */
+.latest-card-actions__continue > span,
+.latest-card-actions__folder > span,
+.latest-card-actions__open > span,
+.latest-card-actions__remove > span,
+.latest-card-actions__add > span {
+  display: none;
+}
+@media (max-width: 640px) {
+  .latest-card-actions__continue > span,
+  .latest-card-actions__folder > span,
+  .latest-card-actions__open > span,
+  .latest-card-actions__add > span {
+    display: inline;
+  }
+  /* Remove stays icon-only on mobile — the trash glyph is universally
+     recognisable and the strip is already cramped with 4 buttons. */
+  .latest-card-actions__remove > span {
+    display: none;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .panel-card__actions {
+    display: none;
+  }
+}
+
+/* Light theme: the badges are dark translucent chips tuned for the charcoal
+   theme, and their text inherits the light theme's dark ink — dark-on-dark,
+   invisible over bright covers. Flip them to frosted white chips with dark,
+   color-blind-safe label ink. Dark theme is untouched. */
+[data-theme='light'] .panel-card__status,
+[data-theme='light'] .panel-card__source {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(18, 22, 32, 0.28);
+}
+
+/* Semantic status hues need darker variants to pass contrast on white */
+[data-theme='light'] .panel-card__status--completed {
+  color: #2e7d3a;
+}
+
+[data-theme='light'] .panel-card__status--ongoing {
+  color: #1d6fb8;
+}
+
+[data-theme='light'] .panel-card__status--hiatus {
+  color: #9a6b00;
+}
+
+
+.panel-card__body {
+  padding: var(--space-3);
+}
+
+.panel-card__title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.panel-card__title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.panel-card__title-link:hover {
+  color: var(--text-strong);
+}
+.panel-card__meta--progress {
+  color: var(--text);
+  font-weight: var(--font-weight-medium);
+}
+.panel-card__meta--latest {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+/* Folder membership pills — overlaid on the cover's bottom-right corner
+   so the card body stays a single progress/title line. Multiple pills
+   wrap to a second row when there are more folders than fit. */
+.panel-card__folders {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  z-index: 4;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(100% - var(--space-4));
+  pointer-events: none;
+}
+.panel-card__folder-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  color: var(--text-soft);
+  background: var(--overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+.panel-card__folder-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel-card__folder-pill--more {
+  color: var(--text-dim);
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+}
+/* The hover-revealed action strip occupies the same bottom band, so
+   hide the folder pills during hover to keep the strip readable.
+   On touch / coarse-pointer devices the action strip is always shown
+   (no hover state), so the pill would just sit on top of the strip —
+   lift it above the action strip instead, which sits at z-index 3. */
+.panel-card--has-actions:hover .panel-card__folders,
+.panel-card--has-actions:focus-within .panel-card__folders {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.panel-card__meta {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Search bar ------------------------------------------------------------- */
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 6px 6px 6px var(--space-4);
+  max-width: 640px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.search-bar:hover {
+  border-color: var(--border-strong);
+}
+
+/* Focus ring is a soft accent halo instead of the harsh global focus
+   shadow; the container lifts slightly to feel "picked up". */
+.search-bar:focus-within {
+  border-color: rgba(229, 72, 77, 0.55);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    var(--shadow-md);
+}
+
+.search-bar--large {
+  padding: 8px 8px 8px var(--space-5);
+  font-size: var(--font-size-lg);
+}
+
+.search-bar__icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.search-bar:focus-within .search-bar__icon {
+  color: var(--accent);
+}
+
+.search-bar input {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: var(--space-2) 0;
+  min-width: 0;
+}
+
+.search-bar--large input {
+  padding-block: var(--space-3);
+}
+
+.search-bar input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Keyboard focus is communicated by the container halo above, not a ring
+   around the bare field inside the pill. */
+.search-bar input:focus-visible {
+  box-shadow: none;
+}
+
+/* "/" shortcut hint chip — hidden while the field is focused, being typed
+   into, or on coarse/narrow screens where it's irrelevant. */
+.search-bar__kbd {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  margin-right: var(--space-1);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  box-shadow:
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  pointer-events: none;
+}
+
+.search-bar:focus-within .search-bar__kbd,
+.search-bar:has(input:not(:placeholder-shown)) .search-bar__kbd {
+  visibility: hidden;
+}
+
+@media (max-width: 640px), (hover: none) {
+  .search-bar__kbd {
+    display: none;
+  }
+}
+
+/* Submit button sits flush inside the pill. */
+.search-bar__submit {
+  border-radius: var(--radius-full);
+  padding-inline: var(--space-5);
+}
+
+/* Clipboard-paste shortcut inside the pill (home hero). Quiet ghost circle
+   that matches the pill height. */
+.search-bar__paste {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.search-bar--large .search-bar__paste {
+  width: 40px;
+  height: 40px;
+}
+
+/* Reduced-motion fallback for the animated placeholder: phrases swap whole
+   instead of typewriting, and this one-shot fade eases each swap in. */
+@keyframes search-bar-ph-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-bar__input--ph-fade::placeholder {
+    animation: search-bar-ph-fade 200ms ease;
+  }
+}
+
+/* Replace the native WebKit ✕ with our own control so the clear affordance
+   looks and behaves identically in every browser. */
+.search-bar input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Quiet circular ✕, shown only while the field has content. */
+.search-bar__clear {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--surface-3);
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-dim);
+}
+
+.search-bar__clear:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* --- Search history dropdown (T1-4) --------------------------------------- */
+
+.search-bar__wrapper {
+  position: relative;
+}
+
+.search-bar__history {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 50;
+  /* Same width as the search bar itself (the wrapper fills the bar's box);
+     no max-width cap so the panel edges line up with the field edges. */
+  min-width: 240px;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: page-in var(--duration-fast) var(--ease-out);
+}
+
+.search-bar__history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.search-bar__history__clear {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-2);
+}
+
+.search-bar__history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.search-bar__history__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.search-bar__history__item:hover,
+.search-bar__history__item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.search-bar__history__clock {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.search-bar__history__query {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-bar__history__remove {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.search-bar__history__item:hover .search-bar__history__remove,
+.search-bar__history__item:focus-visible .search-bar__history__remove {
+  opacity: 1;
+}
+
+.search-bar__history__remove:hover,
+.search-bar__history__remove:focus-visible {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger), transparent 12%);
+}
+
+/* --- Source filter (segmented control) ------------------------------------ */
+
+.source-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+
+.source-filter__btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-dim);
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--duration-fast),
+    background var(--duration-fast);
+}
+
+.source-filter__btn:hover:not(.source-filter__btn--active) {
+  color: var(--text);
+}
+
+.source-filter__btn--active {
+  color: var(--text-strong);
+  background: var(--accent);
+}
+
+/* On phones (and all touch devices) the filter becomes a full-width,
+ * swipeable chip strip instead of a wrapping pill:
+ *  - horizontal scroll keeps every source one thumb-swipe away without
+ *    stacking into a tall multi-row blob;
+ *  - scroll snap + hidden scrollbar keep it feeling like native segmented
+ *    controls;
+ *  - ≥44px hit areas satisfy touch-target guidelines;
+ *  - inline scroll padding lines the first/last chip up with page margins,
+ *    and overscroll containment stops the swipe from triggering browser
+ *    back/forward navigation gestures. */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  .source-filter {
+    display: flex;
+    flex-wrap: nowrap;
+    /* Always occupy a full row at natural full width, even inside a
+     * shrink-wrapped/flex-start parent. */
+    flex: 1 1 100%;
+    align-self: stretch;
+    width: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-block: 3px;
+  }
+
+  .source-filter::-webkit-scrollbar {
+    display: none;
+  }
+
+  .source-filter__btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    min-width: 44px;
+    scroll-snap-align: start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-inline: var(--space-4);
+  }
+
+  .source-filter__btn:first-child {
+    margin-inline-start: var(--space-1);
+  }
+
+  .source-filter__btn:last-child {
+    margin-inline-end: var(--space-1);
+  }
+}
+
+.state-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+}
+
+.state-view__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.state-view__icon--error {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.state-view__title {
+  font-size: var(--font-size-xl);
+}
+
+.state-view__label {
+  color: var(--text-dim);
+  max-width: 42ch;
+}
+
+.state-view__hint {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* Calm indeterminate progress bar — the loader for full-screen loading states.
+   A gradient bar with a glowing fill slides back and forth continuously. */
+.loader-bar {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.loader-bar__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  box-shadow:
+    0 0 8px var(--accent),
+    0 0 14px var(--accent);
+  animation: loader-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes loader-shimmer {
+  0% {
+    left: -40%;
+    opacity: 0.4;
+  }
+  50% {
+    left: 50%;
+    opacity: 1;
+  }
+  100% {
+    left: 110%;
+    opacity: 0.4;
+  }
+}
+
+/* --- Loading GIF --------------------------------------------------------------- */
+
+.loading-gif {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+}
+
+.loading-gif--fullpage {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--overlay);
+  backdrop-filter: blur(2px);
+}
+
+/* --- Dialog + toasts --------------------------------------------------------- */
+
+.dialog {
+  /* Center explicitly — the global `* { margin: 0 }` reset kills the UA's
+     auto-margin centering for modal dialogs. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+  max-width: 420px;
+  width: calc(100% - 2 * var(--space-4));
+  box-shadow: var(--shadow-lg);
+}
+
+.dialog::backdrop {
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+}
+
+.dialog__body {
+  padding: var(--space-5);
+}
+
+.dialog__title {
+  font-size: var(--font-size-lg);
+}
+
+.dialog__message {
+  margin-top: var(--space-2);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+/* --- Backup export options (Bookmarks page Export dialog) ----------------- */
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.export-options__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+/* --- Folder picker dialog (T2-8) ----------------------------------------- */
+
+.folder-picker {
+  max-width: 380px;
+}
+.folder-picker__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.folder-picker__hint {
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+.folder-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.folder-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.folder-picker__row:hover {
+  background: var(--surface-2);
+}
+.folder-picker__row--default {
+  cursor: default;
+  background: var(--surface-2);
+}
+.folder-picker__row--default:hover {
+  background: var(--surface-2);
+}
+.folder-picker__row input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+.folder-picker__name {
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+}
+.folder-picker__default-pill {
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.folder-picker__empty {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* --- Keyboard shortcuts help (ShortcutsDialog, reader-settings panel) ------ */
+
+.shortcuts-group {
+  margin-top: var(--space-4);
+}
+
+.shortcuts-group__title {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.shortcuts-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.shortcuts-table td {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+  color: var(--text-soft);
+  vertical-align: baseline;
+}
+
+.shortcuts-table__keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Text-level and table-level <kbd> share the same surface look */
+.shortcuts-table__keys kbd,
+.reader-settings__subtitle kbd {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  color: var(--text);
+}
+
+.shortcuts-table__keys kbd + kbd::before {
+  content: '/';
+  color: var(--text-faint);
+}
+
+.shortcuts-table__action {
+  padding-left: var(--space-3);
+}
+
+.toast-viewport {
+  position: fixed;
+  bottom: calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  /* Constrain to the visual viewport: without a width cap a long message
+     (e.g. "Cleared 1,234 cover images…") stretches the pill past the
+     screen edges, so the centered toast reads as offset or invisible —
+     especially on phones. */
+  width: min(440px, calc(100vw - 2 * var(--space-4)));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  padding: 10px 18px;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: break-word;
+  box-shadow: var(--shadow-md);
+  animation: toast-in 0.25s var(--ease-out);
+}
+
+.toast--success {
+  border-color: var(--success);
+}
+
+.toast--error {
+  border-color: var(--danger);
+}
+
+.toast__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.toast--success .toast__icon {
+  color: var(--success);
+}
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Phones: same bottom-anchored toast as desktop, but as a full-width
+   sheet (wrapped messages read better than a tall pill) with a larger
+   touch-visible target. The viewport's bottom offset already clears the
+   safe area (gesture bar / browser chrome). */
+@media (max-width: 640px) {
+  .toast {
+    width: 100%;
+    border-radius: var(--radius-lg);
+    padding: 12px 16px;
+  }
+}
+
+/* --- Chapter Bookmark Button ----------------------------------------------- */
+
+.chapter-bookmark-btn {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  padding: 8px;
+}
+.chapter-bookmark-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.chapter-bookmark-btn--active {
+  background: var(--bookmark-single-soft);
+  border-color: var(--bookmark-single);
+  color: var(--bookmark-single);
+}
+.chapter-bookmark-btn__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* --- Chapter Bookmark Actions ---------------------------------------------- */
+
+.chapter-bookmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Bulk chapter actions cluster — "Mark All Read" + "Unmark All" +
+   "Select chapters" entry. Lives in the same flex row as the rest of the
+   chapter-bookmark-actions group but is separated from the housekeeping
+   actions ("Clear Bookmarks", "Clear Read Tracker") by a thin hairline
+   on the right edge, so the panel reads as two families:
+   bulk-action (left) vs. cleanup (right). */
+.chapter-bookmark-actions__cluster {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-3);
+  margin-right: var(--space-1);
+  border-right: 1px solid var(--border);
+}
+
+/* Entry button for the multi-select mode — now a sibling of "Mark All
+   Read" inside the bulk-action cluster. Shares the same ghost-button
+   geometry but picks up the violet selection accent so the family
+   relationship to the active multi-select toolbar is obvious. */
+.chapter-select-actions__entry {
+  color: var(--accent, #7864dc);
+  border-color: var(--accent, #7864dc);
+}
+.chapter-select-actions__entry:hover:not(:disabled) {
+  background: var(--bookmark-multi-soft, rgba(120, 100, 220, 0.12));
+  color: var(--accent-hover, #5b48c2);
+  border-color: var(--accent-hover, #5b48c2);
+}
+
+/* --- Chapter List Updates -------------------------------------------------- */
+
+.chapter-list-container {
+  width: 100%;
+}
+
+/* Batch-chapter-actions toggle — same segmented shell + metrics as the
+   Newest/Oldest sort pills; violet since it manages chapter bookmarks. */
+.chapter-actions-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.chapter-actions-toggle:hover:not(:disabled) {
+  color: var(--text-soft);
+}
+
+.chapter-actions-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.chapter-actions-toggle--active {
+  background: var(--bookmark-multi-soft);
+  color: var(--bookmark-multi);
+}
+
+.chapter-actions-toggle__chevron {
+  display: inline-flex;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform var(--duration-med) var(--ease-out);
+}
+
+.chapter-actions-toggle--active .chapter-actions-toggle__chevron {
+  transform: rotate(180deg);
+}
+
+/* Actions panel — refined card */
+.chapter-list__actions-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0 var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  animation: slide-down 0.2s var(--ease-out);
+}
+
+/* Mobile: full-width stacked touch targets inside the panel. */
+@media (max-width: 640px) {
+  .chapter-list__actions-panel {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+  .chapter-bookmark-actions .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 42px;
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chapter-list__item--bookmarked {
+  /* Subtle indicator for bookmarked chapters - not as strong as read */
+}
+
+.chapter-list__title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chapter-list__item .chapter-bookmark-btn {
+  flex-shrink: 0;
+}
+
+/* Hide the ☆ placeholder on unbookmarked rows — the list stays clean and
+   only bookmarked chapters carry a star. The affordance reappears when the
+   row is hovered/focused (desktop); on touch, bookmarking happens via the
+   Actions panel or the reader's bookmark dialog. */
+.chapter-list__item .chapter-bookmark-btn:not(.chapter-bookmark-btn--active) {
+  opacity: 0;
+  pointer-events: none;
+  /* visibility is the structural guarantee that a hidden button is never
+     tappable/focusable/announced, on any device or input type — unlike
+     `pointer-events` it also removes the button from tab order and the
+     accessibility tree. The delayed flip keeps the opacity fade-out smooth;
+     every reveal rule below resets it to flip immediately. */
+  visibility: hidden;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s linear var(--duration-fast);
+}
+
+.chapter-list__item:hover .chapter-bookmark-btn:not(.chapter-bookmark-btn--active),
+.chapter-list__item:focus-within .chapter-bookmark-btn:not(.chapter-bookmark-btn--active),
+.chapter-list__item .chapter-bookmark-btn--active {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* While the Actions panel is open, every row's star stays visible so batch
+   bookmarking has obvious per-chapter targets. */
+.chapter-list__actions-panel ~ .chapter-list-container .chapter-bookmark-btn {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* --- Chapter Download Button ---------------------------------------------- */
+
+.chapter-download-btn {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  padding: 8px;
+}
+.chapter-download-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.chapter-download-btn--active {
+  background: var(--accent-soft, rgba(120, 100, 220, 0.12));
+  border-color: var(--accent, #7864dc);
+  color: var(--accent, #7864dc);
+}
+.chapter-download-btn--done {
+  color: var(--accent, #7864dc);
+}
+.chapter-download-btn__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chapter-list__item .chapter-download-btn {
+  flex-shrink: 0;
+}
+
+/* Mirror the chapter-bookmark-btn hover-only pattern: idle/download buttons
+   fade in on row hover or keyboard focus so a long chapter list stays
+   clean. States that NEED user attention (active = downloading, failed,
+   cancelled) carry `--action` and stay visible all the time — the user
+   must be able to stop a in-flight download or retry a partial one
+   without hunting for it. `--done` is purely informational (the violet
+   tint says "fully cached") and is revealed alongside the idle icon on
+   hover, the same way a bookmarked star always stays visible while an
+   un-bookmarked star is hover-only. */
+.chapter-list__item .chapter-download-btn:not(.chapter-download-btn--action):not(.chapter-download-btn--done) {
+  opacity: 0;
+  pointer-events: none;
+  /* Same structural guarantee as the bookmark button above: hidden means
+     untappable, unfocusable and unannounced on every device. */
+  visibility: hidden;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s linear var(--duration-fast);
+}
+
+.chapter-list__item:hover .chapter-download-btn:not(.chapter-download-btn--action),
+.chapter-list__item:focus-within .chapter-download-btn:not(.chapter-download-btn--action),
+.chapter-list__item .chapter-download-btn--action,
+.chapter-list__item .chapter-download-btn--done {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* While the Actions panel is open (bookmark / download / select), every
+   row's download icon stays revealed too, mirroring the bookmark button.
+   This matches the `~` selector used for `.chapter-bookmark-btn` — both
+   buttons live in the same `.chapter-list__item` rows that follow the
+   actions panel in the DOM.
+   NOTE: the extra `.chapter-list__item` in this selector is load-bearing,
+   not decoration. The hover-only hiding rule above carries two `:not()`
+   class args (specificity 0,4,0); without the row class this reveal rule
+   is only (0,3,0) and silently loses, leaving idle download buttons
+   hover-only even with the panel open. */
+.chapter-list__actions-panel ~ .chapter-list-container .chapter-list__item .chapter-download-btn {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* Class-based mirror of the `~` rule above for the case where the actions
+   panel is rendered *after* the chapter list (or in a different DOM
+   branch). The page adds `.chapter-list-container--selecting` whenever
+   multi-select mode is on so the per-row download button stays visible
+   without depending on sibling order. */
+.chapter-list-container--selecting .chapter-download-btn:not(.chapter-download-btn--action):not(.chapter-download-btn--done) {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* Touch devices have no true hover, but mobile browsers still emulate
+   `:hover` on tap: the first tap on a row matches the hover-reveal rules
+   above, flipping the invisible buttons to `pointer-events: auto`, and the
+   same tap's click can land on the now-live button nested inside the row
+   link. The result is an "invisible but clickable" bookmark/download
+   button. `:focus-within` has the same problem once a tapped row link
+   retains focus. So on touch, idle buttons leave the layout entirely
+   (`display: none`) instead of just fading out — they can't be hit,
+   tabbed to, or announced while hidden. States that are meant to be
+   visible (`--active`, `--action`, `--done`) are untouched, and the
+   explicit reveal contexts below re-assert `display` alongside the
+   `opacity`/`pointer-events` rules above so batch flows keep working. */
+@media (hover: none), (pointer: coarse) {
+  .chapter-list__item .chapter-bookmark-btn:not(.chapter-bookmark-btn--active),
+  .chapter-list__item .chapter-download-btn:not(.chapter-download-btn--action):not(.chapter-download-btn--done) {
+    display: none;
+  }
+  .chapter-list__actions-panel ~ .chapter-list-container .chapter-bookmark-btn,
+  .chapter-list__actions-panel ~ .chapter-list-container .chapter-list__item .chapter-download-btn,
+  .chapter-list-container--selecting .chapter-download-btn:not(.chapter-download-btn--action):not(.chapter-download-btn--done) {
+    display: inline-flex;
+  }
+}
+
+/* --- Chapter Download Actions Panel --------------------------------------- */
+
+.chapter-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border);
+  width: 100%;
+}
+
+.chapter-download-actions__stop {
+  color: var(--danger, #d93025);
+  border-color: var(--danger, #d93025);
+}
+
+.chapter-download-actions__progress {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.chapter-download-actions__help {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.chapter-download-actions__link {
+  color: var(--accent, #7864dc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --- Download Settings (interval between chapters) -------------------------
+   Inline panel that lives inside `.chapter-download-actions`. Three
+   pieces: a "Wait between chapters" label, a segmented preset row
+   (Off / 30s / 1m / 2m / 5m), and a custom-ms number input. The
+   segmented row reuses the global `.segmented` / `.segmented__option`
+   styles from the reader settings panel so the two surfaces feel
+   consistent. */
+.download-settings {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: 1px dashed var(--border);
+}
+
+.download-settings__label {
+  flex-basis: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.download-settings__presets {
+  flex: 0 0 auto;
+}
+
+/* Compact variant: the global `.segmented` styling was tuned for the
+   reader settings sidebar (larger rows, roomy padding). The download
+   panel sits in a busy chapter-list card, so a tighter variant feels
+   right. */
+.download-settings__presets .segmented__option {
+  padding: 4px 10px;
+  font-size: var(--font-size-sm);
+}
+
+.download-settings__custom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+/* Highlight the custom input when its value doesn't match any preset
+   — the user has dialled in a specific wait and deserves visual
+   confirmation that "custom" is active. */
+.download-settings__custom--active {
+  border-color: var(--accent, #7864dc);
+  background: var(--accent-soft, rgba(120, 100, 220, 0.12));
+  color: var(--accent, #7864dc);
+}
+
+.download-settings__custom-label {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.download-settings__custom-input {
+  width: 5.5em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--surface));
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.download-settings__custom-input:focus-visible {
+  outline: 2px solid var(--accent, #7864dc);
+  outline-offset: 1px;
+}
+
+.download-settings__help {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+/* --- Chapter Select / Multi-select Toolbar --------------------------------
+   Active toolbar (Select all / Bookmark N / Download N / Cancel) — the
+   entry button that used to live here has moved to
+   `.chapter-select-actions__entry`, rendered in the same row as
+   "Mark All Read" via `ChapterBookmarkActions`'s `selectChaptersSlot`.
+   The active toolbar still renders as a second row with a hairline
+   divider above it. */
+.chapter-select-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+
+.chapter-select-actions__cancel {
+  margin-left: auto;
+}
+
+/* Bookmark-selected sibling: gold tint (matches per-row bookmark star) so
+   the two multi-select action buttons — bookmark (gold) + download
+   (violet) — are visually distinct, and so it reads as the same action
+   family as the existing "Bookmark All (N)" button above. */
+.chapter-select-actions__bookmark {
+  color: var(--bookmark-single, #f0b429);
+  border-color: var(--bookmark-single, #f0b429);
+}
+.chapter-select-actions__bookmark:hover:not(:disabled) {
+  background: var(--bookmark-single-soft, rgba(240, 180, 41, 0.14));
+  color: var(--bookmark-single, #f0b429);
+  border-color: var(--bookmark-single, #f0b429);
+}
+
+/* Per-row selection checkbox — same size/geometry as the per-row download
+   icon so the row's hover-revealed actions line up. */
+.chapter-select-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  padding: 0;
+}
+
+.chapter-select-checkbox:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chapter-select-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chapter-select-checkbox--checked {
+  background: var(--accent, #7864dc);
+  border-color: var(--accent, #7864dc);
+  color: var(--accent-contrast, #fff);
+}
+
+.chapter-select-checkbox--checked:hover {
+  background: var(--accent-hover, #5b48c2);
+  border-color: var(--accent-hover, #5b48c2);
+  color: var(--accent-contrast, #fff);
+}
+
+.chapter-select-checkbox__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Chapter Bookmark Toolbar Button ---------------------------------------
+   Uses the plain .reader-toolbar__btn geometry/hover; only the bookmarked
+   state tints the star gold. */
+
+.chapter-bookmark-toolbar-btn--active {
+  color: var(--bookmark-single);
+}
+
+/* --- Bookmark type color coding ---------------------------------------------
+   Gold star = bookmark a single chapter. Violet layers = batch bookmarks. */
+
+.btn--bookmark-single {
+  background: var(--bookmark-single);
+  border-color: var(--bookmark-single);
+  color: #241c04;
+}
+.btn--bookmark-single:hover:not(:disabled) {
+  background: #f7c65a;
+  border-color: #f7c65a;
+}
+
+.btn--bookmark-multi {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn--bookmark-multi:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.chapter-list__actions-panel .btn--bookmark-multi {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---- Share dialog (QR code + link) ---- */
+.share-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  animation: share-dialog-fade var(--duration-fast) var(--ease-out);
+}
+
+@keyframes share-dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.share-dialog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(340px, 100%);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: share-dialog-pop var(--duration-fast) var(--ease-out);
+}
+
+@keyframes share-dialog-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.share-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+.share-dialog__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+}
+
+.share-dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.share-dialog__close:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.share-dialog__qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.share-dialog__qr img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.share-dialog__qr-fallback {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--space-2);
+}
+
+.share-dialog__hint {
+  margin: var(--space-2) 0 var(--space-4);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+}
+
+.share-dialog__link-row {
+  display: flex;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.share-dialog__link {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-overflow: ellipsis;
+}
+
+.share-dialog__link:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.share-dialog__copy--done {
+  color: var(--accent);
+}
+

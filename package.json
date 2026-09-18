@@ -1,0 +1,45 @@
+{
+  "name": "panel-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A production-quality, full-stack panel image viewer (Bun + Vite + React + Hono + PostgreSQL).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"bun run dev:api\" \"bun run dev:web\"",
+    "dev:api": "bun --hot apps/api/src/index.ts",
+    "dev:web": "cd apps/web && bun run scripts/dev-silent.ts",
+    "build": "cd apps/web && bun run build",
+    "start": "cd apps/api && bun run start",
+    "lan": "bun run scripts/lan.ts",
+    "clean-install": "bun run scripts/clean-install.ts",
+    "typecheck": "cd packages/shared && tsc --noEmit && cd ../../apps/api && tsc --noEmit && cd ../web && tsc --noEmit",
+    "lint": "eslint .",
+    "test": "cd apps/web && bun run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "cd apps/api && bun x drizzle-kit generate",
+    "db:migrate": "cd apps/api && bun run src/db/migrate.ts",
+    "db:import": "cd apps/api && bun run src/db/import.ts",
+    "db:studio": "cd apps/api && bun x drizzle-kit studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "engines": {
+    "bun": ">=1.4.1",
+    "npm": ">=999.0.0"
+  }
+}

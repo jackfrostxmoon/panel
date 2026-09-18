@@ -1,0 +1,51 @@
+# Dependencies (mirrors scripts/clean-install.ts installDirs(): root + apps/* + packages/*)
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Bun
+bun.lockb
+
+# npm artefacts — this is a Bun workspace, do NOT run npm install / npm update here.
+# Bun owns the lockfile (bun.lock) and per-workspace node_modules. A stray `npm update`
+# rewrites the tree using npm's hoisting rules, deletes workspace-local copies of
+# packages (e.g. apps/web/node_modules/vite), and silently breaks `bun run dev:*`.
+package-lock.json
+npm-debug.log*
+.npm/
+
+# Local embedded database (PGlite data directory) — personal data, never commit
+data/
+
+# On-exit auto-backups (compressed tar.gz) — personal data, never commit
+data/.backup/
+
+# Generate database
+database/
+
+# Others
+.agents/
+scripts/
+AGENTS.md
+plans/

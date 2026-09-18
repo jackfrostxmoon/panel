@@ -1,0 +1,167 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { serveStatic } from 'hono/bun';
+import { sql } from 'drizzle-orm';
+import { loadConfig } from './config.js';
+import { createApp } from './app.js';
+import { createDb } from './db/client.js';
+import { writeBackup } from './db/backup.js';
+import { logger } from './lib/logger.js';
+import { migrateImageCacheToFolders } from './lib/imageCacheFolders.js';
+import { createSourceRegistry } from './sources/registry.js';
+import { PanelCacheRepository } from './repositories/panelCacheRepository.js';
+
+/**
+ * API entry point.
+ *
+ * Serves the REST API on PORT. When a built frontend exists
+ * (apps/web/dist — e.g. inside the all-in-one Docker image), it is served
+ * as static files with an SPA fallback, so one container can serve both.
+ *
+ * The database is embedded (PGlite — PostgreSQL in-process): it lives in
+ * a local directory (DATABASE_URL, e.g. `data/pglite`), created on first
+ * start. No server, no Docker. If the directory can't be opened the
+ * process exits with a helpful message instead of hanging.
+ */
+
+const config = loadConfig();
+
+// Fail fast when the local database can't be opened (locked by another
+// process, missing permissions, or a corrupted data directory — e.g. an
+// unclean shutdown that tore the WAL). Without this guard a PGlite open
+// failure surfaces as an bare WASM abort and `bun --hot` just crash-loops
+// with the API port never listening.
+let db: Awaited<ReturnType<typeof createDb>>;
+try {
+  db = await createDb(config.databaseUrl);
+} catch (error) {
+  logger.error('Local database could not be opened', {
+    error: error instanceof Error ? error.message : String(error),
+    databaseDir: config.databaseUrl,
+  });
+  logger.error(
+    'If another API process is running, stop it first (the embedded database allows a single opener). ' +
+      'If the directory is corrupted, back it up, delete it, then run `bun run db:migrate` + `bun run db:import`.',
+  );
+  process.exit(1);
+}
+try {
+  await db.execute(sql`select 1`);
+} catch (error) {
+  logger.error('Local database could not be opened', {
+    error: error instanceof Error ? error.message : String(error),
+    databaseDir: config.databaseUrl,
+  });
+  logger.error(
+    'Check that DATABASE_URL points at a writable folder (default "data/pglite"), e.g. `bun run db:migrate`',
+  );
+  process.exit(1);
+}
+const panelCacheForSources = new PanelCacheRepository(db);
+const registry = createSourceRegistry(config, {
+  // Bulk genre lookup for listing enrichment: previously-seen panels skip
+  // their detail fetch (repositories are stateless, so sharing one more
+  // instance over the same db is safe).
+  findGenres: (ids) => panelCacheForSources.findGenresByGlobalIds(ids),
+});
+const { app, prefetchWorker } = createApp({ config, db, registry });
+
+// One-time, best-effort organization of pre-existing flat cache files
+// into per-panel folders (runs before the prefetch worker starts so no
+// write can race a rename). Unknown files stay flat and keep serving.
+try {
+  const migrated = await migrateImageCacheToFolders(config.imageCache.dir, db);
+  if (migrated.moved > 0) {
+    logger.info('Image cache organized into panel folders', { ...migrated });
+  }
+} catch (error) {
+  logger.warn('Image cache organization failed (cache still works flat)', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+// Server-side prefetch queue: drains `prefetch_jobs` so downloads survive
+// browser refresh / tab close / API restart. Single-flight per process;
+// the tick is a no-op while a job is being processed.
+await prefetchWorker.start();
+const prefetchTimer = setInterval(() => {
+  void prefetchWorker.tick().catch((error) => {
+    logger.error('PrefetchWorker tick failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}, 500);
+
+// Optional: serve the built web app (production / all-in-one Docker image).
+const here = dirname(fileURLToPath(import.meta.url));
+const webDist = resolve(here, '../../web/dist');
+if (existsSync(webDist)) {
+  app.use(
+    '/*',
+    serveStatic({
+      root: webDist,
+      rewriteRequestPath: (path) => path,
+      onNotFound: () => {},
+    }),
+  );
+  // SPA fallback: unknown non-API paths serve index.html.
+  // Note: use a root-relative rewrite instead of the `path` option. The `path`
+  // option is joined onto the default root with node:path.join, which strips the
+  // leading slash on POSIX (`join('./', '/abs/path')` -> relative), so an absolute
+  // `path` silently fails to resolve on Linux (Bun.file resolves relative to the
+  // module dir, not the process cwd). Rewriting to a root-relative name keeps the
+  // final path absolute on every platform.
+  app.get('*', serveStatic({ root: webDist, rewriteRequestPath: () => 'index.html' }));
+  logger.info('Serving built frontend', { webDist });
+}
+
+const server = Bun.serve({
+  port: config.port,
+  // Bind every interface so devices on the LAN can reach the API — mirrors
+  // Vite's `host: true`. Bun defaults to localhost only.
+  hostname: '0.0.0.0',
+  fetch: app.fetch,
+  // Cap the request body at 1 MiB. Every legitimate endpoint in this app
+  // is well under 100 KB (the largest is the chapter-bookmark batch at
+  // 200 entries × ~500 bytes ≈ 100 KB), so 1 MiB leaves comfortable
+  // headroom while preventing a single oversized POST from pinning the
+  // server's memory. Bun's default is 128 MiB, which is way more than
+  // any endpoint here needs.
+  maxRequestBodySize: 1_048_576,
+});
+
+logger.info(`Panel viewer API listening`, {
+  url: `http://0.0.0.0:${server.port}`,
+  local: `http://localhost:${server.port}`,
+  env: process.env.NODE_ENV ?? 'development',
+  sources: registry.list().map((s) => `${s.label} (${s.enabled ? 'enabled' : 'disabled'})`),
+});
+
+// Graceful shutdown: stop claiming new jobs, let the in-flight job finish
+// its current page, snapshot the embedded database to a compressed backup,
+// then close the HTTP server. Docker sends SIGTERM.
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`Received ${signal} — shutting down`);
+  clearInterval(prefetchTimer);
+  await prefetchWorker.stop();
+  if (config.backupDir) {
+    try {
+      await writeBackup(db, config.backupDir, config.backupScope);
+    } catch (error) {
+      // A failed backup must never prevent shutdown — the server is closing
+      // anyway and the live data dir survives the process.
+      logger.error('On-exit backup failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  await db.$client.close();
+  server.stop();
+  process.exit(0);
+}
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
