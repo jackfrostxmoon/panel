@@ -158,16 +158,6 @@ bun run lint        # ESLint 10 (flat config)
 bun run format      # Prettier
 ```
 
-#### Troubleshooting: push fails with "Authentication failed"
-
-The repo's remote is a local Gitea instance (`http://localhost:3000/admin/CV.git`).
-Pushes intermittently fail with `remote: Failed to authenticate user` even when the
-credentials are correct — the Windows credential cache goes stale. A simple retry
-(`git push origin main`) usually succeeds. If it keeps failing, delete the cached
-entry (`cmdkey /delete:git:http://localhost:3000`) and push again, or push with
-inline credentials:
-`git push http://<user>:<password>@localhost:3000/admin/CV.git main`.
-
 ---
 
 ## Technology versions
