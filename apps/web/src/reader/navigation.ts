@@ -83,6 +83,11 @@ export function isEditableKeyTarget(
  *   S / ↓   → "stepDown"     (vertical: next page; gallery: step scroll down)
  *   G      → "toggleGap"     (toggle breathing room between images)
  *
+ * When `smoothScrollKeys` is on, plain W / ↑ and S / ↓ in vertical mode act
+ * like their Shift-held variants ("scrollUp"/"scrollDown" — hold to glide at
+ * scroll speed, release to stop) and the step intents are not emitted there.
+ * Gallery and paged modes are unaffected.
+ *
  * In RTL reading direction the left/right (and A/D) keys swap their chapter
  * meaning: "forward" is the LEFT arrow / A.
  *
@@ -98,6 +103,7 @@ export function intentForKey(
   direction: ReadingDirection,
   shiftKey = false,
   mode?: 'vertical' | 'paged' | 'gallery',
+  smoothScrollKeys = false,
 ):
   | 'forward'
   | 'backward'
@@ -117,6 +123,12 @@ export function intentForKey(
 
   if (shiftKey && (key === 'ArrowUp' || key === 'w' || key === 'W')) return 'scrollUp';
   if (shiftKey && (key === 'ArrowDown' || key === 's' || key === 'S')) return 'scrollDown';
+
+  // Smooth-scroll keys toggle: plain W/S / arrows glide in vertical mode.
+  if (smoothScrollKeys && !shiftKey && mode === 'vertical') {
+    if (key === 'ArrowUp' || key === 'w' || key === 'W') return 'scrollUp';
+    if (key === 'ArrowDown' || key === 's' || key === 'S') return 'scrollDown';
+  }
 
   // Smooth step scroll (vertical/gallery modes, no Shift)
   if (!shiftKey && (mode === 'vertical' || mode === 'gallery')) {

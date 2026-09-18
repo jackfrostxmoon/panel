@@ -125,7 +125,7 @@ export function ReaderPage() {
   const [settingsEverOpened, setSettingsEverOpened] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  /** Active smooth-scroll direction (Shift+W / Shift+S); null = stopped. */
+  /** Active smooth-scroll direction (Shift+W / Shift+S, or plain W/S with smooth-scroll keys); null = stopped. */
   const [scrollDir, setScrollDir] = useState<'up' | 'down' | null>(null);
   /** Hands-free auto-scroll timer (T1-2). */
   const [autoScrollActive, setAutoScrollActive] = useState(false);
@@ -507,7 +507,7 @@ export function ReaderPage() {
         toggleFullscreen();
         return;
       }
-      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode);
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys);
       if (intent === 'toggleGap') {
         // Breathing room between pages: vertical + gallery stack pages,
         // paged pairs the two sheets of a spread. All three modes honor
@@ -609,7 +609,7 @@ export function ReaderPage() {
     };
     window.addEventListener('keydown', handler);
 
-    // Release-to-stop: letting go of Shift+W / Shift+S halts the scroll.
+    // Release-to-stop: letting go of the smooth-scroll keys halts the scroll.
     const stopScroll = () => setScrollDir(null);
     window.addEventListener('keyup', stopScroll);
 
@@ -628,7 +628,7 @@ export function ReaderPage() {
       window.removeEventListener('keyup', stopScroll);
       window.removeEventListener('resize', onResize);
     };
-  }, [settings.direction, settings.mode, settings.imageGap, settings.keyPagesPress, settings.glidePreset, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
+  }, [settings.direction, settings.mode, settings.imageGap, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
 
   /* Auto-hide controls: hide on scroll down, reveal on scroll up, hide after
      idle, and stay visible while hovering the toolbar. Pointer movement
@@ -722,7 +722,7 @@ export function ReaderPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (isEditableKeyTarget(target)) return;
-      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode);
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys);
       if (
         intent === 'stepUp' ||
         intent === 'scrollUp' ||
@@ -770,7 +770,7 @@ export function ReaderPage() {
       reader?.removeEventListener('pointermove', onContainerMove);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [settingsOpen, chapterPages.data, showPagesLoading, settings.direction, settings.mode, autoScrollActive]);
+  }, [settingsOpen, chapterPages.data, showPagesLoading, settings.direction, settings.mode, settings.smoothScrollKeys, autoScrollActive]);
 
   /* Fullscreen state tracking. */
   useEffect(() => {
@@ -780,7 +780,7 @@ export function ReaderPage() {
   }, []);
 
   /**
-   * Smooth continuous scroll (Shift+W / Shift+S) — vertical mode only.
+   * Smooth continuous scroll (Shift+W / Shift+S, or plain W/S with smooth-scroll keys) — vertical mode only.
    *
    * A requestAnimationFrame loop nudges `.reader-content`'s scrollTop by
    * `scrollSpeedPx × elapsedSeconds` each frame, so it stays smooth and

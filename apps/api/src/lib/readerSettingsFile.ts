@@ -19,6 +19,7 @@ export function loadReaderSettings(): ReaderSettings {
       imageGap: false,
       clearToolbarSpace: true,
       scrollSpeed: 'normal',
+      smoothScrollKeys: false,
       imageLoad: 'sequential',
       preloadAhead: 3,
       imageBrightness: 100,

@@ -91,6 +91,11 @@ export interface ReaderSettings {
   clearToolbarSpace: boolean;
   /** How fast the reader auto-scrolls while holding Shift+W / Shift+S. */
   scrollSpeed: ScrollSpeed;
+  /**
+   * When true, plain W/S / ArrowUp/ArrowDown hold-to-smooth-scroll in vertical
+   * mode at `scrollSpeed` (no Shift needed), replacing the step keys.
+   */
+  smoothScrollKeys: boolean;
   /** Image loading strategy; defaults to loading pages as you scroll. */
   imageLoad: ImageLoadMode;
   /**
@@ -194,6 +199,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   imageGap: false,
   clearToolbarSpace: true,
   scrollSpeed: 'normal',
+  /** Off by default — plain W/S / arrows keep their step behavior. */
+  smoothScrollKeys: false,
   imageLoad: 'sequential',
   /**
    * 3 pages fetched ahead of the reader position by default — a good balance

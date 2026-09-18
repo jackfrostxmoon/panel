@@ -17,6 +17,11 @@ export interface ReaderSettings {
   imageGap: boolean;
   clearToolbarSpace: boolean;
   scrollSpeed: ScrollSpeed;
+  /**
+   * When true, plain W/S / ArrowUp/ArrowDown hold-to-smooth-scroll in vertical
+   * mode at `scrollSpeed` (no Shift needed), replacing the step keys.
+   */
+  smoothScrollKeys: boolean;
   imageLoad: ImageLoadMode;
   preloadAhead: PreloadAhead;
   imageBrightness: number;

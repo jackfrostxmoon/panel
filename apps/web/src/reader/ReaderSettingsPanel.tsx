@@ -714,7 +714,7 @@ export function ReaderSettingsPanel({
                 Scroll speed
               </span>
               <span className="reader-settings__row-hint">
-                Hold Shift+W / Shift+S to auto-scroll the reader; this sets how fast.
+                How fast hold-to-smooth-scroll moves — Shift+W / Shift+S, or plain W/S when smooth-scroll keys is on.
               </span>
             </span>
             <Segmented<ScrollSpeed>
@@ -726,6 +726,22 @@ export function ReaderSettingsPanel({
               ]}
               value={settings.scrollSpeed}
               onChange={(scrollSpeed) => onUpdate({ scrollSpeed })}
+            />
+          </div>
+
+          <div className="reader-settings__row">
+            <span className="reader-settings__row-copy">
+              <span id="rs-smoothScrollKeys" className="reader-settings__row-title">
+                Smooth-scroll keys
+              </span>
+              <span className="reader-settings__row-hint">
+                Hold W/S or ↑/↓ to smooth-scroll at the speed above, without holding Shift. Vertical mode only.
+              </span>
+            </span>
+            <Switch
+              checked={settings.smoothScrollKeys}
+              labelledBy="rs-smoothScrollKeys"
+              onChange={(smoothScrollKeys) => onUpdate({ smoothScrollKeys })}
             />
           </div>
 

@@ -87,6 +87,7 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
     imageGap: bool(raw['imageGap'], d.imageGap),
     clearToolbarSpace: bool(raw['clearToolbarSpace'], d.clearToolbarSpace),
     scrollSpeed: oneOf(raw['scrollSpeed'], ['slow', 'normal', 'fast'] as const, d.scrollSpeed),
+    smoothScrollKeys: bool(raw['smoothScrollKeys'], d.smoothScrollKeys),
     imageLoad: oneOf(raw['imageLoad'], ['parallel', 'sequential'] as const, d.imageLoad),
     preloadAhead: preload,
     imageBrightness: finiteNumber(raw['imageBrightness'], d.imageBrightness, 30, 150),
