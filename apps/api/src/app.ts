@@ -39,7 +39,7 @@ import type { SourceRegistry } from './sources/registry.js';
 import { readerSettingsRoutes } from './routes/reader-settings.js';
 import { readerStylesRoutes } from './routes/reader-styles.js';
 import { ImageCache } from './lib/imageCache.js';
-import { panelFolderName, folderTagHash } from './lib/imageCacheFolders.js';
+import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
 import { PrefetchWorker } from './lib/prefetchWorker.js';
 
 import { loadReaderSettings } from './lib/readerSettingsFile.js';
@@ -99,15 +99,32 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
 
   // On-disk cache for proxied cover / chapter images (local data directory).
   // Files attributable to a panel land in `<Title> [<source>-<hash>]/`
-  // folders so the cache is browsable; unattributable ones stay flat.
+  // folders, with chapter pages one level deeper in
+  // `<chapter label> [<chapterHash>]/` subfolders as `001.jpg`-style numbered
+  // files, so the cache is browsable; unattributable ones stay flat.
   // Resolution is memoized inside ImageCache and only runs on cache
-  // misses (writes) — reads are served from the recursive index.
+  // misses (writes) — reads are served from the recursive index (or the
+  // chapter folder path for numbered pages). Read-only: folder names are
+  // derived from existing metadata rows, nothing is stored in the database.
   const imageCache = new ImageCache({
     ...config.imageCache,
-    resolveFolder: async (tag) => {
-      const info = await panelCacheRepo.resolveTagToPanel(tag);
+    resolveFolder: async (tag, kind) => {
+      const info = await panelCacheRepo.resolveTagToCacheTarget(tag);
       if (!info) return null;
-      return panelFolderName(info.title, info.source, folderTagHash(info.panelGlobalId));
+      const panelFolder = panelFolderName(info.title, info.source, folderTagHash(info.panelGlobalId));
+      if (kind !== 'chapter' || !info.isChapter) return { panelFolder, chapterFolder: null };
+      // Chapter row missing (or no usable label) — keep today's behavior:
+      // hash-named file directly in the panel folder.
+      if (info.chapterNumber === null && info.chapterTitle === null) {
+        return { panelFolder, chapterFolder: null };
+      }
+      return {
+        panelFolder,
+        chapterFolder: chapterFolderName(
+          formatChapterLabel(info.chapterNumber, info.chapterTitle ?? ''),
+          folderTagHash(tag),
+        ),
+      };
     },
   });
 

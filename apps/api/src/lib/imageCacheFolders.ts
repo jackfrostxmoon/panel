@@ -11,12 +11,18 @@ import { logger } from './logger.js';
  * Files used to land flat in the cache root as `chapter-<tagHash><suffix>.<ext>`
  * (hash soup — see the screenshot that motivated this). New writes now go to
  * `<Title> [<source>-<hash>]/` subfolders so the cache is browsable in
- * Explorer; reads find files through the cache's recursive index no matter
- * which folder (or the legacy flat root) they live in.
+ * Explorer; chapter pages go one level deeper into
+ * `<Title> [<source>-<hash>]/<chapter label> [<chapterHash>]/` with human
+ * page filenames (`001.jpg`, `002.jpg`, … — 1-based page order). Reads find
+ * files through the cache's recursive index no matter which folder (or the
+ * legacy flat root) they live in.
  *
  * Folder names are derived from the panel's DB title plus the stable 8-hex
  * tag hash of its global id, so renames stay unique per panel even when two
- * titles sanitize identically, and the suffix survives title edits.
+ * titles sanitize identically, and the suffix survives title edits. Chapter
+ * folders embed the chapter tag hash the same way, which is also what lets
+ * size/clear-by-tag attribute a numbered page file back to its chapter
+ * without storing anything in the database.
  */
 
 /** Hard cap for a folder name (keeps full paths Explorer-friendly). */
@@ -71,10 +77,41 @@ export function panelFolderName(title: string, source: string, panelTagHash: str
   return `${clean}${suffix}`;
 }
 
+/**
+ * Human label for a chapter folder, e.g. `chapter 1`. Prefers the numeric
+ * chapter number (read from the existing chapter row — never written by the
+ * cache); falls back to the chapter title when there is no number.
+ */
+export function formatChapterLabel(chapterNumber: number | null, title: string): string {
+  if (chapterNumber !== null && chapterNumber !== undefined && Number.isFinite(chapterNumber)) {
+    return `chapter ${Number.isInteger(chapterNumber) ? chapterNumber : String(chapterNumber)}`;
+  }
+  const clean = (title ?? '').replace(/\s+/g, ' ').trim();
+  return clean || 'untitled chapter';
+}
+
+/**
+ * Folder name for one chapter, e.g. `chapter 1 [ef56ab78]`. Lives inside the
+ * panel folder. `chapterTagHash` must be `folderTagHash(chapterGlobalId)` —
+ * the bare 8-hex suffix (no source prefix, unlike panel folders) is what
+ * lets tag operations attribute numbered page files back to their chapter.
+ */
+export function chapterFolderName(label: string, chapterTagHash: string): string {
+  const suffix = ` [${chapterTagHash}]`;
+  const maxClean = MAX_FOLDER_NAME_LENGTH - suffix.length;
+  let clean = sanitizeFolderSegment(label);
+  if (clean.length > maxClean) {
+    clean = clean.slice(0, maxClean).trimEnd().replace(/[. ]+$/g, '') || 'untitled';
+  }
+  return `${clean}${suffix}`;
+}
+
 export interface CacheMigrationResult {
   scanned: number;
   moved: number;
   skipped: number;
+  /** Chapter files grouped from a panel folder into a chapter subfolder. */
+  chaptersGrouped: number;
 }
 
 const FLAT_TAGGED_RE = /^(cover|chapter)-([0-9a-f]{8})[0-9a-f]{56}\.\w+$/;
@@ -86,6 +123,14 @@ const FLAT_TAGGED_RE = /^(cover|chapter)-([0-9a-f]{8})[0-9a-f]{56}\.\w+$/;
  * that panel's folder; unknown/legacy files stay where they are and keep
  * serving from the flat root.
  *
+ * A second pass then groups chapter files that already sit inside panel
+ * folders (from previous runs, or moved by the first pass) into per-chapter
+ * subfolders (`<panel>/<chapter label> [<hash>]/`). Existing files keep
+ * their hash filenames — the original page order is unrecoverable from
+ * `sha256(<tag>#p<index>)`, so renumbering them would fabricate an order;
+ * only new downloads get human `001.jpg`-style names. Both shapes keep
+ * serving through the recursive index.
+ *
  * Moves are same-directory renames (fast, atomic per file). If two files
  * would collide at the destination (e.g. a concurrent write won the race),
  * the leftover source copy is deleted as a duplicate.
@@ -94,7 +139,7 @@ export async function migrateImageCacheToFolders(
   dir: string,
   db: Database,
 ): Promise<CacheMigrationResult> {
-  const result: CacheMigrationResult = { scanned: 0, moved: 0, skipped: 0 };
+  const result: CacheMigrationResult = { scanned: 0, moved: 0, skipped: 0, chaptersGrouped: 0 };
   let topEntries;
   try {
     topEntries = await readdir(dir, { withFileTypes: true });
@@ -113,7 +158,12 @@ export async function migrateImageCacheToFolders(
       .select({ id: panel.id, globalId: panel.globalId, title: panel.title, source: panel.source })
       .from(panel);
     chapterRows = await db
-      .select({ globalId: chapters.globalId, panelId: chapters.panelId })
+      .select({
+        globalId: chapters.globalId,
+        panelId: chapters.panelId,
+        title: chapters.title,
+        chapterNumber: chapters.chapterNumber,
+      })
       .from(chapters);
   } catch (error) {
     logger.warn('Image cache organization skipped (database unreadable)', {
@@ -135,6 +185,19 @@ export async function migrateImageCacheToFolders(
     if (folder && !folderByTagHash.has(folderTagHash(c.globalId))) {
       folderByTagHash.set(folderTagHash(c.globalId), folder);
     }
+  }
+  // Chapter tag hash → its panel + chapter folders (read-only label lookup;
+  // chapters with no row stay at the panel level and keep serving there).
+  const chapterFolderByTagHash = new Map<string, { panelFolder: string; chapterFolder: string }>();
+  for (const c of chapterRows) {
+    const panelFolder = folderByPanelId.get(c.panelId);
+    if (!panelFolder) continue;
+    const hash = folderTagHash(c.globalId);
+    if (chapterFolderByTagHash.has(hash)) continue;
+    chapterFolderByTagHash.set(hash, {
+      panelFolder,
+      chapterFolder: chapterFolderName(formatChapterLabel(c.chapterNumber, c.title), hash),
+    });
   }
 
   const ensured = new Set<string>();
@@ -167,6 +230,58 @@ export async function migrateImageCacheToFolders(
       result.moved += 1;
     } catch {
       result.skipped += 1;
+    }
+  }
+
+  // Second pass: group chapter files already inside panel folders (moved by
+  // the first pass just now, or by previous runs) into chapter subfolders.
+  // Filenames are kept as-is — only the directory level changes.
+  let panelDirs: string[];
+  try {
+    const top = await readdir(dir, { withFileTypes: true });
+    panelDirs = top.filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return result;
+  }
+  for (const panelDir of panelDirs) {
+    let inner;
+    try {
+      inner = await readdir(join(dir, panelDir), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of inner) {
+      if (!entry.isFile() || entry.name.endsWith('.tmp')) continue;
+      const match = FLAT_TAGGED_RE.exec(entry.name);
+      if (!match || match[1] !== 'chapter' || !match[2]) continue;
+      const target = chapterFolderByTagHash.get(match[2]);
+      if (!target || target.panelFolder !== panelDir) {
+        result.skipped += 1;
+        continue;
+      }
+      result.scanned += 1;
+      try {
+        if (!ensured.has(join(target.panelFolder, target.chapterFolder))) {
+          await mkdir(join(dir, target.panelFolder, target.chapterFolder), { recursive: true });
+          ensured.add(join(target.panelFolder, target.chapterFolder));
+        }
+        const dest = join(dir, target.panelFolder, target.chapterFolder, entry.name);
+        let destExists = false;
+        try {
+          await stat(dest);
+          destExists = true;
+        } catch {
+          // Destination missing — the normal case.
+        }
+        if (destExists) {
+          await rm(join(dir, panelDir, entry.name), { force: true });
+        } else {
+          await rename(join(dir, panelDir, entry.name), dest);
+        }
+        result.chaptersGrouped += 1;
+      } catch {
+        result.skipped += 1;
+      }
     }
   }
   return result;

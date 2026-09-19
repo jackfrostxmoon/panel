@@ -35,6 +35,20 @@ export interface UpsertChapterData {
   publishedAt?: Date | null;
 }
 
+/**
+ * Where an image-cache provenance tag belongs on disk: its panel, plus the
+ * chapter display label for chapter tags. Produced read-only from existing
+ * metadata rows — never written by the cache.
+ */
+export interface CacheFolderTarget {
+  panelGlobalId: string;
+  title: string;
+  source: string;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+  isChapter: boolean;
+}
+
 export class PanelCacheRepository {
   constructor(private readonly db: Database) {}
 
@@ -171,13 +185,54 @@ export class PanelCacheRepository {
   async resolveTagToPanel(
     tag: string,
   ): Promise<{ panelGlobalId: string; title: string; source: string } | null> {
+    const target = await this.resolveTagToCacheTarget(tag);
+    if (!target) return null;
+    return { panelGlobalId: target.panelGlobalId, title: target.title, source: target.source };
+  }
+
+  /**
+   * Target folders for an image-cache provenance tag: the panel it belongs
+   * to, plus — for chapter tags — the chapter's display label (number/title)
+   * for its subfolder.
+   *
+   * Strictly read-only: it looks at the existing panel/chapter metadata rows
+   * and nothing else. The image cache never stores metadata in the database;
+   * folder names are derived from rows that the source sync already wrote.
+   * Returns null when the tag is malformed or has no panel row — the caller
+   * then writes flat in the cache root as before. A chapter tag whose panel
+   * exists but whose chapter row is missing still resolves (with null
+   * chapter fields) so its files at least land in the panel folder.
+   */
+  async resolveTagToCacheTarget(tag: string): Promise<CacheFolderTarget | null> {
     const parsed = parseGlobalId(tag);
     if (!parsed) return null;
     const split = splitNativeChapterId(parsed.nativeId);
     const panelGlobalId = split ? `${parsed.source}:${split.panelId}` : tag;
     const row = await this.findPanelByGlobalId(panelGlobalId);
     if (!row) return null;
-    return { panelGlobalId: row.globalId, title: row.title, source: row.source };
+    if (!split) {
+      return {
+        panelGlobalId: row.globalId,
+        title: row.title,
+        source: row.source,
+        chapterNumber: null,
+        chapterTitle: null,
+        isChapter: false,
+      };
+    }
+    const [chapterRow] = await this.db
+      .select({ title: chapters.title, chapterNumber: chapters.chapterNumber })
+      .from(chapters)
+      .where(eq(chapters.globalId, tag))
+      .limit(1);
+    return {
+      panelGlobalId: row.globalId,
+      title: row.title,
+      source: row.source,
+      chapterNumber: chapterRow?.chapterNumber ?? null,
+      chapterTitle: chapterRow?.title ?? null,
+      isChapter: true,
+    };
   }
 
   /** Look up a panel row by its internal uuid (handy when joining from a

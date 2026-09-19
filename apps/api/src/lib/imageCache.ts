@@ -30,11 +30,23 @@ export interface ImageCacheTagSummary {
 
 /**
  * Resolves a provenance tag (e.g. `mr:solo-leveling.21708` or a chapter id)
- * to the per-panel folder name its files belong in (see
- * `imageCacheFolders.panelFolderName`). Return null when the tag can't be
- * attributed — the file is written flat in the cache root as before.
+ * to the per-panel folder (and, for chapter pages, the chapter subfolder)
+ * its files belong in (see `imageCacheFolders.panelFolderName` /
+ * `chapterFolderName`). Return null when the tag can't be attributed — the
+ * file is written flat in the cache root as before.
+ *
+ * Read-only by contract: the resolver may look at existing metadata rows to
+ * spell folder names, but the cache never stores anything in the database.
  */
-export type ImageFolderResolver = (tag: string, kind: ImageKind) => Promise<string | null>;
+export type ImageFolderResolver = (tag: string, kind: ImageKind) => Promise<ImageFolderInfo | null>;
+
+/** Per-tag folder attribution: panel folder + optional chapter subfolder. */
+export interface ImageFolderInfo {
+  /** e.g. `Title [rk-ab12cd34]`, or null for the flat root. */
+  panelFolder: string | null;
+  /** e.g. `chapter 1 [ef56ab78]` inside the panel folder, or null. */
+  chapterFolder: string | null;
+}
 
 export interface ImageCacheDeps {
   dir: string;
@@ -54,10 +66,16 @@ export interface ImageCacheDeps {
 /**
  * On-disk cache for proxied cover / chapter images.
  *
- * Files are named `<kind>-<tagHash><entryHash>.<ext>` and live in per-panel
- * folders (`<Title> [<source>-<hash>]/`, see `imageCacheFolders`) when the
- * write-time provenance tag can be attributed to a panel; unattributable
- * files (no tag, or a tag with no panel row) stay flat in the cache root.
+ * Layout (all names human-browsable in Explorer):
+ *   `<Title> [<source>-<hash>]/cover-<tagHash><suffix>.<ext>` — covers
+ *   `<Title> [<source>-<hash>]/<chapter label> [<chapterHash>]/NNN.<ext>` —
+ *   chapter pages with 1-based, zero-padded page numbers (`001.jpg`, …)
+ * Unattributable files (no tag, or a tag with no panel row) stay flat in
+ * the cache root with hash names, as do pre-existing chapter files that were
+ * grouped into chapter folders by the startup migration (their original page
+ * order is unrecoverable from `sha256(<tag>#p<index>)`, so they keep hash
+ * names rather than a fabricated order).
+ *
  * The `tagHash` (8 hex chars) is `sha256(tag).slice(0,8)` where `tag` is the
  * provenance string passed at write time (e.g. `mk:solo-leveling.21708` for a
  * cover, `mk:solo-leveling.21708~c200` for a chapter). The `entryHash` (56
@@ -66,11 +84,20 @@ export interface ImageCacheDeps {
  * keeps its identity even when the source rotates tokenized image URLs.
  * Together tag + entry hashes stay 64 hex chars wide.
  *
- * The tag prefix lets us list, size, and selectively delete every file that
+ * Numbered page files carry no hash, so they are attributed back to their
+ * chapter through the chapter folder's ` [<8hex>]` suffix (same convention
+ * as panel folders). Every programmatic operation keys on the filename
+ * prefix or that folder suffix — never on a database table. The cache
+ * stores NO metadata in the database; folder labels are derived read-only
+ * from existing metadata rows at write time, and page numbers from the
+ * request's own page index.
+ *
+ * The tag prefix (or, for numbered pages, the chapter folder's hash suffix)
+ * lets us list, size, and selectively delete every file that
  * came from a given source / panel / chapter without scanning the whole
  * directory (folder names are for humans — every programmatic operation
- * still keys on the filename prefix, so it works identically inside folders
- * and in the flat root). The cap is computed relative to the container's
+ * still keys on the filename prefix or the folder hash suffix, so it works
+ * identically inside folders and in the flat root). The cap is computed relative to the container's
  * available disk at runtime (maxFraction of bavail*bsize, clamped to
  * [minBytes, maxBytes]). Old entries (oldest access time first) are evicted
  * whenever the cap would be exceeded, so a small host disk can never balloon.
@@ -130,14 +157,14 @@ export class ImageCache {
   private dirEnsured = false;
 
   /**
-   * Tag → folder-name memo (process lifetime). Folder names embed the
+   * Tag → folder-info memo (process lifetime). Folder names embed the
    * stable tag hash, so a panel keeps one folder even if its title is
    * re-cached under a different spelling mid-process; across restarts a
    * renamed title starts a new folder while the old files keep serving
    * through the recursive index until the cap evicts them.
    */
-  private folderCache = new Map<string, string | null>();
-  /** Folders already created on disk this process (skips repeat mkdirs). */
+  private folderCache = new Map<string, ImageFolderInfo | null>();
+  /** Dirs already created on disk this process (skips repeat mkdirs). */
   private foldersEnsured = new Set<string>();
 
   /**
@@ -193,38 +220,104 @@ export class ImageCache {
   }
 
   /**
-   * Per-panel folder for a provenance tag, via the injected resolver.
-   * Memoized; null means "write flat". The resolver is our own DB-backed
-   * lookup, but the result is still validated as a single safe path
-   * segment so a hostile title can never escape the cache root.
+   * Per-panel/chapter folders for a provenance tag, via the injected
+   * resolver. Memoized; null (or null fields) means "write flat". The
+   * resolver is our own DB-backed lookup, but the result is still validated
+   * as safe single path segments so a hostile title can never escape the
+   * cache root.
    */
-  private async resolveFolder(tag: string, kind: ImageKind): Promise<string | null> {
+  private async resolveFolder(tag: string, kind: ImageKind): Promise<ImageFolderInfo | null> {
     const cached = this.folderCache.get(tag);
     if (cached !== undefined) return cached;
-    let folder: string | null = null;
+    let info: ImageFolderInfo | null = null;
     try {
-      folder = (await this.deps.resolveFolder?.(tag, kind)) ?? null;
+      info = (await this.deps.resolveFolder?.(tag, kind)) ?? null;
     } catch {
       // Resolver failure — fall through to the flat layout below.
     }
-    if (
-      !folder ||
-      folder === '.' ||
-      folder === '..' ||
-      folder.includes('/') ||
-      folder.includes('\\') ||
-      folder.length > 120
-    ) {
-      folder = null;
+    if (info) {
+      const validSegment = (s: string | null): string | null =>
+        !s || s === '.' || s === '..' || s.includes('/') || s.includes('\\') || s.length > 120
+          ? null
+          : s;
+      const panelFolder = validSegment(info.panelFolder);
+      // A chapter subfolder is meaningless without its panel folder.
+      const chapterFolder = panelFolder ? validSegment(info.chapterFolder) : null;
+      info = panelFolder || chapterFolder ? { panelFolder, chapterFolder } : null;
     }
-    this.folderCache.set(tag, folder);
-    return folder;
+    this.folderCache.set(tag, info);
+    return info;
   }
 
   /**
-   * Every cached file as a root-relative path (`folder/file` or `file`),
-   * `.tmp` partials excluded. The cache is one level of per-panel folders
-   * plus the legacy flat root — one recursive walk covers both.
+   * 1-based page number parsed from a reader stable key
+   * (`<chapterTag>#p<index>`, 0-based index). Null when the key carries no
+   * page index — the entry then uses the hash filename shape.
+   */
+  private stablePageNumber(stableKey: string | null): number | null {
+    if (!stableKey) return null;
+    const match = /#p(\d{1,4})$/.exec(stableKey);
+    if (!match?.[1]) return null;
+    return Number.parseInt(match[1], 10) + 1;
+  }
+
+  /** Human page filename: 1-based, zero-padded (`001.jpg`). */
+  private pageFilename(pageNumber: number, ext: string): string {
+    return `${String(pageNumber).padStart(3, '0')}${ext}`;
+  }
+
+  /**
+   * Tag hash from a chapter folder's ` [<8hex>]` suffix, or null. Panel
+   * folders (` [<source>-<hash>]`) never match — the bare-hash shape is
+   * exclusive to chapter folders.
+   */
+  private chapterDirHash(dirName: string): string | null {
+    const match = /\[([0-9a-f]{8})\]$/.exec(dirName);
+    return match?.[1] ?? null;
+  }
+
+  /** True for human page filenames (`001.jpg`) as opposed to hash names. */
+  private isNumberedPage(basename: string): boolean {
+    return /^\d+\.\w+$/.test(basename);
+  }
+
+  /**
+   * Logical kind of a cached file. Hash-prefixed basenames keep their kind
+   * prefix; numbered page files inherit the chapter kind from their chapter
+   * folder. Null for files that are not ours.
+   */
+  private fileKind(relPath: string, basename: string): ImageKind | null {
+    if (basename.startsWith('cover-')) return 'cover';
+    if (basename.startsWith('chapter-')) return 'chapter';
+    if (this.isNumberedPage(basename)) {
+      const parent = dirname(relPath);
+      if (parent !== '.' && this.chapterDirHash(pathBasename(parent))) return 'chapter';
+    }
+    return null;
+  }
+
+  /**
+   * Attribute a cached file back to its 8-hex tag hash: the filename prefix
+   * for hash-named files, the chapter folder's hash suffix for numbered
+   * pages. Null when unattributable (legacy/foreign files).
+   */
+  private attributeTagHash(kind: ImageKind, relPath: string, basename: string): string | null {
+    if (basename.startsWith(`${kind}-`)) {
+      const hash = basename.slice(kind.length + 1, kind.length + 9);
+      return /^[0-9a-f]{8}$/.test(hash) ? hash : null;
+    }
+    if (kind === 'chapter' && this.isNumberedPage(basename)) {
+      const parent = dirname(relPath);
+      if (parent !== '.') return this.chapterDirHash(pathBasename(parent));
+    }
+    return null;
+  }
+
+  /**
+   * Every cached file as a root-relative path (`panel/chapter/file`,
+   * `panel/file` or `file`), `.tmp` partials excluded. The cache is
+   * per-panel folders with per-chapter subfolders plus the legacy flat
+   * root — one recursive walk covers all of it.
    */
   private async listFiles(): Promise<string[]> {
     const out: string[] = [];
@@ -248,24 +341,28 @@ export class ImageCache {
     return out;
   }
 
-  /** Remove newly-empty per-panel folders (tidiness after clears/eviction). */
+  /** Remove newly-empty panel/chapter folders (tidiness after clears/eviction). */
   private async pruneEmptyDirs(): Promise<void> {
-    let top;
-    try {
-      top = await readdir(this.deps.dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const d of top) {
-      if (!d.isDirectory()) continue;
-      const full = join(this.deps.dir, d.name);
+    // Bottom-up: empty chapter folders go first, then the panel folder when
+    // nothing (not even a cover) is left inside it. Never removes the root.
+    const clean = async (absDir: string): Promise<void> => {
+      let entries;
       try {
-        const inner = await readdir(full);
-        if (inner.length === 0) await rmdir(full);
+        entries = await readdir(absDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const d of entries) {
+        if (d.isDirectory()) await clean(join(absDir, d.name));
+      }
+      if (absDir === this.deps.dir) return;
+      try {
+        if ((await readdir(absDir)).length === 0) await rmdir(absDir);
       } catch {
         // Best-effort — a transient error shouldn't fail the caller.
       }
-    }
+    };
+    await clean(this.deps.dir);
   }
 
   /** File extensions the proxy writes — see `extFor`. */
@@ -317,19 +414,18 @@ export class ImageCache {
   }
 
   /**
-   * Probe-only check: is the file for this (kind, tag, stableKey) tuple on
-   * disk right now? Used by the chapter downloader to skip pages that are
+   * Probe-only check: is the page for this (tag, stableKey) tuple on disk
+   * right now? Used by the chapter downloader to skip pages that are
    * already cached so a partial previous run can be resumed cheaply without
    * hammering the source (and re-tripping its rate limit). The check mirrors
-   * the `readFromDisk` stable-key lookup exactly — same hash, same prefix —
-   * so a "yes" here guarantees `getOrCreate` would return that file
-   * immediately on the next call.
+   * the `readFromDisk` lookup exactly — same folders, same filename — so a
+   * "yes" here guarantees `getOrCreate` would return that file immediately
+   * on the next call.
    *
    * Returns `false` when no `tag`/`stableKey` is provided (no key to look
-   * up by), or when the directory does not exist yet. Cheap: an O(1)
-   * index hit after the one-time warm-up (the downloader probes every
-   * page of a chapter in parallel — a per-probe directory scan would
-   * serialize hundreds of syscalls).
+   * up by), or when the directory does not exist yet. Cheap: folder
+   * resolution is memoized and the hit is a direct stat (a short extension
+   * loop), so probing every page of a chapter in parallel stays bounded.
    */
   async hasEntry(
     kind: ImageKind,
@@ -337,6 +433,12 @@ export class ImageCache {
     stableKey: string,
   ): Promise<boolean> {
     if (!tag || !stableKey) return false;
+    if (kind === 'chapter') {
+      const pageNumber = this.stablePageNumber(stableKey);
+      if (pageNumber !== null) {
+        return (await this.readNumberedPage(tag, pageNumber)) !== null;
+      }
+    }
     await this.ensureIndexPopulated();
     if (!this.indexStems) return false;
     const stem = `${kind}-${this.tagPrefix(kind, tag)}${this.keySuffix(stableKey)}`;
@@ -347,11 +449,48 @@ export class ImageCache {
   }
 
   /**
+   * Locate a numbered chapter page (`<panel>/<chapter>/NNN.<ext>`).
+   * Returns the root-relative path or null.
+   *
+   * First tries the memoized folder names directly (a short stat loop over
+   * the known extensions); on a miss — e.g. the panel/chapter was renamed
+   * since the memo was taken, or another process wrote the file — falls
+   * back to one recursive scan matching the chapter folder's hash suffix
+   * and the page number.
+   */
+  private async readNumberedPage(tag: string, pageNumber: number): Promise<string | null> {
+    const tagHash = this.tagHash(tag);
+    const pageStem = String(pageNumber).padStart(3, '0');
+    const folders = await this.resolveFolder(tag, 'chapter');
+    if (folders?.panelFolder && folders?.chapterFolder) {
+      for (const ext of this.KNOWN_EXTS) {
+        const rel = join(folders.panelFolder, folders.chapterFolder, `${pageStem}${ext}`);
+        try {
+          await statSync(join(this.deps.dir, rel));
+          return rel;
+        } catch {
+          // Try the next extension, then the scan fallback below.
+        }
+      }
+    }
+    for (const rel of await this.listFiles()) {
+      const base = pathBasename(rel);
+      if (!base.startsWith(`${pageStem}.`)) continue;
+      const parent = dirname(rel);
+      if (parent !== '.' && this.chapterDirHash(pathBasename(parent)) === tagHash) return rel;
+    }
+    return null;
+  }
+
+  /**
    * Look up a previously-cached file.
    *
+   *   0. Numbered chapter page `<panel>/<chapter>/NNN.<ext>` — the modern
+   *      download path. Direct stat via the memoized folders, scan fallback.
    *   1. Stable-key shape `<kind>-<tagHash><keyHash><ext>` — chapter
-   *      pages written via the modern download path. One Map.get per
-   *      candidate extension (cheap; the loop stops at the first hit).
+   *      pages written before numbering (e.g. grouped by the migration).
+   *      One Map.get per candidate extension (cheap; the loop stops at the
+   *      first hit).
    *   2. Tag-prefixed URL shape `<kind>-<tagHash><urlHash><ext>` —
    *      covers and chapter pages without a stableKey. One Map.get per
    *      candidate extension.
@@ -373,6 +512,17 @@ export class ImageCache {
     tag: string | null,
     stableKey: string | null,
   ): Promise<ImageCacheEntry | null> {
+    // Numbered chapter pages live outside the stem index (their filenames
+    // carry no hash), so they resolve through their folder path instead.
+    if (kind === 'chapter' && tag && stableKey) {
+      const pageNumber = this.stablePageNumber(stableKey);
+      if (pageNumber !== null) {
+        const hit = await this.readNumberedPage(tag, pageNumber);
+        if (hit) {
+          return { url, path: join(this.deps.dir, hit), bytes: 0, contentType: null };
+        }
+      }
+    }
     await this.ensureIndexPopulated();
     if (!this.indexStems || !this.legacyIndex) return null;
 
@@ -431,16 +581,36 @@ export class ImageCache {
     stableKey: string | null = null,
   ): Promise<ImageCacheEntry> {
     const { bytes, contentType } = await fetcher();
-    const filename = this.filename(kind, url, contentType, tag, stableKey);
-    // Organize attributable files into per-panel folders; unattributable
+    const ext = this.extFor(url, contentType);
+    // Organize attributable files into per-panel folders (and chapter
+    // pages into chapter subfolders with human page names); unattributable
     // ones (no tag, or a tag with no panel row) stay flat as before.
-    const folder = tag ? await this.resolveFolder(tag, kind) : null;
+    const folders = tag ? await this.resolveFolder(tag, kind) : null;
     let dir = this.deps.dir;
-    if (folder) {
-      dir = join(this.deps.dir, folder);
-      if (!this.foldersEnsured.has(folder)) {
+    let filename: string;
+    let relPath: string;
+    const pageNumber = kind === 'chapter' ? this.stablePageNumber(stableKey) : null;
+    if (pageNumber !== null && folders?.panelFolder && folders?.chapterFolder) {
+      dir = join(this.deps.dir, folders.panelFolder, folders.chapterFolder);
+      const key = join(folders.panelFolder, folders.chapterFolder);
+      if (!this.foldersEnsured.has(key)) {
         await mkdir(dir, { recursive: true });
-        this.foldersEnsured.add(folder);
+        this.foldersEnsured.add(key);
+      }
+      filename = this.pageFilename(pageNumber, ext);
+      relPath = join(folders.panelFolder, folders.chapterFolder, filename);
+    } else {
+      const hashName = this.filename(kind, url, contentType, tag, stableKey);
+      filename = hashName;
+      if (folders?.panelFolder) {
+        dir = join(this.deps.dir, folders.panelFolder);
+        if (!this.foldersEnsured.has(folders.panelFolder)) {
+          await mkdir(dir, { recursive: true });
+          this.foldersEnsured.add(folders.panelFolder);
+        }
+        relPath = join(folders.panelFolder, filename);
+      } else {
+        relPath = filename;
       }
     }
     const tmpPath = join(dir, `${filename}.tmp`);
@@ -451,8 +621,9 @@ export class ImageCache {
     // Mirror the new file into the in-memory index so the next read is
     // a hashmap hit instead of a directory scan (see readFromDisk).
     // Skip when the index hasn't been warmed yet — the first walk
-    // will pick this file up naturally.
-    this.indexWrite(folder ? join(folder, filename) : filename);
+    // will pick this file up naturally. (Numbered pages resolve through
+    // their folder path rather than the index, so they are not tracked.)
+    this.indexWrite(relPath);
     await this.evictIfNeeded();
     return { url, path: finalPath, bytes: bytes.byteLength, contentType };
   }
@@ -530,7 +701,9 @@ export class ImageCache {
    *
    * Silently ignores filenames that don't match either shape — those
    * aren't ours (e.g. lock files from a crashed process, leftover
-   * partial writes that escaped the `.tmp` cleanup).
+   * partial writes that escaped the `.tmp` cleanup), plus numbered
+   * chapter pages (`001.jpg`), which resolve through their chapter
+   * folder path instead of this index.
    */
   private indexFile(relPath: string): void {
     if (!this.indexStems || !this.legacyIndex) return;
@@ -722,10 +895,9 @@ export class ImageCache {
     await this.ensureDirs();
     let entryCount = 0;
     let totalBytes = 0;
-    const prefix = `${kind}-`;
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
-      if (!e.startsWith(prefix)) continue;
+      if (this.fileKind(rel, e) !== kind) continue;
       try {
         totalBytes += statSync(join(this.deps.dir, rel)).size;
         entryCount += 1;
@@ -738,24 +910,25 @@ export class ImageCache {
 
   /**
    * Aggregate per-tag size breakdown for the given kind. Reads the directory
-   * once, groups by the 8-hex-char tag prefix, and returns one row per tag.
+   * once, groups by the 8-hex-char tag prefix (or, for numbered chapter
+   * pages, the chapter folder's hash suffix), and returns one row per tag.
    * The `tag` field is the 8-hex hash; callers that want the original
    * provenance string need to keep a separate map (we don't reverse the
    * hash because it's not necessary for clear-by-tag — we filter by
-   * prefix instead). Legacy files (no tag prefix) are skipped.
+   * prefix/suffix instead). Legacy files (no tag prefix) are skipped.
    */
   async listTags(kind: ImageKind): Promise<ImageCacheTagSummary[]> {
     await this.ensureDirs();
-    const prefix = `${kind}-`;
     const tagMap = new Map<string, { entryCount: number; totalBytes: number }>();
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
-      if (!e.startsWith(prefix)) continue;
-      // Tag prefix is exactly 8 hex chars after `<kind>-`. Legacy files
-      // (64-hex-char URL hash directly after kind prefix) have no tag
-      // prefix; skip them so they don't pollute the per-tag breakdown.
-      const tagHash = e.slice(prefix.length, prefix.length + 8);
-      if (!/^[0-9a-f]{8}$/.test(tagHash)) continue;
+      if (this.fileKind(rel, e) !== kind) continue;
+      // Tag hash from the `<kind>-` filename prefix, or from the chapter
+      // folder suffix for numbered pages. Legacy files (64-hex-char URL
+      // hash directly after kind prefix, no folder suffix) have no tag;
+      // skip them so they don't pollute the per-tag breakdown.
+      const tagHash = this.attributeTagHash(kind, rel, e);
+      if (!tagHash) continue;
       try {
         const size = statSync(join(this.deps.dir, rel)).size;
         const cur = tagMap.get(tagHash) ?? { entryCount: 0, totalBytes: 0 };
@@ -771,16 +944,16 @@ export class ImageCache {
       .sort((a, b) => b.totalBytes - a.totalBytes);
   }
 
-  /** Size of every file matching the given tag prefix. */
+  /** Size of every file matching the given tag (filename prefix or chapter folder). */
   async sizeInfoByTag(kind: ImageKind, tag: string): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
     const tagHash = this.tagPrefix(kind, tag);
-    const prefix = `${kind}-${tagHash}`;
     let entryCount = 0;
     let totalBytes = 0;
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
-      if (!e.startsWith(prefix)) continue;
+      if (this.fileKind(rel, e) !== kind) continue;
+      if (this.attributeTagHash(kind, rel, e) !== tagHash) continue;
       try {
         totalBytes += statSync(join(this.deps.dir, rel)).size;
         entryCount += 1;
@@ -812,15 +985,14 @@ export class ImageCache {
       const hash = this.tagPrefix(kind, tag);
       result.set(hash, { tag: hash, entryCount: 0, totalBytes: 0 });
     }
-    const prefix = `${kind}-`;
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
-      if (!e.startsWith(prefix)) continue;
-      // Tag prefix is exactly 8 hex chars after `<kind>-`. Legacy files
-      // (64-hex-char URL hash directly after the kind prefix) have no tag
-      // prefix; skip them so they don't pollute the per-tag breakdown.
-      const tagHash = e.slice(prefix.length, prefix.length + 8);
-      if (!/^[0-9a-f]{8}$/.test(tagHash) || !wanted.has(tagHash)) continue;
+      if (this.fileKind(rel, e) !== kind) continue;
+      // Tag hash from the filename prefix, or from the chapter folder
+      // suffix for numbered pages. Legacy files (no tag hash anywhere)
+      // are skipped so they don't pollute the per-tag breakdown.
+      const tagHash = this.attributeTagHash(kind, rel, e);
+      if (!tagHash || !wanted.has(tagHash)) continue;
       const row = result.get(tagHash)!;
       try {
         row.totalBytes += statSync(join(this.deps.dir, rel)).size;
@@ -835,11 +1007,10 @@ export class ImageCache {
   async clear(kind: ImageKind): Promise<ImageCacheSizeInfo> {
     const info = await this.sizeInfo(kind);
     if (info.entryCount === 0) return info;
-    const prefix = `${kind}-`;
     try {
       for (const rel of await this.listFiles()) {
         const e = pathBasename(rel);
-        if (!e.startsWith(prefix)) continue;
+        if (this.fileKind(rel, e) !== kind) continue;
         await rm(join(this.deps.dir, rel), { force: true });
         this.indexRemove(rel);
       }
@@ -854,7 +1025,8 @@ export class ImageCache {
    * Clear every file matching the given provenance tag. The tag is hashed
    * the same way as on write, so the caller passes the original provenance
    * string (e.g. `mk:solo-leveling.21708`) and we find all matching files by
-   * their 8-hex prefix.
+   * their 8-hex filename prefix — or, for numbered chapter pages, by their
+   * chapter folder's hash suffix.
    */
   async clearByTag(kind: ImageKind, tag: string): Promise<ImageCacheSizeInfo> {
     const info = await this.sizeInfoByTag(kind, tag);
@@ -864,7 +1036,17 @@ export class ImageCache {
     try {
       for (const rel of await this.listFiles()) {
         const e = pathBasename(rel);
-        if (!e.startsWith(prefix)) continue;
+        if (this.fileKind(rel, e) !== kind) continue;
+        const matchesPrefix = e.startsWith(prefix);
+        // Numbered pages carry no hash in the filename — match the chapter
+        // folder's hash suffix instead (hash-named files match by prefix
+        // wherever they live, including inside chapter folders).
+        const matchesFolder =
+          !matchesPrefix &&
+          kind === 'chapter' &&
+          this.isNumberedPage(e) &&
+          this.attributeTagHash(kind, rel, e) === tagHash;
+        if (!matchesPrefix && !matchesFolder) continue;
         await rm(join(this.deps.dir, rel), { force: true });
         this.indexRemove(rel);
       }
