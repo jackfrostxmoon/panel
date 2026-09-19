@@ -820,9 +820,20 @@
   cursor: not-allowed;
 }
 
+/* Native option popup: pin rows to a solid surface so they never inherit a
+   tinted select background with unreadable contrast (see pages.css). */
+.reader-settings__select option {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
 .reader-settings--light .reader-settings__select {
   background: #fff;
   border-color: rgba(0, 0, 0, 0.14);
+  color: #1c1e24;
+}
+.reader-settings--light .reader-settings__select option {
+  background-color: #fff;
   color: #1c1e24;
 }
 

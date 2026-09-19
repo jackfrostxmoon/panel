@@ -595,6 +595,13 @@
   border-color: var(--accent);
   box-shadow: var(--shadow-focus);
 }
+/* Native option popup: Chromium paints it with the select's own background,
+   so an active (accent-tinted) select would render near-white text on light
+   pink. Pin the popup rows to a solid dark surface instead. */
+.search-filters__select option {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
 
 /* Phones: the source strip takes its own swipeable row (see
    .source-filter). The refinement selects form their own deterministic
