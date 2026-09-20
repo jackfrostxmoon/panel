@@ -555,6 +555,13 @@
   flex-wrap: wrap;
   margin-bottom: var(--space-4);
 }
+/* Text label for an inline switch inside a filter group (e.g. the
+   latest-page infinite-scroll toggle). Matches the pill text tone. */
+.search-filters__label {
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
 .search-filters__select {
   appearance: none;
   background-color: var(--surface);

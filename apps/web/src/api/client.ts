@@ -37,6 +37,7 @@ import type {
   UpsertReadingListInput,
   ReaderSettings,
   ReaderStylePreset,
+  LatestPageSettings,
 } from '@panel/shared';
 
 /**
@@ -676,6 +677,17 @@ export const api = {
     request<ReaderStylePreset[]>('/api/reader-styles', {
       method: 'PUT',
       body: JSON.stringify(styles),
+    }),
+  /**
+   * Latest-page preferences, persisted server-side as a JSON file
+   * (`data/display/latest.json`) — survives cache clears and follows
+   * the user across browsers/devices.
+   */
+  getLatestSettings: () => request<LatestPageSettings>('/api/latest-settings'),
+  saveLatestSettings: (settings: LatestPageSettings) =>
+    request<LatestPageSettings>('/api/latest-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
     }),
 };
 

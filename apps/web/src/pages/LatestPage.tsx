@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { PanelStatus } from '@panel/shared';
+import type { PanelStatus, SourceSearchResult } from '@panel/shared';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
-import { useBookmarks, useBookmarkFolders, useLatest, useGenreList } from '../api/hooks';
+import {
+  useBookmarks,
+  useBookmarkFolders,
+  useLatest,
+  useGenreList,
+  useLatestSettings,
+  useSaveLatestSettings,
+} from '../api/hooks';
+import { api } from '../api/client';
 import { PanelCard, PanelGrid } from '../components/PanelCard';
 import { LatestCardActions } from '../components/LatestCardActions';
 import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
+import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { DEFAULT_SOURCE, formatDate } from '../utils/format';
 
@@ -32,9 +41,70 @@ export function LatestPage() {
       even if it also matches the include filter (exclude wins). */
   const [excludedGenre, setExcludedGenre] = useState('');
 
-  const latest = useLatest(page, source, genreFilter || undefined, excludedGenre || undefined, {
-    placeholderData: (previous) => previous,
-  });
+  /**
+   * Infinite-scroll preference, persisted server-side to
+   * `data/display/latest.json`. OFF by default (classic pagination).
+   * While a save is in flight the pending value wins so the switch
+   * flips instantly instead of waiting for the round-trip.
+   */
+  const latestSettingsQuery = useLatestSettings();
+  const saveLatestSettings = useSaveLatestSettings();
+  const infiniteScroll =
+    saveLatestSettings.isPending && saveLatestSettings.variables
+      ? saveLatestSettings.variables.infiniteScroll
+      : (latestSettingsQuery.data?.infiniteScroll ?? false);
+
+  // In infinite mode the base query is pinned to page 1 and extra pages
+  // are appended below (fetched imperatively so the hook count stays
+  // static). The `?page=` param then only records how deep the user has
+  // scrolled — a refresh with `?page=N` reloads pages 1..N.
+  const latest = useLatest(
+    infiniteScroll ? 1 : page,
+    source,
+    genreFilter || undefined,
+    excludedGenre || undefined,
+    {
+      placeholderData: (previous) => previous,
+    },
+  );
+
+  /**
+   * Extra pages appended by infinite scroll. `extraPages[i]` holds the
+   * payload for page `i + 2` (page 1 comes from the `latest` query above).
+   * Cleared whenever the result set identity changes or infinite mode
+   * turns off.
+   */
+  const [extraPages, setExtraPages] = useState<SourceSearchResult[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  /** Guards against a stale in-flight fetch appending after a reset. */
+  const generationRef = useRef(0);
+
+  const resetExtraPages = () => {
+    generationRef.current += 1;
+    setExtraPages([]);
+    setLoadingMore(false);
+    setLoadMoreError(null);
+  };
+
+  // Fresh result identity (source / server-side filters / mode switch) —
+  // drop appended pages so page 2 of the old query never leaks in. After
+  // the first render a filter change also rewinds the URL depth to page 1
+  // (the mount run is skipped so `?page=N` deep-links still restore).
+  const resetSkippedMount = useRef(false);
+  useEffect(() => {
+    resetExtraPages();
+    if (resetSkippedMount.current && infiniteScroll) {
+      const nextParams = new URLSearchParams(params);
+      nextParams.delete('page');
+      setParams(nextParams, { replace: true });
+    }
+    resetSkippedMount.current = true;
+    // `page`/`params` are intentionally excluded: in infinite mode the URL
+    // page only records scroll depth (see the sentinel effect below).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, genreFilter, excludedGenre, infiniteScroll]);
   const showLoading = useDelayedLoading(latest.isLoading);
   const { settings } = useDisplaySettings();
 
@@ -77,14 +147,27 @@ export function LatestPage() {
   /** Client-side narrowing of the fetched results (see the filter state
       declared above, next to the query). */
 
+  /** All loaded rows in infinite mode (base page + appended pages). */
+  const allResults = useMemo(() => {
+    const base = latest.data?.results ?? [];
+    if (!infiniteScroll || extraPages.length === 0) return base;
+    return [...base, ...extraPages.flatMap((p) => p.results)];
+  }, [latest.data, extraPages, infiniteScroll]);
+
+  /** Whether another page exists after everything loaded so far. */
+  const infiniteHasMore =
+    extraPages.length > 0
+      ? (extraPages[extraPages.length - 1]?.hasMore ?? false)
+      : (latest.data?.hasMore ?? false);
+
   /** Genres present in the current result set, for the dropdown options. */
   const availableGenres = useMemo(() => {
     const set = new Set<string>();
-    for (const panel of latest.data?.results ?? []) {
+    for (const panel of allResults) {
       for (const g of panel.genres) set.add(g);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [latest.data]);
+  }, [allResults]);
 
   /**
    * Dropdown options: the source's full genre catalog when it publishes
@@ -99,8 +182,7 @@ export function LatestPage() {
       : availableGenres;
 
   const filteredResults = useMemo(() => {
-    const results = latest.data?.results ?? [];
-    return results.filter(
+    return allResults.filter(
       (m) =>
         (!statusFilter || m.status === statusFilter) &&
         // Genre-less items are kept: the server already filtered by genre,
@@ -112,17 +194,18 @@ export function LatestPage() {
         (!excludedGenre ||
           !m.genres.some((g) => g.toLowerCase() === excludedGenre.toLowerCase())),
     );
-  }, [latest.data, statusFilter, genreFilter, excludedGenre]);
+  }, [allResults, statusFilter, genreFilter, excludedGenre]);
 
   const filtersActive = statusFilter !== '' || genreFilter !== '' || excludedGenre !== '';
 
   // Keyboard paging: ←/A = previous page, →/D = next page (mirrors the
-  // reader's navigation keys). Only active while results are on screen and
-  // skipped when typing in an input or using modifier combos.
-  const hasResults = (latest.data?.results.length ?? 0) > 0;
+  // reader's navigation keys). Only active while results are on screen,
+  // skipped when typing in an input or using modifier combos — and
+  // disabled entirely while infinite scroll owns the page flow.
+  const hasResults = allResults.length > 0;
   const hasMore = latest.data?.hasMore ?? false;
   useEffect(() => {
-    if (!hasResults) return;
+    if (!hasResults || infiniteScroll) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (
@@ -154,7 +237,95 @@ export function LatestPage() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [page, hasMore, source, hasResults, navigate]);
+  }, [page, hasMore, source, hasResults, infiniteScroll, navigate]);
+
+  /**
+   * Append one page in infinite mode and record the new depth in the URL
+   * (`?page=N`, replace — no history spam). Failures surface a retry
+   * affordance instead of silently stalling the sentinel.
+   */
+  async function loadNextInfinitePage() {
+    if (!infiniteScroll || loadingMore || latest.isLoading) return;
+    if (!infiniteHasMore) return;
+    const next = extraPages.length + 2;
+    const generation = generationRef.current;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const payload = await api.latest(
+        next,
+        source,
+        genreFilter || undefined,
+        excludedGenre || undefined,
+      );
+      if (generationRef.current !== generation) return;
+      setExtraPages((prev) => [...prev, payload]);
+      const nextParams = new URLSearchParams(params);
+      nextParams.set('page', String(next));
+      setParams(nextParams, { replace: true });
+    } catch (error) {
+      if (generationRef.current !== generation) return;
+      setLoadMoreError(error instanceof Error ? error.message : 'Could not load the next page.');
+    } finally {
+      if (generationRef.current === generation) setLoadingMore(false);
+    }
+  }
+
+  // Scroll sentinel: when the marker scrolls into view, pull the next
+  // page. Idle until the base page resolves so the observer never fires
+  // against an empty grid.
+  useEffect(() => {
+    if (!infiniteScroll || !latest.isSuccess) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadNextInfinitePage();
+        }
+      },
+      { rootMargin: '600px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // `loadNextInfinitePage` is intentionally invoked, not depended on —
+    // it closes over the latest render's state via the effect re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infiniteScroll, latest.isSuccess, latest.data, extraPages.length, loadingMore]);
+
+  // Deep-link restore: a refresh with `?page=N` while infinite scroll is
+  // on backfills pages 2..N so the scroll position survives a reload.
+  useEffect(() => {
+    if (!infiniteScroll || !latest.isSuccess) return;
+    if (page <= 1 || loadingMore) return;
+    if (extraPages.length + 1 >= page) return;
+    if (!infiniteHasMore) return;
+    void loadNextInfinitePage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infiniteScroll, latest.isSuccess, page, extraPages.length]);
+
+  function handleInfiniteToggle(next: boolean) {
+    if (next) {
+      // Start from the current paged position when opting in mid-list.
+      const depth = page > 1 ? page : 1;
+      resetExtraPages();
+      if (depth > 1) {
+        const nextParams = new URLSearchParams(params);
+        nextParams.set('page', String(depth));
+        setParams(nextParams, { replace: true });
+      }
+    } else {
+      // Keep the deepest loaded page as the single paged view so the
+      // user's place survives turning infinite scroll off.
+      const deepest = extraPages.length + 1;
+      resetExtraPages();
+      const nextParams = new URLSearchParams(params);
+      if (deepest > 1) nextParams.set('page', String(deepest));
+      else nextParams.delete('page');
+      setParams(nextParams, { replace: true });
+    }
+    saveLatestSettings.mutate({ infiniteScroll: next });
+  }
 
   function changeSource(next: string) {
     if (!next) return;
@@ -243,6 +414,19 @@ export function LatestPage() {
             )}
           </div>
         )}
+        {/* Infinite-scroll toggle: persisted to `data/display/latest.json`
+            on the server. Always visible so the mode is discoverable even
+            before results load. */}
+        <div className="search-filters" role="group" aria-label="Infinite scroll">
+          <span className="search-filters__label" id="latest-infinite-scroll-label">
+            Infinite scroll
+          </span>
+          <Switch
+            checked={infiniteScroll}
+            onChange={handleInfiniteToggle}
+            labelledBy="latest-infinite-scroll-label"
+          />
+        </div>
       </div>
 
       {showLoading && <div className="latest-loading" aria-live="polite" />}
@@ -255,11 +439,11 @@ export function LatestPage() {
         />
       )}
 
-      {latest.isSuccess && latest.data.results.length === 0 && (
+      {latest.isSuccess && allResults.length === 0 && (
         <EmptyState title="No updates found" message="Try refreshing in a little while." />
       )}
 
-      {latest.data && latest.data.results.length > 0 && (
+      {latest.data && allResults.length > 0 && (
         <>
           {filteredResults.length > 0 ? (
             <>
@@ -298,7 +482,28 @@ export function LatestPage() {
                   );
                 })}
               </PanelGrid>
-              <Pagination page={page} hasMore={latest.data.hasMore} source={source} />
+              {infiniteScroll ? (
+                <>
+                  {/* Sentinel: paged nav is replaced by scroll-appended
+                      pages; the marker pulls the next page into view. */}
+                  <div ref={sentinelRef} aria-hidden="true" />
+                  {loadingMore && <div className="latest-loading" aria-live="polite" />}
+                  {loadMoreError && (
+                    <ErrorState
+                      title="Could not load the next page"
+                      message={loadMoreError}
+                      onRetry={() => void loadNextInfinitePage()}
+                    />
+                  )}
+                  {!infiniteHasMore && extraPages.length > 0 && (
+                    <p className="pagination__page" aria-live="polite">
+                      You&apos;re all caught up
+                    </p>
+                  )}
+                </>
+              ) : (
+                <Pagination page={page} hasMore={latest.data.hasMore} source={source} />
+              )}
             </>
           ) : (
             <EmptyState

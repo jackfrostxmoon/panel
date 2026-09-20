@@ -39,6 +39,20 @@ export interface ReaderSettings {
 }
 
 /**
+ * Latest page preferences. Persisted server-side as a JSON file
+ * (`data/display/latest.json`) via the latest-settings endpoints.
+ */
+export interface LatestPageSettings {
+  /** Append next pages on scroll instead of Previous/Next paging. */
+  infiniteScroll: boolean;
+}
+
+/** Default: classic Previous/Next pagination. */
+export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
+  infiniteScroll: false,
+};
+
+/**
  * A named reader-settings snapshot. Persisted server-side as a JSON file
  * (`data/reader/styles.json`) via the reader-styles endpoints; the web
  * client keeps an in-memory copy while the settings panel is open.

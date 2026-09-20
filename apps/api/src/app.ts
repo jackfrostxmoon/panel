@@ -38,6 +38,7 @@ import { RecentlyViewedService } from './services/recentlyViewedService.js';
 import type { SourceRegistry } from './sources/registry.js';
 import { readerSettingsRoutes } from './routes/reader-settings.js';
 import { readerStylesRoutes } from './routes/reader-styles.js';
+import { latestSettingsRoutes } from './routes/latest-settings.js';
 import { ImageCache } from './lib/imageCache.js';
 import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
 import { PrefetchWorker } from './lib/prefetchWorker.js';
@@ -191,6 +192,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/reading-list', readingListRoutes(readingListService));
   app.route('/api/reader-settings', readerSettingsRoutes());
   app.route('/api/reader-styles', readerStylesRoutes());
+  app.route('/api/latest-settings', latestSettingsRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));
 
   return { app, prefetchWorker };

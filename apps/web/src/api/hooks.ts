@@ -14,6 +14,7 @@ import type {
   CreateChapterBookmarkInput,
   CreateChapterBookmarksInput,
   GenreCatalog,
+  LatestPageSettings,
   Panel,
   PanelRating,
   PrefetchJob,
@@ -92,6 +93,8 @@ export const queryKeys = {
       [...panelIds].sort().join('|'),
       [...chapterTags].sort().join('|'),
     ] as const,
+  /** Latest-page preferences persisted to `data/display/latest.json`. */
+  latestSettings: () => ['latest-settings'] as const,
   /** A source's full genre catalog for the filter dropdowns. */
   genreCatalog: (source: string) => ['genres', 'catalog', source] as const,
   healthDetailed: () => ['health', 'detailed'] as const,
@@ -132,6 +135,30 @@ export function useLatest(
     queryFn: () => api.latest(page, source, genre, exclude),
     staleTime: 60_000,
     ...opts,
+  });
+}
+
+/**
+ * Latest-page preferences (`data/display/latest.json` on the server).
+ * OFF by default — classic Previous/Next pagination until the user opts in.
+ */
+export function useLatestSettings(opts?: QueryOpts<LatestPageSettings>) {
+  return useQuery<LatestPageSettings, ApiClientError>({
+    queryKey: queryKeys.latestSettings(),
+    queryFn: () => api.getLatestSettings(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the infinite-scroll toggle; refreshes the settings query on success. */
+export function useSaveLatestSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<LatestPageSettings, ApiClientError, LatestPageSettings>({
+    mutationFn: (settings) => api.saveLatestSettings(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.latestSettings(), data);
+    },
   });
 }
 
