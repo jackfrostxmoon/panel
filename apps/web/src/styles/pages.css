@@ -562,6 +562,16 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
 }
+/* Inline switch unit inside a filter group: label + compact switch on
+   one row, stretched to the 40px pill height so it aligns with the
+   neighbouring selects. */
+.search-filters__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-1);
+}
 .search-filters__select {
   appearance: none;
   background-color: var(--surface);

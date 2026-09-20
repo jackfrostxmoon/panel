@@ -797,6 +797,25 @@
   transform: translateX(16px);
 }
 
+/* Compact variant for inline toolbar placement (e.g. the latest-page
+   infinite-scroll toggle). Same interaction, smaller footprint so it
+   sits comfortably next to 40px filter pills. */
+.switch--sm {
+  width: 32px;
+  height: 18px;
+}
+
+.switch--sm .switch__thumb {
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+}
+
+.switch--sm.switch--on .switch__thumb {
+  transform: translateX(14px);
+}
+
 /* Jump dropdowns in the settings panel */
 .reader-settings__select {
   width: 100%;

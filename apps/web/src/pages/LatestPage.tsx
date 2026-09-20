@@ -355,6 +355,19 @@ export function LatestPage() {
         </div>
         {latest.isSuccess && latest.data.results.length > 0 && (
           <div className="search-filters" role="group" aria-label="Refine latest updates">
+            {/* Infinite-scroll toggle first — left of the status dropdown.
+                Persisted to `data/display/latest.json` on the server. */}
+            <span className="search-filters__switch">
+              <span className="search-filters__label" id="latest-infinite-scroll-label">
+                Infinite scroll
+              </span>
+              <Switch
+                checked={infiniteScroll}
+                onChange={handleInfiniteToggle}
+                labelledBy="latest-infinite-scroll-label"
+                size="sm"
+              />
+            </span>
             <select
               className={
                 'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -414,19 +427,6 @@ export function LatestPage() {
             )}
           </div>
         )}
-        {/* Infinite-scroll toggle: persisted to `data/display/latest.json`
-            on the server. Always visible so the mode is discoverable even
-            before results load. */}
-        <div className="search-filters" role="group" aria-label="Infinite scroll">
-          <span className="search-filters__label" id="latest-infinite-scroll-label">
-            Infinite scroll
-          </span>
-          <Switch
-            checked={infiniteScroll}
-            onChange={handleInfiniteToggle}
-            labelledBy="latest-infinite-scroll-label"
-          />
-        </div>
       </div>
 
       {showLoading && <div className="latest-loading" aria-live="polite" />}
