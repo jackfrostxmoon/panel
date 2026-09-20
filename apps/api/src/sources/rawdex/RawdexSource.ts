@@ -389,7 +389,11 @@ export class RawdexSource implements PanelSource {
       panelId: toGlobalId(this.name, parts.panelId),
       panelTitle: raw.panelTitle,
       chapterTitle: raw.readerLabel ?? `Chapter ${parts.chapterToken}`,
-      coverUrl: this.proxiedImageUrl(raw.coverUrl, 'cover'),
+      // Absolute upstream URL (not the pre-proxied path): the client proxies
+      // at render time via getProxiedImageUrl, and the progress endpoint only
+      // accepts absolute cover URLs — a relative one here silently broke
+      // reading-progress tracking for this source (every save 400d).
+      coverUrl: raw.coverUrl,
       pages,
       prevChapterId,
       nextChapterId,
