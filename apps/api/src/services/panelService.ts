@@ -22,6 +22,31 @@ import type { SourceRegistry } from '../sources/registry.js';
 const GENRE_LIST_TTL_MS = 24 * 60 * 60_000;
 
 /**
+ * Central exclude enforcement for listing results. Adapters that cannot
+ * exclude server-side ignore `excludedGenre` (see `PanelSource`), and
+ * listing cards can truncate genres — so without this, `exclude=` is
+ * advisory and excluded titles leak (e.g. a card showing 4 of 8 genres
+ * with the excluded one cut off).
+ *
+ * Positive-evidence only: an item is dropped solely when one of its
+ * (cleaned) genres case-insensitively equals the excluded label.
+ * Truncation can hide a genre but never fabricate one, so this cannot
+ * over-drop — unlike include enforcement, which stays with the adapters
+ * plus client-side narrowing. Genre-less items are kept ("unknown" is
+ * not "doesn't match"). Idempotent with the UI's own narrowing.
+ */
+function applyExcludedGenre<T extends { genres: string[] }>(
+  results: T[],
+  excludedGenre: string | null,
+): T[] {
+  const x = excludedGenre?.trim().toLowerCase();
+  if (!x) return results;
+  return results.filter(
+    (item) => !item.genres.some((genre) => genre.toLowerCase() === x),
+  );
+}
+
+/**
  * PanelService — the only door between HTTP routes and panel sources.
  *
  * Adds three cross-cutting concerns on top of the raw source adapters:
@@ -158,10 +183,13 @@ export class PanelService {
         );
         const cleanedResult: SourceSearchResult = {
           ...result,
-          results: result.results.map((r) => ({
-            ...r,
-            genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
-          })),
+          results: applyExcludedGenre(
+            result.results.map((r) => ({
+              ...r,
+              genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
+            })),
+            x,
+          ),
         };
         // Persist so a later offline visit shows the same list.
         await this.panelCache
@@ -219,10 +247,13 @@ export class PanelService {
         );
         const cleanedResult: SourceSearchResult = {
           ...result,
-          results: result.results.map((r) => ({
-            ...r,
-            genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
-          })),
+          results: applyExcludedGenre(
+            result.results.map((r) => ({
+              ...r,
+              genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
+            })),
+            x,
+          ),
         };
         // Persist so a later offline visit shows the same list.
         await this.panelCache
