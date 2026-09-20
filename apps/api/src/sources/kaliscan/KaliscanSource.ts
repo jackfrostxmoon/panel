@@ -203,15 +203,46 @@ export class KaliscanSource implements PanelSource {
    * Server-side genre filtering via the site's genre archives
    * (`/genres/<slug>`). The dropdown label resolves to the exact archive
    * URL through the nav genre index; an unresolvable label falls back to
-   * the unfiltered listing (the UI still narrows client-side). Exclusion
-   * is client-side only.
+   * the unfiltered listing (the UI still narrows client-side).
+   *
+   * Exclusion runs through the site's advanced search
+   * (`/search?include[]=&exclude[]=`, verified to honor `exclude[]`
+   * server-side): archive cards only carry the first ~4 genre tags, so a
+   * client-side exclude over card genres is blind to anything truncated
+   * off (e.g. an Action+Yaoi title whose card shows
+   * Action/Adult/Drama/Mature keeps leaking when Yaoi is excluded).
+   * Include-only keeps the archive path (canonical latest-update order);
+   * anything involving an exclusion uses update-ordered search instead.
    */
   async latestByGenre(
     genre: string | null,
-    _excludedGenre: string | null,
+    excludedGenre: string | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
+    const p = page >= 1 ? page : 1;
+    if (!genre && !excludedGenre) return this.latest(p);
+    if (!excludedGenre) return this.latestByGenreArchive(genre, p);
+    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
+    if (!slugs?.exclude) return this.latestByGenreArchive(genre, p);
+    const params = new URLSearchParams({ sort: 'updated_at' });
+    if (slugs.include) params.append('include[]', slugs.include);
+    params.append('exclude[]', slugs.exclude);
+    if (p > 1) params.set('page', String(p));
+    const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
+    const parsed = parseSearchPage(body, this.baseUrl);
+    return {
+      results: parsed.items.map((item) => this.toPanelSummary(item)),
+      page: p,
+      hasMore: parsed.hasMore || parsed.items.length >= 20,
+    };
+  }
+
+  /** Include-only archive path (no exclusion involved). */
+  private async latestByGenreArchive(
+    genre: string | null,
+    page: number,
+  ): Promise<SourceSearchResult> {
     const p = page >= 1 ? page : 1;
     if (!genre) return this.latest(p);
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
@@ -222,6 +253,62 @@ export class KaliscanSource implements PanelSource {
     const archiveUrl = p <= 1 ? href : `${href}?page=${encodeURIComponent(String(p))}`;
     const { body } = await this.http.fetchText(archiveUrl);
     const parsed = parseLatestPage(body, this.baseUrl);
+    return {
+      results: parsed.items.map((item) => this.toPanelSummary(item)),
+      page: p,
+      hasMore: parsed.hasMore || parsed.items.length >= 20,
+    };
+  }
+
+  /**
+   * Dropdown labels → search-filter slugs through the nav genre index
+   * (exact match, case-insensitive). The `/genres/<slug>` space matches
+   * the search form's `include[]`/`exclude[]` values. Null when a provided
+   * label cannot be resolved — callers fall back to the unfiltered
+   * endpoint. `exclude` is non-null here whenever `excludedGenre` was
+   * given (both null only when neither label was given).
+   */
+  private async resolveGenreSlugs(
+    genre: string | null,
+    excludedGenre: string | null,
+  ): Promise<{ include: string | null; exclude: string | null } | null> {
+    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
+    const links = parseGenreLinks(indexHtml, this.baseUrl);
+    const slugOf = (label: string): string | null => {
+      const href = links.find((entry) => entry.label.toLowerCase() === label.toLowerCase())?.href;
+      if (!href) return null;
+      return /\/genres\/([^/?#]+)/i.exec(href)?.[1] ?? null;
+    };
+    const include = genre ? slugOf(genre) : null;
+    const exclude = excludedGenre ? slugOf(excludedGenre) : null;
+    if ((genre && !include) || (excludedGenre && !exclude)) return null;
+    return { include, exclude };
+  }
+
+  /**
+   * Server-side text search combined with genre filters (same `/search`
+   * endpoint and slug resolution as the exclusion path of
+   * `latestByGenre`; the site honors `exclude[]` natively). Unresolvable
+   * labels fall back to the plain search (the UI still narrows
+   * client-side).
+   */
+  async searchByGenre(
+    query: string,
+    genre: string | null,
+    excludedGenre: string | null,
+    page = 1,
+  ): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    const p = page >= 1 ? page : 1;
+    if (!genre && !excludedGenre) return this.search(query, p);
+    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
+    if (!slugs) return this.search(query, p);
+    const params = new URLSearchParams({ q: query });
+    if (slugs.include) params.append('include[]', slugs.include);
+    if (slugs.exclude) params.append('exclude[]', slugs.exclude);
+    if (p > 1) params.set('page', String(p));
+    const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
+    const parsed = parseSearchPage(body, this.baseUrl);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page: p,
