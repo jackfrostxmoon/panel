@@ -93,20 +93,14 @@ export function SearchPage() {
 
   // Fresh result identity (query / source / server-side filters / mode
   // switch) — drop appended pages so page 2 of the old query never leaks
-  // in. After the first render a filter change also rewinds the URL depth
-  // to page 1 (the mount run is skipped so `?page=N` deep-links restore).
-  const resetSkippedMount = useRef(false);
+  // in.
+  // NOTE: this effect must NEVER navigate. A second navigation issued
+  // here aborts an in-flight push from the event that changed the
+  // identity (e.g. changeSource), freezing the grid on the old source.
+  // URL writes live exclusively in the event handlers below, one
+  // navigation per gesture.
   useEffect(() => {
     resetExtraPages();
-    if (resetSkippedMount.current && infiniteScroll) {
-      const nextParams = new URLSearchParams(params);
-      nextParams.delete('page');
-      setParams(nextParams, { replace: true });
-    }
-    resetSkippedMount.current = true;
-    // `page`/`params` are intentionally excluded: in infinite mode the URL
-    // page only records scroll depth (see the sentinel effect below).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, source, genreFilter, excludedGenre, infiniteScroll]);
   const showLoading = useDelayedLoading(search.isLoading);
   const { settings } = useDisplaySettings();
@@ -337,6 +331,27 @@ export function SearchPage() {
     setExcludedGenre([]);
   }
 
+  /** Rewind the scroll-depth param after a filter refinement (replace —
+      refinements aren't places, so they shouldn't add history entries). */
+  function rewindPageParam() {
+    if (!params.has('page')) return;
+    const nextParams = new URLSearchParams(params);
+    nextParams.delete('page');
+    setParams(nextParams, { replace: true });
+  }
+
+  /** Genre refinements reset the result identity AND the URL depth. */
+  function updateGenreFilter(next: string[]) {
+    setGenreFilter(next);
+    if (infiniteScroll) rewindPageParam();
+  }
+
+  /** Genre-exclusion refinements reset the result identity AND the URL depth. */
+  function updateExcludedGenre(next: string[]) {
+    setExcludedGenre(next);
+    if (infiniteScroll) rewindPageParam();
+  }
+
   return (
     <div className="page search-page">
       <h1 className="sr-only">Search</h1>
@@ -379,7 +394,7 @@ export function SearchPage() {
                 label="Filter by genre"
                 options={genreOptions}
                 selected={genreFilter}
-                onChange={setGenreFilter}
+                onChange={updateGenreFilter}
                 emptyLabel="Any genre"
                 pluralLabel="Genres"
               />
@@ -387,7 +402,7 @@ export function SearchPage() {
                 label="Exclude genre"
                 options={genreOptions}
                 selected={excludedGenre}
-                onChange={setExcludedGenre}
+                onChange={updateExcludedGenre}
                 emptyLabel="Exclude genre"
                 pluralLabel="Excluded"
               />
