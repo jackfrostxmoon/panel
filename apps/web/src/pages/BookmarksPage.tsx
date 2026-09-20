@@ -25,6 +25,7 @@ import { CoverImage } from '../components/CoverImage';
 import { DragFolderOverlay } from '../components/DragFolderOverlay';
 import { FilterSearchBar } from '../components/FilterSearchBar';
 import { FolderPickerDialog } from '../components/FolderPickerDialog';
+import { GenreMultiSelect } from '../components/GenreMultiSelect';
 import { IconFolder } from '../components/icons';
 import { SourceFilter } from '../components/SourceFilter';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -64,10 +65,11 @@ export function BookmarksPage() {
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
   /** Status / genre filters (mirror the latest page): narrow the shelf
-      client-side by the cached panel metadata. Exclude wins over include. */
+      client-side by the cached panel metadata. Include is OR; exclude
+      wins over include. */
   const [statusFilter, setStatusFilter] = useState<PanelStatus | ''>('');
-  const [genreFilter, setGenreFilter] = useState('');
-  const [excludedGenre, setExcludedGenre] = useState('');
+  const [genreFilter, setGenreFilter] = useState<string[]>([]);
+  const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
   const allTags = useTags();
   /** Active folder (T2-8). `null` = the user's default folder (Reading
    *  list by default, or whichever folder the user has explicitly
@@ -185,6 +187,17 @@ export function BookmarksPage() {
     return genres.sort((a, b) => a.localeCompare(b));
   }, [sourceData]);
 
+  /** Case-insensitive set of the selected include genres (OR semantics). */
+  const includeSet = useMemo(
+    () => new Set(genreFilter.map((g) => g.toLowerCase())),
+    [genreFilter],
+  );
+  /** Case-insensitive set of the excluded genres (ANY match drops the card). */
+  const excludeSet = useMemo(
+    () => new Set(excludedGenre.map((g) => g.toLowerCase())),
+    [excludedGenre],
+  );
+
   const sorted = useMemo(() => {
     if (!sourceData) return [];
     const needle = query.trim().toLowerCase();
@@ -202,13 +215,13 @@ export function BookmarksPage() {
         (!needle || bookmark.title.toLowerCase().includes(needle)) &&
         (!tagFilter || panelTags.get(bookmark.panelId)?.has(tagFilter)) &&
         (!statusFilter || bookmark.status === statusFilter) &&
-        (!genreFilter ||
-          (bookmark.genres ?? []).some((g) => g.toLowerCase() === genreFilter.toLowerCase())) &&
-        (!excludedGenre ||
-          !(bookmark.genres ?? []).some((g) => g.toLowerCase() === excludedGenre.toLowerCase())),
+        (includeSet.size === 0 ||
+          (bookmark.genres ?? []).some((g) => includeSet.has(g.toLowerCase()))) &&
+        (excludeSet.size === 0 ||
+          !(bookmark.genres ?? []).some((g) => excludeSet.has(g.toLowerCase()))),
     );
     return sortBookmarks(filtered);
-  }, [sourceData, sourceFilter, query, tagFilter, statusFilter, genreFilter, excludedGenre, allTags.data]);
+  }, [sourceData, sourceFilter, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data]);
 
   /** Any narrowing filter active (drives the no-matches empty state). */
   const filtersActive =
@@ -216,16 +229,16 @@ export function BookmarksPage() {
     query.trim() !== '' ||
     tagFilter !== '' ||
     statusFilter !== '' ||
-    genreFilter !== '' ||
-    excludedGenre !== '';
+    genreFilter.length > 0 ||
+    excludedGenre.length > 0;
 
   function clearAllFilters() {
     setSourceFilter('');
     setQuery('');
     setTagFilter('');
     setStatusFilter('');
-    setGenreFilter('');
-    setExcludedGenre('');
+    setGenreFilter([]);
+    setExcludedGenre([]);
   }
 
   const handleRemove = async () => {
@@ -513,36 +526,22 @@ export function BookmarksPage() {
                 <option value="hiatus">Hiatus</option>
                 <option value="cancelled">Cancelled</option>
               </select>
-              <select
-                className={
-                  'search-filters__select' + (genreFilter ? ' search-filters__select--active' : '')
-                }
-                aria-label="Filter by genre"
-                value={genreFilter}
-                onChange={(e) => setGenreFilter(e.target.value)}
-              >
-                <option value="">Any genre</option>
-                {availableGenres.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={
-                  'search-filters__select' + (excludedGenre ? ' search-filters__select--active' : '')
-                }
-                aria-label="Exclude genre"
-                value={excludedGenre}
-                onChange={(e) => setExcludedGenre(e.target.value)}
-              >
-                <option value="">Exclude genre</option>
-                {availableGenres.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+              <GenreMultiSelect
+                label="Filter by genre"
+                options={availableGenres}
+                selected={genreFilter}
+                onChange={setGenreFilter}
+                emptyLabel="Any genre"
+                pluralLabel="Genres"
+              />
+              <GenreMultiSelect
+                label="Exclude genre"
+                options={availableGenres}
+                selected={excludedGenre}
+                onChange={setExcludedGenre}
+                emptyLabel="Exclude genre"
+                pluralLabel="Excluded"
+              />
             </div>
             {(allTags.data ?? []).length > 0 && (
               <select
