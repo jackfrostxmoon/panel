@@ -68,16 +68,20 @@ export interface PanelSource {
 
   /**
    * Optional: server-side genre-filtered listing for the Latest page.
-   * `genre` / `excludedGenre` are DISPLAY LABELS as shown in the filter
+   * `genres` / `excludedGenres` are DISPLAY LABELS as shown in the filter
    * dropdowns (null/empty = no constraint); the adapter maps them to its
    * own archive URLs and falls back to `latest(page)` when a label cannot
-   * be resolved. Adapters that cannot exclude server-side ignore
-   * `excludedGenre` — the UI always applies the exclude filter
-   * client-side as well. `page` is 1-based.
+   * be resolved. Include semantics are OR (a title carrying ANY listed
+   * genre matches); exclusion drops anything carrying ANY excluded label.
+   * Adapters whose site only filters a single genre apply the first
+   * include via their archive and union further includes across one fetch
+   * per genre (approximate paging); adapters that cannot exclude
+   * server-side ignore `excludedGenres` — the service always applies the
+   * exclude filter centrally as well. `page` is 1-based.
    */
   latestByGenre?(
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page?: number,
   ): Promise<SourceSearchResult>;
 
@@ -89,8 +93,8 @@ export interface PanelSource {
    */
   searchByGenre?(
     query: string,
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page?: number,
   ): Promise<SourceSearchResult>;
 }

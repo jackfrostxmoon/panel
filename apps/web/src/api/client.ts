@@ -149,18 +149,18 @@ export function mergeTagSummaries(
 
 export const api = {
   /* Panel / chapters (source-backed) */
-  search: (query: string, page = 1, source?: string, genre?: string, exclude?: string) => {
+  search: (query: string, page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[]) => {
     const params = new URLSearchParams({ q: query, page: String(page) });
     if (source) params.set('source', source);
-    if (genre) params.set('genre', genre);
-    if (exclude) params.set('exclude', exclude);
+    for (const genre of genres ?? []) params.append('genre', genre);
+    for (const exclude of excludes ?? []) params.append('exclude', exclude);
     return request<SourceSearchResult>(`/api/panel/search?${params.toString()}`);
   },
-  latest: (page = 1, source?: string, genre?: string, exclude?: string) => {
+  latest: (page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[]) => {
     const params = new URLSearchParams({ page: String(page) });
     if (source) params.set('source', source);
-    if (genre) params.set('genre', genre);
-    if (exclude) params.set('exclude', exclude);
+    for (const genre of genres ?? []) params.append('genre', genre);
+    for (const exclude of excludes ?? []) params.append('exclude', exclude);
     return request<SourceSearchResult>(`/api/panel/latest?${params.toString()}`);
   },
   resolvePanelUrl: (url: string) =>

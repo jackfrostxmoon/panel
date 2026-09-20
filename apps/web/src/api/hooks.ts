@@ -49,11 +49,16 @@ import {
  * centralized so mutations can invalidate exactly the right caches.
  */
 
+/** Stable key fragment for a genre list (sorted, so re-renders with a new array reference reuse the cache). */
+function genreKey(labels: readonly string[] | undefined): string {
+  return [...(labels ?? [])].sort((a, b) => a.localeCompare(b)).join('|');
+}
+
 export const queryKeys = {
-  search: (q: string, page: number, source?: string, genre?: string, exclude?: string) =>
-    ['search', q, page, source ?? 'all', genre ?? '', exclude ?? ''] as const,
-  latest: (page: number, source?: string, genre?: string, exclude?: string) =>
-    ['latest', page, source ?? 'all', genre ?? '', exclude ?? ''] as const,
+  search: (q: string, page: number, source?: string, genres?: readonly string[], excludes?: readonly string[]) =>
+    ['search', q, page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
+  latest: (page: number, source?: string, genres?: readonly string[], excludes?: readonly string[]) =>
+    ['latest', page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
   panel: (id: string) => ['panel', id] as const,
   chapters: (id: string) => ['chapters', id] as const,
   chapterPages: (id: string) => ['chapterPages', id] as const,
@@ -113,13 +118,13 @@ export function useSearch(
   query: string,
   page = 1,
   source?: string,
-  genre?: string,
-  exclude?: string,
+  genres?: readonly string[],
+  excludes?: readonly string[],
   opts?: QueryOpts<SourceSearchResult>,
 ) {
   return useQuery<SourceSearchResult, ApiClientError>({
-    queryKey: queryKeys.search(query, page, source, genre, exclude),
-    queryFn: () => api.search(query, page, source, genre, exclude),
+    queryKey: queryKeys.search(query, page, source, genres, excludes),
+    queryFn: () => api.search(query, page, source, genres, excludes),
     enabled: query.trim().length > 0,
     staleTime: 60_000,
     ...opts,
@@ -129,13 +134,13 @@ export function useSearch(
 export function useLatest(
   page = 1,
   source?: string,
-  genre?: string,
-  exclude?: string,
+  genres?: readonly string[],
+  excludes?: readonly string[],
   opts?: QueryOpts<SourceSearchResult>,
 ) {
   return useQuery<SourceSearchResult, ApiClientError>({
-    queryKey: queryKeys.latest(page, source, genre, exclude),
-    queryFn: () => api.latest(page, source, genre, exclude),
+    queryKey: queryKeys.latest(page, source, genres, excludes),
+    queryFn: () => api.latest(page, source, genres, excludes),
     staleTime: 60_000,
     ...opts,
   });

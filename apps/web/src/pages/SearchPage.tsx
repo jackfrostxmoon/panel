@@ -14,6 +14,7 @@ import {
 import { api } from '../api/client';
 import { PanelCard, PanelGrid, type PanelCardProgress } from '../components/PanelCard';
 import { LatestCardActions } from '../components/LatestCardActions';
+import { GenreMultiSelect } from '../components/GenreMultiSelect';
 import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
@@ -32,14 +33,14 @@ export function SearchPage() {
   const source = params.get('source') ?? DEFAULT_SOURCE;
 
   /** Combined filters: status is client-side only, while the genre pair is
-      ALSO sent to the API — combo-capable sources (rk, nk) filter
-      server-side and the rest fall back to narrowing the fetched page
+      ALSO sent to the API — combo-capable sources filter server-side
+      (include = OR) and the rest fall back to narrowing the fetched page
       here (plus the exclude filter, always). */
   const [statusFilter, setStatusFilter] = useState<PanelStatus | ''>('');
-  const [genreFilter, setGenreFilter] = useState('');
-  /** Genres to hide: any result carrying the excluded genre is dropped,
+  const [genreFilter, setGenreFilter] = useState<string[]>([]);
+  /** Genres to hide: any result carrying ANY excluded genre is dropped,
       even if it also matches the include filter (exclude wins). */
-  const [excludedGenre, setExcludedGenre] = useState('');
+  const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
 
   /**
    * Infinite-scroll preference, persisted server-side to
@@ -63,8 +64,8 @@ export function SearchPage() {
     query,
     infiniteScroll ? 1 : page,
     source,
-    genreFilter || undefined,
-    excludedGenre || undefined,
+    genreFilter.length > 0 ? genreFilter : undefined,
+    excludedGenre.length > 0 ? excludedGenre : undefined,
     {
       placeholderData: (previous) => previous,
     },
@@ -166,6 +167,17 @@ export function SearchPage() {
       ? genreCatalog.data.genres
       : availableGenres;
 
+  /** Case-insensitive set of the selected include genres (OR semantics). */
+  const includeSet = useMemo(
+    () => new Set(genreFilter.map((g) => g.toLowerCase())),
+    [genreFilter],
+  );
+  /** Case-insensitive set of the excluded genres (ANY match drops the card). */
+  const excludeSet = useMemo(
+    () => new Set(excludedGenre.map((g) => g.toLowerCase())),
+    [excludedGenre],
+  );
+
   const filteredResults = useMemo(() => {
     return allResults.filter(
       (m) =>
@@ -173,15 +185,15 @@ export function SearchPage() {
         // Genre-less items are kept: combo-capable sources already
         // filtered server-side, so an empty list means "unknown" (e.g. a
         // skipped enrichment), not "doesn't match".
-        (!genreFilter ||
+        (includeSet.size === 0 ||
           m.genres.length === 0 ||
-          m.genres.some((g) => g.toLowerCase() === genreFilter.toLowerCase())) &&
-        (!excludedGenre ||
-          !m.genres.some((g) => g.toLowerCase() === excludedGenre.toLowerCase())),
+          m.genres.some((g) => includeSet.has(g.toLowerCase()))) &&
+        (excludeSet.size === 0 ||
+          !m.genres.some((g) => excludeSet.has(g.toLowerCase()))),
     );
-  }, [allResults, statusFilter, genreFilter, excludedGenre]);
+  }, [allResults, statusFilter, includeSet, excludeSet]);
 
-  const filtersActive = statusFilter !== '' || genreFilter !== '' || excludedGenre !== '';
+  const filtersActive = statusFilter !== '' || genreFilter.length > 0 || excludedGenre.length > 0;
 
   // Keyboard paging: ←/A = previous page, →/D = next page (mirrors the
   // latest page). Only active while results are on screen, skipped when
@@ -241,8 +253,8 @@ export function SearchPage() {
         query,
         next,
         source,
-        genreFilter || undefined,
-        excludedGenre || undefined,
+        genreFilter.length > 0 ? genreFilter : undefined,
+        excludedGenre.length > 0 ? excludedGenre : undefined,
       );
       if (generationRef.current !== generation) return;
       setExtraPages((prev) => [...prev, payload]);
@@ -319,10 +331,10 @@ export function SearchPage() {
     nextParams.set('source', next);
     nextParams.delete('page');
     setParams(nextParams);
-    // Genre vocabularies are per-source — a label picked for one source
+    // Genre vocabularies are per-source — labels picked for one source
     // may not exist in another, so reset both genre filters on switch.
-    setGenreFilter('');
-    setExcludedGenre('');
+    setGenreFilter([]);
+    setExcludedGenre([]);
   }
 
   return (
@@ -363,44 +375,30 @@ export function SearchPage() {
                 <option value="hiatus">Hiatus</option>
                 <option value="cancelled">Cancelled</option>
               </select>
-              <select
-                className={
-                  'search-filters__select' + (genreFilter ? ' search-filters__select--active' : '')
-                }
-                aria-label="Filter by genre"
-                value={genreFilter}
-                onChange={(e) => setGenreFilter(e.target.value)}
-              >
-                <option value="">Any genre</option>
-                {genreOptions.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={
-                  'search-filters__select' + (excludedGenre ? ' search-filters__select--active' : '')
-                }
-                aria-label="Exclude genre"
-                value={excludedGenre}
-                onChange={(e) => setExcludedGenre(e.target.value)}
-              >
-                <option value="">Exclude genre</option>
-                {genreOptions.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+              <GenreMultiSelect
+                label="Filter by genre"
+                options={genreOptions}
+                selected={genreFilter}
+                onChange={setGenreFilter}
+                emptyLabel="Any genre"
+                pluralLabel="Genres"
+              />
+              <GenreMultiSelect
+                label="Exclude genre"
+                options={genreOptions}
+                selected={excludedGenre}
+                onChange={setExcludedGenre}
+                emptyLabel="Exclude genre"
+                pluralLabel="Excluded"
+              />
               {filtersActive && (
                 <button
                   type="button"
                   className="btn btn--ghost btn--sm"
                   onClick={() => {
                     setStatusFilter('');
-                    setGenreFilter('');
-                    setExcludedGenre('');
+                    setGenreFilter([]);
+                    setExcludedGenre([]);
                   }}
                 >
                   Clear filters

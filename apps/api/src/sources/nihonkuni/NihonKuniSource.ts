@@ -20,6 +20,7 @@ import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { eachWithConcurrency } from '../../lib/concurrency.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
+import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
   chapterNumberFromToken,
   hasNextPage,
@@ -258,92 +259,116 @@ export class NihonKuniSource implements PanelSource {
   /**
    * Server-side genre filtering via the site's genre listing pages
    * (`/manga-list-genre-<slug>.html`, paged as `manga-list.html?page=N&…
-   * &genre=<slug>`). The dropdown label is resolved to the exact indexed
-   * URL; an unresolvable label falls back to the unfiltered listing (the
-   * UI still narrows client-side). Exclusion is client-side only.
+   * &genre=<slug>`). Include semantics are OR: several includes fetch one
+   * archive each and union (approximate paging). The dropdown label is
+   * resolved to the exact indexed URL; an unresolvable label falls back
+   * to the unfiltered listing (the UI still narrows client-side).
+   * Exclusion is applied centrally by the service (cards are enriched to
+   * full genres first).
    */
   async latestByGenre(
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre) return this.latest(p);
-    const slug = await this.genreSlug(genre);
-    if (!slug) return this.latest(p);
-    const url =
-      p <= 1
-        ? `${this.baseUrl}/manga-list-genre-${slug}.html`
-        : `${this.baseUrl}/manga-list.html?page=${p}&sort=last_update&sort_type=DESC&genre=${slug}`;
-    const { body } = await this.http.fetchText(url);
-    const items = parseListPage(body, this.baseUrl);
-    await this.enrichListGenres(items);
-    return {
-      results: items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: hasNextPage(body),
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.latest(p);
+    const slugs: string[] = [];
+    for (const label of includes) {
+      const slug = await this.genreSlug(label);
+      if (!slug) return this.latest(p);
+      slugs.push(slug);
+    }
+    const fetchArchive = async (slug: string): Promise<SourceSearchResult> => {
+      const url =
+        p <= 1
+          ? `${this.baseUrl}/manga-list-genre-${slug}.html`
+          : `${this.baseUrl}/manga-list.html?page=${p}&sort=last_update&sort_type=DESC&genre=${slug}`;
+      const { body } = await this.http.fetchText(url);
+      const items = parseListPage(body, this.baseUrl);
+      await this.enrichListGenres(items);
+      return {
+        results: items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: hasNextPage(body),
+      };
     };
+    if (slugs.length === 1) return fetchArchive(slugs[0] as string);
+    const settled = await Promise.allSettled(slugs.map((slug) => fetchArchive(slug)));
+    return unionSearchResults(settled, p);
   }
 
   /**
-   * Server-side text search combined with a genre constraint
-   * (`manga-list.html?name=<q>&genre=<slug>`). Same slug resolution and
-   * fallback semantics as `latestByGenre`; the exact-match redirect
-   * fallback is kept (the UI hides it client-side when the genre doesn't
-   * match). Exclusion is client-side only.
+   * Server-side text search combined with genre constraints
+   * (`manga-list.html?name=<q>&genre=<slug>`, one fetch per include,
+   * unioned for OR). Same slug resolution and fallback semantics as
+   * `latestByGenre`; the exact-match redirect fallback is kept (the UI
+   * hides it client-side when the genre doesn't match). Exclusion is
+   * applied centrally by the service.
    */
   async searchByGenre(
     query: string,
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre) return this.search(query, p);
-    const slug = await this.genreSlug(genre);
-    if (!slug) return this.search(query, p);
-    // URLSearchParams encodes spaces as "+" — the form the site's own
-    // /manga-list.html?name= links use.
-    const params = new URLSearchParams({ name: query, genre: slug });
-    if (p > 1) params.set('page', String(p));
-    const url = `${this.baseUrl}/manga-list.html?${params.toString()}`;
-    const { body, finalUrl } = await this.http.fetchText(url);
-    const items = parseListPage(body, this.baseUrl);
-    if (items.length === 0) {
-      // A single exact match can redirect straight to the panel page.
-      try {
-        const detail = parsePanelPage(body, finalUrl, this.baseUrl);
-        if (detail.nativeId) {
-          return {
-            results: [
-              this.toPanelSummary({
-                nativeId: detail.nativeId,
-                title: detail.title,
-                coverUrl: detail.coverUrl,
-                sourceUrl: detail.sourceUrl,
-                status: detail.status,
-                genres: detail.genres,
-                summary: null,
-                latestChapterLabel: detail.latestChapterLabel,
-                updatedAt: null,
-              }),
-            ],
-            page: p,
-            hasMore: false,
-          };
-        }
-      } catch (error) {
-        if (!(error instanceof PageNotRecognizedError)) throw error;
-      }
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.search(query, p);
+    const slugs: string[] = [];
+    for (const label of includes) {
+      const slug = await this.genreSlug(label);
+      if (!slug) return this.search(query, p);
+      slugs.push(slug);
     }
-    await this.enrichListGenres(items);
-    return {
-      results: items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: hasNextPage(body),
+    const fetchGenreSearch = async (slug: string): Promise<SourceSearchResult> => {
+      // URLSearchParams encodes spaces as "+" — the form the site's own
+      // /manga-list.html?name= links use.
+      const params = new URLSearchParams({ name: query, genre: slug });
+      if (p > 1) params.set('page', String(p));
+      const url = `${this.baseUrl}/manga-list.html?${params.toString()}`;
+      const { body, finalUrl } = await this.http.fetchText(url);
+      const items = parseListPage(body, this.baseUrl);
+      if (items.length === 0) {
+        // A single exact match can redirect straight to the panel page.
+        try {
+          const detail = parsePanelPage(body, finalUrl, this.baseUrl);
+          if (detail.nativeId) {
+            return {
+              results: [
+                this.toPanelSummary({
+                  nativeId: detail.nativeId,
+                  title: detail.title,
+                  coverUrl: detail.coverUrl,
+                  sourceUrl: detail.sourceUrl,
+                  status: detail.status,
+                  genres: detail.genres,
+                  summary: null,
+                  latestChapterLabel: detail.latestChapterLabel,
+                  updatedAt: null,
+                }),
+              ],
+              page: p,
+              hasMore: false,
+            };
+          }
+        } catch (error) {
+          if (!(error instanceof PageNotRecognizedError)) throw error;
+        }
+      }
+      await this.enrichListGenres(items);
+      return {
+        results: items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: hasNextPage(body),
+      };
     };
+    if (slugs.length === 1) return fetchGenreSearch(slugs[0] as string);
+    const settled = await Promise.allSettled(slugs.map((slug) => fetchGenreSearch(slug)));
+    return unionSearchResults(settled, p);
   }
 
   async getPanel(nativePanelId: string): Promise<Panel> {

@@ -620,6 +620,119 @@
   color: var(--text);
 }
 
+/* Multi-select genre picker (include / exclude filters). The button
+   mirrors the single-select pill; the popup is a scrollable checkbox
+   list anchored under it. */
+.genre-multi {
+  position: relative;
+  display: inline-flex;
+}
+.genre-multi__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  appearance: none;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  padding: 9px var(--space-4);
+  min-height: 40px;
+  max-width: 220px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.genre-multi__button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.genre-multi__button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+/* A non-empty selection reads as an applied filter chip. */
+.genre-multi__button--active {
+  border-color: var(--accent);
+  color: var(--text);
+  background-color: var(--accent-soft);
+}
+.genre-multi__button-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.genre-multi__caret {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.genre-multi__popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 210px;
+  max-width: 280px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.genre-multi__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  border-radius: calc(var(--radius-md) - 4px);
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.genre-multi__option:hover {
+  background-color: var(--surface-3);
+}
+.genre-multi__option input {
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.genre-multi__option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.genre-multi__empty {
+  padding: 8px 10px;
+  font-size: var(--font-size-sm);
+  color: var(--text-soft);
+}
+.genre-multi__clear {
+  align-self: flex-end;
+  margin-top: var(--space-1);
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-soft);
+  cursor: pointer;
+  border-radius: calc(var(--radius-md) - 4px);
+}
+.genre-multi__clear:hover {
+  color: var(--text);
+  background-color: var(--surface-3);
+}
+
 /* Phones: the source strip takes its own swipeable row (see
    .source-filter). The refinement selects form their own deterministic
    2-column grid below — status + genre side by side, exclude spanning the

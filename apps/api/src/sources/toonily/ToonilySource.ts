@@ -20,6 +20,7 @@ import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { eachWithConcurrency } from '../../lib/concurrency.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
+import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
   PageNotRecognizedError,
   hasNextNumberedPage,
@@ -248,33 +249,47 @@ export class ToonilySource implements PanelSource {
 
   /**
    * Server-side genre filtering via the site's genre archives
-   * (`/genre/<slug>/`, Madara layout). The dropdown label resolves to the
-   * exact archive URL through the archive page's `GENRES` block; an
-   * unresolvable label falls back to the unfiltered archive (the UI still
-   * narrows client-side). Exclusion is client-side only.
+   * (`/genre/<slug>/`, Madara layout). Include semantics are OR: several
+   * includes fetch one archive each and union (approximate paging). The
+   * dropdown label resolves to the exact archive URL through the archive
+   * page's `GENRES` block; an unresolvable label falls back to the
+   * unfiltered archive (the UI still narrows client-side). Exclusion is
+   * applied centrally by the service (cards are enriched to full genres
+   * first).
    */
   async latestByGenre(
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre) return this.latest(p);
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.latest(p);
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/webtoons/`);
-    const href = parseGenreLinks(indexHtml, this.baseUrl).find(
-      (entry) => entry.label.toLowerCase() === genre.toLowerCase(),
-    )?.href;
-    if (!href) return this.latest(p);
-    const archiveUrl = p <= 1 ? href : `${href.replace(/\/+$/, '')}/page/${p}/`;
-    const { body } = await this.http.fetchText(archiveUrl);
-    const items = parseArchivePage(body, this.baseUrl);
-    await this.enrichListGenres(items);
-    return {
-      results: items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: items.length >= 12 || hasNextNumberedPage(body, p),
+    const links = parseGenreLinks(indexHtml, this.baseUrl);
+    const hrefs: string[] = [];
+    for (const label of includes) {
+      const href = links.find(
+        (entry) => entry.label.toLowerCase() === label.toLowerCase(),
+      )?.href;
+      if (!href) return this.latest(p);
+      hrefs.push(href);
+    }
+    const fetchArchive = async (href: string): Promise<SourceSearchResult> => {
+      const archiveUrl = p <= 1 ? href : `${href.replace(/\/+$/, '')}/page/${p}/`;
+      const { body } = await this.http.fetchText(archiveUrl);
+      const items = parseArchivePage(body, this.baseUrl);
+      await this.enrichListGenres(items);
+      return {
+        results: items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: items.length >= 12 || hasNextNumberedPage(body, p),
+      };
     };
+    if (hrefs.length === 1) return fetchArchive(hrefs[0] as string);
+    const settled = await Promise.allSettled(hrefs.map((href) => fetchArchive(href)));
+    return unionSearchResults(settled, p);
   }
 
   async getPanel(nativePanelId: string): Promise<Panel> {

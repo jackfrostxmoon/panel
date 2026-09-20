@@ -16,6 +16,7 @@ import {
 import { SourceError } from '../../lib/errors.js';
 import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
+import { unionSearchResults } from '../../lib/searchUnion.js';
 import { isSameHost } from '../../lib/url.js';
 import {
   PageNotRecognizedError,
@@ -185,38 +186,60 @@ export class MangaKatanaSource implements PanelSource {
   /**
    * Server-side genre filtering via the site's filter form
    * (`/latest/[page/N/]?filter=1&include=<slug>&exclude=<slug>` — include
-   * AND exclude both work server-side). Dropdown labels resolve to slugs
-   * through the nav genre index; an unresolvable label falls back to the
-   * unfiltered listing (the UI still narrows client-side).
+   * AND a single exclude both work server-side). Dropdown labels resolve
+   * to slugs through the nav genre index; an unresolvable label falls back
+   * to the unfiltered listing (the UI still narrows client-side).
+   * Multi-include is OR via one filtered fetch per genre, unioned
+   * (approximate paging); further excludes are applied centrally by the
+   * service (cards carry full genres).
    */
   async latestByGenre(
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre && !excludedGenre) return this.latest(p);
+    const includes = genres ?? [];
+    const excludes = excludedGenres ?? [];
+    if (includes.length === 0 && excludes.length === 0) return this.latest(p);
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/`);
     const links = parseGenreLinks(indexHtml, this.baseUrl);
     const slugOf = (label: string): string | null => {
       const href = links.find((entry) => entry.label.toLowerCase() === label.toLowerCase())?.href;
       return href ? (/\/genre\/([^/?#]+)\/?$/i.exec(href)?.[1] ?? null) : null;
     };
-    const includeSlug = genre ? slugOf(genre) : null;
-    const excludeSlug = excludedGenre ? slugOf(excludedGenre) : null;
-    if ((genre && !includeSlug) || (excludedGenre && !excludeSlug)) return this.latest(p);
-    const params = new URLSearchParams({ filter: '1' });
-    if (includeSlug) params.set('include', includeSlug);
-    if (excludeSlug) params.set('exclude', excludeSlug);
-    const pagePath = p <= 1 ? '/latest/' : `/latest/page/${p}/`;
-    const { body } = await this.http.fetchText(`${this.baseUrl}${pagePath}?${params.toString()}`);
-    const parsed = parseSearchPage(body, this.baseUrl);
-    return {
-      results: parsed.items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: parsed.hasMore || parsed.items.length >= 20,
+    const includeSlugs: string[] = [];
+    for (const label of includes) {
+      const slug = slugOf(label);
+      if (!slug) return this.latest(p);
+      includeSlugs.push(slug);
+    }
+    const excludeSlugs: string[] = [];
+    for (const label of excludes) {
+      const slug = slugOf(label);
+      if (!slug) return this.latest(p);
+      excludeSlugs.push(slug);
+    }
+    const fetchFiltered = async (includeSlug: string | null): Promise<SourceSearchResult> => {
+      const params = new URLSearchParams({ filter: '1' });
+      if (includeSlug) params.set('include', includeSlug);
+      // The form takes a single exclusion; the rest is central.
+      if (excludeSlugs.length === 1) params.set('exclude', excludeSlugs[0] as string);
+      const pagePath = p <= 1 ? '/latest/' : `/latest/page/${p}/`;
+      const { body } = await this.http.fetchText(`${this.baseUrl}${pagePath}?${params.toString()}`);
+      const parsed = parseSearchPage(body, this.baseUrl);
+      return {
+        results: parsed.items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: parsed.hasMore || parsed.items.length >= 20,
+      };
     };
+    if (includeSlugs.length <= 1) {
+      return fetchFiltered(includeSlugs[0] ?? null);
+    }
+    const settled = await Promise.allSettled(includeSlugs.map((slug) => fetchFiltered(slug)));
+    return unionSearchResults(settled, p);
   }
 
   async getPanel(nativePanelId: string): Promise<Panel> {

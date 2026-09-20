@@ -34,14 +34,29 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     return codes;
   }
 
-  /** Trimmed query value capped at `max` chars; undefined when absent/blank. */
-  function trimParam(raw: string | undefined, max: number): string | undefined {
-    const value = raw?.trim() ?? '';
-    if (!value) return undefined;
-    return value.length > max ? value.slice(0, max) : value;
+  /**
+   * Genre label list from repeated (`?genre=a&genre=b`) and/or
+   * comma-separated (`?genre=a,b`) params. Each label is trimmed and
+   * capped; the list is capped at 20 entries (abuse guard). Undefined
+   * when no usable label was given.
+   */
+  function trimParamList(raw: string[] | undefined, max: number): string[] | undefined {
+    if (!raw) return undefined;
+    const out: string[] = [];
+    for (const entry of raw) {
+      for (const part of entry.split(',')) {
+        const value = part.trim();
+        if (!value) continue;
+        out.push(value.length > max ? value.slice(0, max) : value);
+        if (out.length >= 20) return out;
+      }
+    }
+    return out.length > 0 ? out : undefined;
   }
 
   // GET /api/panel/search?q=naruto&page=1&source=mk,nk&genre=Action&exclude=Hentai
+  // genre/exclude accept repeated (?genre=a&genre=b) and comma-separated
+  // (?genre=a,b) forms; include semantics are OR.
   app.get('/search', async (c) => {
     const query = c.req.query('q')?.trim();
     if (!query) {
@@ -56,29 +71,31 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     // Genre constraints (display labels from the filter dropdowns). Combo-
     // capable sources filter server-side; the rest fall back to the plain
     // search with client-side narrowing.
-    const genre = trimParam(c.req.query('genre'), 100);
-    const excludedGenre = trimParam(c.req.query('exclude'), 100);
+    const genres = trimParamList(c.req.queries('genre'), 100);
+    const excludedGenres = trimParamList(c.req.queries('exclude'), 100);
     const result = await panelService.search(
       query,
       page,
       parseSourceFilter(c.req.query('source')),
-      genre,
-      excludedGenre,
+      genres,
+      excludedGenres,
     );
     return c.json(ok(result));
   });
 
   // GET /api/panel/latest?page=1&source=mk,nk&genre=Action&exclude=Hentai
+  // genre/exclude accept repeated (?genre=a&genre=b) and comma-separated
+  // (?genre=a,b) forms; include semantics are OR.
   app.get('/latest', async (c) => {    const pageRaw = Number.parseInt(c.req.query('page') ?? '1', 10);
     const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
 
     // Genre constraints (display labels from the filter dropdowns). When
     // the queried source filters server-side the whole catalog is
     // searched; otherwise the UI narrows the returned page client-side.
-    const genre = trimParam(c.req.query('genre'), 100);
-    const excludedGenre = trimParam(c.req.query('exclude'), 100);
+    const genres = trimParamList(c.req.queries('genre'), 100);
+    const excludedGenres = trimParamList(c.req.queries('exclude'), 100);
     return c.json(
-      ok(await panelService.latest(page, parseSourceFilter(c.req.query('source')), genre, excludedGenre)),
+      ok(await panelService.latest(page, parseSourceFilter(c.req.query('source')), genres, excludedGenres)),
     );
   });
 

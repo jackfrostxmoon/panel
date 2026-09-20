@@ -20,6 +20,7 @@ import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { eachWithConcurrency } from '../../lib/concurrency.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
+import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
   hasNextPage,
   panelNativeIdFromUrl,
@@ -195,26 +196,34 @@ export class RawdexSource implements PanelSource {
 
   /**
    * Server-side genre filtering via the site's genre archives
-   * (`/manga-genre/<slug>/`). RawDex publishes no genre index, so the
-   * archive slug is derived from the dropdown label; an unreachable
-   * archive (or unresolvable label) falls back to the unfiltered listing
-   * (the UI still narrows client-side). Exclusion is client-side only.
+   * (`/manga-genre/<slug>/`). Include semantics are OR: several includes
+   * fetch one archive each and union (approximate paging). RawDex
+   * publishes no genre index, so archive slugs are derived from the
+   * dropdown labels; an unreachable archive (or unresolvable label) falls
+   * back to the unfiltered listing (the UI still narrows client-side).
+   * Exclusion is applied centrally by the service (cards are enriched to
+   * full genres first).
    */
   async latestByGenre(
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre) return this.latest(p);
-    const slug = slugifyGenre(genre);
-    if (!slug) return this.latest(p);
-    const archiveUrl =
-      p <= 1
-        ? `${this.baseUrl}/manga-genre/${slug}/`
-        : `${this.baseUrl}/manga-genre/${slug}/page/${p}/`;
-    try {
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.latest(p);
+    const slugs: string[] = [];
+    for (const label of includes) {
+      const slug = slugifyGenre(label);
+      if (!slug) return this.latest(p);
+      slugs.push(slug);
+    }
+    const fetchArchive = async (slug: string): Promise<SourceSearchResult> => {
+      const archiveUrl =
+        p <= 1
+          ? `${this.baseUrl}/manga-genre/${slug}/`
+          : `${this.baseUrl}/manga-genre/${slug}/page/${p}/`;
       const { body } = await this.http.fetchText(archiveUrl);
       const items = parseListPage(body, this.baseUrl);
       await this.enrichListGenres(items);
@@ -223,12 +232,20 @@ export class RawdexSource implements PanelSource {
         page: p,
         hasMore: hasNextPage(body, p),
       };
+    };
+    const run = async (): Promise<SourceSearchResult> => {
+      if (slugs.length === 1) return fetchArchive(slugs[0] as string);
+      const settled = await Promise.allSettled(slugs.map((slug) => fetchArchive(slug)));
+      return unionSearchResults(settled, p);
+    };
+    try {
+      return await run();
     } catch (error) {
       // Unknown slug (or a source hiccup) — serve the unfiltered listing
       // instead of failing the page; the UI narrows client-side.
       logger.debug('RawDex genre archive unavailable — falling back to latest', {
         source: this.name,
-        genre,
+        genres: includes,
         error: error instanceof Error ? error.message : String(error),
       });
       return this.latest(p);

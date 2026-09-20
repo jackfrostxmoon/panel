@@ -194,17 +194,17 @@ export class HiperdexSource implements PanelSource {
 
   async search(query: string, page = 1): Promise<SourceSearchResult> {
     this.assertEnabled();
-    return this.searchViaApi(query, null, page);
+    return this.searchViaApi(query, [], page);
   }
 
   /**
    * Text search through the SPA's own `search.query` (relevance order).
    * Shared by `search` and `searchByGenre` — the only difference is the
-   * genre include list.
+   * genre include list (multi-include is OR, verified live).
    */
   private async searchViaApi(
     query: string,
-    genre: string | null,
+    genres: readonly string[],
     page: number,
   ): Promise<SourceSearchResult> {
     const p = page >= 1 ? page : 1;
@@ -217,7 +217,7 @@ export class HiperdexSource implements PanelSource {
       buildSearchQueryApiUrl(this.baseUrl, {
         q: query,
         sort: 'relevance',
-        genres: genre ? [genre] : [],
+        genres: [...genres],
         limit: SEARCH_PAGE_SIZE,
         offset: (p - 1) * SEARCH_PAGE_SIZE,
       }),
@@ -239,19 +239,21 @@ export class HiperdexSource implements PanelSource {
   }
 
   /**
-   * Server-side text search combined with a genre include filter (same
-   * `search.query` call with `filters.genres`). Exclusion is client-side
-   * only.
+   * Server-side text search combined with genre include filters (same
+   * `search.query` call with `filters.genres`; multi-include is OR).
+   * Exclusion is applied centrally by the service (hits carry full
+   * genres inline).
    */
   async searchByGenre(
     query: string,
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
-    if (!genre) return this.search(query, page);
-    return this.searchViaApi(query, genre, page);
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.search(query, page);
+    return this.searchViaApi(query, includes, page);
   }
 
   async latest(page = 1): Promise<SourceSearchResult> {
@@ -513,17 +515,19 @@ export class HiperdexSource implements PanelSource {
   /**
    * Server-side genre filtering through the SPA's own `search.query`
    * (newest-first, paginated, genres included in every hit — no enrichment
-   * pass needed). An unparseable payload falls back to the unfiltered feed
-   * (the UI still narrows client-side). Exclusion is client-side only.
+   * pass needed). Multi-include is OR (verified live). An unparseable
+   * payload falls back to the unfiltered feed (the UI still narrows
+   * client-side). Exclusion is applied centrally by the service.
    */
   async latestByGenre(
-    genre: string | null,
-    _excludedGenre: string | null,
+    genres: string[] | null,
+    _excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre) return this.latest(p);
+    const includes = genres ?? [];
+    if (includes.length === 0) return this.latest(p);
     const cookie = await this.ensureSessionCookie();
     const headers: Record<string, string> = {
       [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
@@ -533,7 +537,7 @@ export class HiperdexSource implements PanelSource {
       buildSearchQueryApiUrl(this.baseUrl, {
         q: '',
         sort: 'recent',
-        genres: genre ? [genre] : [],
+        genres: [...includes],
         limit: SEARCH_PAGE_SIZE,
         offset: (p - 1) * SEARCH_PAGE_SIZE,
       }),

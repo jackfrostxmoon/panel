@@ -23,27 +23,53 @@ const GENRE_LIST_TTL_MS = 24 * 60 * 60_000;
 
 /**
  * Central exclude enforcement for listing results. Adapters that cannot
- * exclude server-side ignore `excludedGenre` (see `PanelSource`), and
+ * exclude server-side ignore `excludedGenres` (see `PanelSource`), and
  * listing cards can truncate genres — so without this, `exclude=` is
  * advisory and excluded titles leak (e.g. a card showing 4 of 8 genres
  * with the excluded one cut off).
  *
  * Positive-evidence only: an item is dropped solely when one of its
- * (cleaned) genres case-insensitively equals the excluded label.
+ * (cleaned) genres case-insensitively equals ANY excluded label.
  * Truncation can hide a genre but never fabricate one, so this cannot
  * over-drop — unlike include enforcement, which stays with the adapters
  * plus client-side narrowing. Genre-less items are kept ("unknown" is
  * not "doesn't match"). Idempotent with the UI's own narrowing.
  */
-function applyExcludedGenre<T extends { genres: string[] }>(
+function applyExcludedGenres<T extends { genres: string[] }>(
   results: T[],
-  excludedGenre: string | null,
+  excludedGenres: readonly string[] | null,
 ): T[] {
-  const x = excludedGenre?.trim().toLowerCase();
-  if (!x) return results;
+  const lowered = (excludedGenres ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (lowered.length === 0) return results;
+  const blocked = new Set(lowered);
   return results.filter(
-    (item) => !item.genres.some((genre) => genre.toLowerCase() === x),
+    (item) => !item.genres.some((genre) => blocked.has(genre.toLowerCase())),
   );
+}
+
+/**
+ * Normalize a genre label list from the HTTP layer: trim, drop empties,
+ * dedupe case-insensitively (first display form wins). Null when nothing
+ * remains so callers can branch on "no constraint".
+ */
+function normalizeGenreLabels(labels: readonly string[] | null | undefined): string[] | null {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of labels ?? []) {
+    const label = raw.trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** Stable cache-key fragment for a normalized genre list (sorted, lowercase). */
+function genreKeyFragment(labels: string[] | null): string {
+  if (!labels) return '';
+  return labels.map((l) => l.toLowerCase()).sort().join(',');
 }
 
 /**
@@ -141,8 +167,8 @@ export class PanelService {
     query: string,
     page: number,
     sources?: string[],
-    genre?: string,
-    excludedGenre?: string,
+    genres?: string[] | null,
+    excludedGenres?: string[] | null,
   ): Promise<SourceSearchResult> {
     const toQuery = this.resolveSources(sources);
     const filter = sources && sources.length > 0 ? sources.join(',') : '*';
@@ -150,9 +176,9 @@ export class PanelService {
     // Genre constraints get their own cache + persistence keys so a
     // filtered search can never be served as (or overwrite) the unfiltered
     // one. Unfiltered calls keep the historic key (existing caches stay).
-    const g = genre?.trim() || null;
-    const x = excludedGenre?.trim() || null;
-    const key = g || x ? `${baseKey}:genre:${g ?? ''}:excluded:${x ?? ''}` : baseKey;
+    const g = normalizeGenreLabels(genres);
+    const x = normalizeGenreLabels(excludedGenres);
+    const key = g || x ? `${baseKey}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}` : baseKey;
     return this.cached(
       `search:${key}:${page}:${filter}`,
       this.cacheConfig.searchMs,
@@ -183,7 +209,7 @@ export class PanelService {
         );
         const cleanedResult: SourceSearchResult = {
           ...result,
-          results: applyExcludedGenre(
+          results: applyExcludedGenres(
             result.results.map((r) => ({
               ...r,
               genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
@@ -205,19 +231,19 @@ export class PanelService {
   latest(
     page: number,
     sources?: string[],
-    genre?: string,
-    excludedGenre?: string,
+    genres?: string[] | null,
+    excludedGenres?: string[] | null,
   ): Promise<SourceSearchResult> {
     const toQuery = this.resolveSources(sources);
     const filter = sources && sources.length > 0 ? sources.join(',') : '*';
     // Genre constraints get their own cache + persistence keys so a
     // filtered list can never be served as (or overwrite) the unfiltered
     // one. Unfiltered calls keep the historic key (existing caches stay).
-    const g = genre?.trim() || null;
-    const x = excludedGenre?.trim() || null;
-    const key = g || x ? `page:${page}:genre:${g ?? ''}:excluded:${x ?? ''}` : `page:${page}`;
+    const g = normalizeGenreLabels(genres);
+    const x = normalizeGenreLabels(excludedGenres);
+    const key = g || x ? `page:${page}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}` : `page:${page}`;
     return this.cached(
-      `latest:${page}:${filter}:${g ?? ''}:${x ?? ''}`,
+      `latest:${page}:${filter}:${genreKeyFragment(g)}:${genreKeyFragment(x)}`,
       this.cacheConfig.searchMs,
       async () => {
         const live = async () => {
@@ -247,7 +273,7 @@ export class PanelService {
         );
         const cleanedResult: SourceSearchResult = {
           ...result,
-          results: applyExcludedGenre(
+          results: applyExcludedGenres(
             result.results.map((r) => ({
               ...r,
               genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),

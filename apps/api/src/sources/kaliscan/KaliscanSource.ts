@@ -200,34 +200,41 @@ export class KaliscanSource implements PanelSource {
   }
 
   /**
-   * Server-side genre filtering via the site's genre archives
-   * (`/genres/<slug>`). The dropdown label resolves to the exact archive
-   * URL through the nav genre index; an unresolvable label falls back to
-   * the unfiltered listing (the UI still narrows client-side).
+   * Server-side genre filtering. Include semantics are OR; exclusion runs
+   * through the site's advanced search (`/search?include[]=&exclude[]=`,
+   * verified to honor `exclude[]` server-side, with `include_mode=or` for
+   * multi-include).
    *
-   * Exclusion runs through the site's advanced search
-   * (`/search?include[]=&exclude[]=`, verified to honor `exclude[]`
-   * server-side): archive cards only carry the first ~4 genre tags, so a
-   * client-side exclude over card genres is blind to anything truncated
-   * off (e.g. an Action+Yaoi title whose card shows
-   * Action/Adult/Drama/Mature keeps leaking when Yaoi is excluded).
-   * Include-only keeps the archive path (canonical latest-update order);
-   * anything involving an exclusion uses update-ordered search instead.
+   * Archive cards only carry the first ~4 genre tags, so a client-side
+   * exclude over card genres is blind to anything truncated off (e.g. an
+   * Action+Yaoi title whose card shows Action/Adult/Drama/Mature keeps
+   * leaking when Yaoi is excluded). Single-include without exclusions
+   * keeps the archive path (canonical latest-update order); anything
+   * involving an exclusion or several includes uses update-ordered search
+   * instead. Unresolvable labels fall back to the unfiltered listing (the
+   * UI still narrows client-side).
    */
   async latestByGenre(
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre && !excludedGenre) return this.latest(p);
-    if (!excludedGenre) return this.latestByGenreArchive(genre, p);
-    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
-    if (!slugs?.exclude) return this.latestByGenreArchive(genre, p);
+    const includes = genres ?? [];
+    const excludes = excludedGenres ?? [];
+    if (includes.length === 0 && excludes.length === 0) return this.latest(p);
+    if (includes.length <= 1 && excludes.length === 0) {
+      return this.latestByGenreArchive(includes[0] ?? null, p);
+    }
+    const slugs = await this.resolveGenreSlugs(includes, excludes);
+    if (!slugs) return this.latestByGenreArchive(includes[0] ?? null, p);
     const params = new URLSearchParams({ sort: 'updated_at' });
-    if (slugs.include) params.append('include[]', slugs.include);
-    params.append('exclude[]', slugs.exclude);
+    for (const include of slugs.includes) params.append('include[]', include);
+    // Multi-include is OR (verified live: mode=or returns titles carrying
+    // only one of the includes; mode=and is ignored by the site).
+    if (slugs.includes.length > 1) params.append('include_mode', 'or');
+    for (const exclude of slugs.excludes) params.append('exclude[]', exclude);
     if (p > 1) params.set('page', String(p));
     const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
     const parsed = parseSearchPage(body, this.baseUrl);
@@ -263,15 +270,14 @@ export class KaliscanSource implements PanelSource {
   /**
    * Dropdown labels → search-filter slugs through the nav genre index
    * (exact match, case-insensitive). The `/genres/<slug>` space matches
-   * the search form's `include[]`/`exclude[]` values. Null when a provided
-   * label cannot be resolved — callers fall back to the unfiltered
-   * endpoint. `exclude` is non-null here whenever `excludedGenre` was
-   * given (both null only when neither label was given).
+   * the search form's `include[]`/`exclude[]` values. Null when any
+   * provided label cannot be resolved — callers fall back to the
+   * unfiltered endpoint.
    */
   private async resolveGenreSlugs(
-    genre: string | null,
-    excludedGenre: string | null,
-  ): Promise<{ include: string | null; exclude: string | null } | null> {
+    genres: readonly string[],
+    excludedGenres: readonly string[],
+  ): Promise<{ includes: string[]; excludes: string[] } | null> {
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
     const links = parseGenreLinks(indexHtml, this.baseUrl);
     const slugOf = (label: string): string | null => {
@@ -279,33 +285,45 @@ export class KaliscanSource implements PanelSource {
       if (!href) return null;
       return /\/genres\/([^/?#]+)/i.exec(href)?.[1] ?? null;
     };
-    const include = genre ? slugOf(genre) : null;
-    const exclude = excludedGenre ? slugOf(excludedGenre) : null;
-    if ((genre && !include) || (excludedGenre && !exclude)) return null;
-    return { include, exclude };
+    const includes: string[] = [];
+    for (const label of genres) {
+      const slug = slugOf(label);
+      if (!slug) return null;
+      includes.push(slug);
+    }
+    const excludes: string[] = [];
+    for (const label of excludedGenres) {
+      const slug = slugOf(label);
+      if (!slug) return null;
+      excludes.push(slug);
+    }
+    return { includes, excludes };
   }
 
   /**
    * Server-side text search combined with genre filters (same `/search`
    * endpoint and slug resolution as the exclusion path of
-   * `latestByGenre`; the site honors `exclude[]` natively). Unresolvable
-   * labels fall back to the plain search (the UI still narrows
-   * client-side).
+   * `latestByGenre`; the site honors `exclude[]` natively, multi-include
+   * is OR via `include_mode=or`). Unresolvable labels fall back to the
+   * plain search (the UI still narrows client-side).
    */
   async searchByGenre(
     query: string,
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre && !excludedGenre) return this.search(query, p);
-    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
+    const includes = genres ?? [];
+    const excludes = excludedGenres ?? [];
+    if (includes.length === 0 && excludes.length === 0) return this.search(query, p);
+    const slugs = await this.resolveGenreSlugs(includes, excludes);
     if (!slugs) return this.search(query, p);
     const params = new URLSearchParams({ q: query });
-    if (slugs.include) params.append('include[]', slugs.include);
-    if (slugs.exclude) params.append('exclude[]', slugs.exclude);
+    for (const include of slugs.includes) params.append('include[]', include);
+    if (slugs.includes.length > 1) params.append('include_mode', 'or');
+    for (const exclude of slugs.excludes) params.append('exclude[]', exclude);
     if (p > 1) params.set('page', String(p));
     const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
     const parsed = parseSearchPage(body, this.baseUrl);

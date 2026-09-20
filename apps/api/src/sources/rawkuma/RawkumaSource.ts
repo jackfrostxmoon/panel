@@ -226,39 +226,51 @@ export class RawkumaSource implements PanelSource {
 
   /**
    * Dropdown labels → library filter slugs through the library page's
-   * genre index. Null when a provided label cannot be resolved (caller
+   * genre index. Null when any provided label cannot be resolved (caller
    * falls back to the unfiltered endpoint).
    */
   private async resolveGenreSlugs(
-    genre: string | null,
-    excludedGenre: string | null,
-  ): Promise<{ include: string | null; exclude: string | null } | null> {
+    genres: readonly string[],
+    excludedGenres: readonly string[],
+  ): Promise<{ includes: string[]; excludes: string[] } | null> {
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/library/`);
     const terms = parseGenreTerms(indexHtml);
     const slugOf = (label: string): string | null =>
       terms.find((term) => term.name.toLowerCase() === label.toLowerCase())?.slug ?? null;
-    const include = genre ? slugOf(genre) : null;
-    const exclude = excludedGenre ? slugOf(excludedGenre) : null;
-    if ((genre && !include) || (excludedGenre && !exclude)) return null;
-    return { include, exclude };
+    const includes: string[] = [];
+    for (const label of genres) {
+      const slug = slugOf(label);
+      if (!slug) return null;
+      includes.push(slug);
+    }
+    const excludes: string[] = [];
+    for (const label of excludedGenres) {
+      const slug = slugOf(label);
+      if (!slug) return null;
+      excludes.push(slug);
+    }
+    return { includes, excludes };
   }
 
   /**
    * Server-side genre filtering through the library search endpoint
    * (`advanced_search` with `genre` / `genre_exclude` slug lists — include
-   * AND exclude both work server-side). Dropdown labels resolve to slugs
-   * through the library page's genre index; an unresolvable label falls
-   * back to the unfiltered listing (the UI still narrows client-side).
+   * AND exclude both work server-side; multi-include is OR, verified
+   * live). Dropdown labels resolve to slugs through the library page's
+   * genre index; unresolvable labels fall back to the unfiltered listing
+   * (the UI still narrows client-side).
    */
   async latestByGenre(
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre && !excludedGenre) return this.latest(p);
-    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
+    const includes = genres ?? [];
+    const excludes = excludedGenres ?? [];
+    if (includes.length === 0 && excludes.length === 0) return this.latest(p);
+    const slugs = await this.resolveGenreSlugs(includes, excludes);
     if (!slugs) return this.latest(p);
     const nonce = await this.fetchSearchNonce();
     const { body } = await this.http.postForm(`${this.baseUrl}/wp-admin/admin-ajax.php`, {
@@ -266,8 +278,8 @@ export class RawkumaSource implements PanelSource {
       nonce,
       query: '',
       page: String(p),
-      genre: JSON.stringify(slugs.include ? [slugs.include] : []),
-      genre_exclude: JSON.stringify(slugs.exclude ? [slugs.exclude] : []),
+      genre: JSON.stringify(slugs.includes),
+      genre_exclude: JSON.stringify(slugs.excludes),
     });
     const items = parseSearchPage(body, this.baseUrl);
     await this.enrichListGenres(items);
@@ -287,14 +299,16 @@ export class RawkumaSource implements PanelSource {
    */
   async searchByGenre(
     query: string,
-    genre: string | null,
-    excludedGenre: string | null,
+    genres: string[] | null,
+    excludedGenres: string[] | null,
     page = 1,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
-    if (!genre && !excludedGenre) return this.search(query, p);
-    const slugs = await this.resolveGenreSlugs(genre, excludedGenre);
+    const includes = genres ?? [];
+    const excludes = excludedGenres ?? [];
+    if (includes.length === 0 && excludes.length === 0) return this.search(query, p);
+    const slugs = await this.resolveGenreSlugs(includes, excludes);
     if (!slugs) return this.search(query, p);
     const nonce = await this.fetchSearchNonce();
     const { body } = await this.http.postForm(`${this.baseUrl}/wp-admin/admin-ajax.php`, {
@@ -302,8 +316,8 @@ export class RawkumaSource implements PanelSource {
       nonce,
       query,
       page: String(p),
-      genre: JSON.stringify(slugs.include ? [slugs.include] : []),
-      genre_exclude: JSON.stringify(slugs.exclude ? [slugs.exclude] : []),
+      genre: JSON.stringify(slugs.includes),
+      genre_exclude: JSON.stringify(slugs.excludes),
     });
     // Search caps at ~24 results with no pagination UI.
     const items = parseSearchPage(body, this.baseUrl);
