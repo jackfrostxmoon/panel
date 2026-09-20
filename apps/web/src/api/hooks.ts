@@ -15,6 +15,7 @@ import type {
   CreateChapterBookmarksInput,
   GenreCatalog,
   LatestPageSettings,
+  SearchPageSettings,
   Panel,
   PanelRating,
   PrefetchJob,
@@ -95,6 +96,8 @@ export const queryKeys = {
     ] as const,
   /** Latest-page preferences persisted to `data/display/latest.json`. */
   latestSettings: () => ['latest-settings'] as const,
+  /** Search-page preferences persisted to `data/display/search.json`. */
+  searchSettings: () => ['search-settings'] as const,
   /** A source's full genre catalog for the filter dropdowns. */
   genreCatalog: (source: string) => ['genres', 'catalog', source] as const,
   healthDetailed: () => ['health', 'detailed'] as const,
@@ -158,6 +161,30 @@ export function useSaveLatestSettings() {
     mutationFn: (settings) => api.saveLatestSettings(settings),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.latestSettings(), data);
+    },
+  });
+}
+
+/**
+ * Search-page preferences (`data/display/search.json` on the server).
+ * OFF by default — classic Previous/Next pagination until the user opts in.
+ */
+export function useSearchSettings(opts?: QueryOpts<SearchPageSettings>) {
+  return useQuery<SearchPageSettings, ApiClientError>({
+    queryKey: queryKeys.searchSettings(),
+    queryFn: () => api.getSearchSettings(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the infinite-scroll toggle; refreshes the settings query on success. */
+export function useSaveSearchSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<SearchPageSettings, ApiClientError, SearchPageSettings>({
+    mutationFn: (settings) => api.saveSearchSettings(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.searchSettings(), data);
     },
   });
 }

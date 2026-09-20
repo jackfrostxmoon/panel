@@ -38,6 +38,7 @@ import type {
   ReaderSettings,
   ReaderStylePreset,
   LatestPageSettings,
+  SearchPageSettings,
 } from '@panel/shared';
 
 /**
@@ -686,6 +687,17 @@ export const api = {
   getLatestSettings: () => request<LatestPageSettings>('/api/latest-settings'),
   saveLatestSettings: (settings: LatestPageSettings) =>
     request<LatestPageSettings>('/api/latest-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  /**
+   * Search-page preferences, persisted server-side as a JSON file
+   * (`data/display/search.json`) — independent from the latest-page
+   * toggle so each list scrolls its own way.
+   */
+  getSearchSettings: () => request<SearchPageSettings>('/api/search-settings'),
+  saveSearchSettings: (settings: SearchPageSettings) =>
+    request<SearchPageSettings>('/api/search-settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),

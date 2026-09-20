@@ -53,6 +53,21 @@ export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
 };
 
 /**
+ * Search page preferences. Persisted server-side as a JSON file
+ * (`data/display/search.json`) via the search-settings endpoints.
+ * Independent from the latest-page toggle so each list scrolls its own way.
+ */
+export interface SearchPageSettings {
+  /** Append next pages on scroll instead of Previous/Next paging. */
+  infiniteScroll: boolean;
+}
+
+/** Default: classic Previous/Next pagination. */
+export const DEFAULT_SEARCH_PAGE_SETTINGS: SearchPageSettings = {
+  infiniteScroll: false,
+};
+
+/**
  * A named reader-settings snapshot. Persisted server-side as a JSON file
  * (`data/reader/styles.json`) via the reader-styles endpoints; the web
  * client keeps an in-memory copy while the settings panel is open.
