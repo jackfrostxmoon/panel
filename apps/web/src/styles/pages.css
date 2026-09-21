@@ -3223,6 +3223,34 @@
 /* The pills own row 1 outright (see above), so no responsive fix-up is
    needed here anymore. */
 
+/* Small phones (360px class): keep folder trigger + layout/filter toggles
+   on one row — compact chrome, tighter gap, and the folder name truncates
+   instead of forcing a wrap. */
+@media (max-width: 480px) {
+  .bookmarks-toolbar {
+    gap: var(--space-2);
+  }
+  .bookmarks-toolbar .bookmark-folder-selector {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .bookmarks-toolbar .bookmark-folder-selector__trigger {
+    min-width: 0;
+    max-width: 38vw;
+  }
+  .bookmarks-toolbar .bookmark-folder-selector__trigger-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bookmarks-toolbar .search-filters__disclosure {
+    padding: 8px 10px;
+  }
+  .bookmarks-toolbar .layout-toggle__btn {
+    padding: 6px;
+  }
+}
+
 /* Title filter reuses the hero search-bar pill. Sits at the right end of the
    toolbar on desktop; gets its own full-width row once the toolbar wraps on
    phones (640px) so it never squeezes the chip strip's swipe room. */
