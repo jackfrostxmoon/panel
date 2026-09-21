@@ -14,6 +14,7 @@ import {
 } from '../api/hooks';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid } from '../components/PanelCard';
+import { IconChevronDown } from '../components/icons';
 import {
   CardLayoutToggle,
   PanelList,
@@ -70,6 +71,15 @@ export function LatestPage() {
       ? saveLatestSettings.variables.cardLayout
       : (latestSettingsQuery.data?.cardLayout ?? 'cards');
   /**
+   * Collapsed refinement filters, persisted server-side to
+   * `data/display/latest.json`. Collapsed by default so the toolbar stays
+   * compact; same pending-wins pattern as the other toggles.
+   */
+  const filtersCollapsed: boolean =
+    saveLatestSettings.isPending && saveLatestSettings.variables
+      ? saveLatestSettings.variables.filtersCollapsed
+      : (latestSettingsQuery.data?.filtersCollapsed ?? true);
+  /**
    * Don't paint either layout until the persisted choice resolves — a hard
    * refresh would otherwise flash the card grid (the `?? 'cards'` fallback)
    * for a beat even when list mode is stored. Errors fall back to cards.
@@ -112,6 +122,27 @@ export function LatestPage() {
     setLoadingMore(false);
     setLoadMoreError(null);
   };
+
+  /**
+   * Live mirrors for the infinite-scroll loader below.
+   * `loadNextInfinitePage` runs from an IntersectionObserver callback that
+   * can outlive its render: `placeholderData` keeps `latest.data`
+   * referentially stable across a source switch, so the sentinel effect —
+   * and its stale `source`/`params` closure — survives the tap. Reading
+   * through refs (plus the post-fetch source check) means a stale callback
+   * can neither append another source's page nor navigate the URL back to
+   * it (the "source snaps back" bug).
+   */
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const genreFilterRef = useRef(genreFilter);
+  genreFilterRef.current = genreFilter;
+  const excludedGenreRef = useRef(excludedGenre);
+  excludedGenreRef.current = excludedGenre;
+  const extraPagesRef = useRef(extraPages);
+  extraPagesRef.current = extraPages;
 
   // Fresh result identity (source / server-side filters / mode switch) —
   // drop appended pages so page 2 of the old query never leaks in.
@@ -226,6 +257,9 @@ export function LatestPage() {
   }, [allResults, statusFilter, includeSet, excludeSet]);
 
   const filtersActive = statusFilter !== '' || genreFilter.length > 0 || excludedGenre.length > 0;
+  /** Applied-refinement count for the filters disclosure badge. */
+  const activeFilterCount =
+    (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
   // Keyboard paging: ←/A = previous page, →/D = next page (mirrors the
   // reader's navigation keys). Only active while results are on screen,
@@ -276,20 +310,27 @@ export function LatestPage() {
   async function loadNextInfinitePage() {
     if (!infiniteScroll || loadingMore || latest.isLoading) return;
     if (!infiniteHasMore) return;
-    const next = extraPages.length + 2;
+    // Snapshot live values (see refs above) — never the render closure's.
+    const liveSource = sourceRef.current;
+    const liveGenres = genreFilterRef.current;
+    const liveExcludes = excludedGenreRef.current;
+    const next = extraPagesRef.current.length + 2;
     const generation = generationRef.current;
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
       const payload = await api.latest(
         next,
-        source,
-        genreFilter.length > 0 ? genreFilter : undefined,
-        excludedGenre.length > 0 ? excludedGenre : undefined,
+        liveSource,
+        liveGenres.length > 0 ? liveGenres : undefined,
+        liveExcludes.length > 0 ? liveExcludes : undefined,
       );
       if (generationRef.current !== generation) return;
+      // Source moved on mid-flight (e.g. a pill tap while fetching) — drop
+      // the stale page instead of mixing sources or rewriting the URL.
+      if (sourceRef.current !== liveSource) return;
       setExtraPages((prev) => [...prev, payload]);
-      const nextParams = new URLSearchParams(params);
+      const nextParams = new URLSearchParams(paramsRef.current);
       nextParams.set('page', String(next));
       setParams(nextParams, { replace: true });
     } catch (error) {
@@ -353,12 +394,17 @@ export function LatestPage() {
       else nextParams.delete('page');
       setParams(nextParams, { replace: true });
     }
-    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout });
+    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed });
   }
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed });
+  }
+
+  function handleFiltersToggle(next: boolean) {
+    if (next === filtersCollapsed) return;
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next });
   }
 
   function changeSource(next: string) {
@@ -403,13 +449,16 @@ export function LatestPage() {
           `margin-left: auto` on the filters pin them right of the pills. */}
       <div className="latest-toolbar">
         <SourceFilter value={source} onChange={changeSource} />
-        <div className="latest-toolbar__search">
-          {/* Regular size to match the pill-strip height; submits navigate
-              to the search page. */}
-          <SearchBar showPasteButton />
-        </div>
-        {latest.isSuccess && latest.data.results.length > 0 && (
-          <div className="search-filters" role="group" aria-label="Refine latest updates">
+        {layoutReady && !filtersCollapsed && (
+          <div className="latest-toolbar__search">
+            {/* Regular size to match the pill-strip height; submits navigate
+                to the search page. Hidden with the filters when collapsed. */}
+            <SearchBar showPasteButton />
+          </div>
+        )}
+        {layoutReady && latest.isSuccess && latest.data.results.length > 0 && (
+          <>
+          <div className="search-filters search-filters--toggles" role="group" aria-label="Latest view options">
             {/* Infinite-scroll toggle first — left of the status dropdown.
                 Persisted to `data/display/latest.json` on the server. */}
             <span className="search-filters__switch">
@@ -428,6 +477,23 @@ export function LatestPage() {
               onChange={handleLayoutChange}
               labelId="latest-layout-label"
             />
+            <button
+              type="button"
+              className={`search-filters__disclosure${filtersCollapsed ? '' : ' search-filters__disclosure--open'}`}
+              aria-expanded={!filtersCollapsed}
+              aria-label={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+              title={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+              onClick={() => handleFiltersToggle(!filtersCollapsed)}
+            >
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="search-filters__disclosure-count">{activeFilterCount}</span>
+              )}
+              <IconChevronDown size={14} />
+            </button>
+          </div>
+            {!filtersCollapsed && (
+          <div className="search-filters search-filters--fields" role="group" aria-label="Refine latest updates">
             <select
               className={
                 'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -472,6 +538,8 @@ export function LatestPage() {
               </button>
             )}
           </div>
+            )}
+          </>
         )}
       </div>
 

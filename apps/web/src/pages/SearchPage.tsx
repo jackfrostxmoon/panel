@@ -13,6 +13,7 @@ import {
 } from '../api/hooks';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid, type PanelCardProgress } from '../components/PanelCard';
+import { IconChevronDown } from '../components/icons';
 import {
   CardLayoutToggle,
   PanelList,
@@ -71,6 +72,15 @@ export function SearchPage() {
       ? saveSearchSettings.variables.cardLayout
       : (searchSettingsQuery.data?.cardLayout ?? 'cards');
   /**
+   * Collapsed refinement filters, persisted server-side to
+   * `data/display/search.json`. Collapsed by default so the toolbar stays
+   * compact; same pending-wins pattern as the other toggles.
+   */
+  const filtersCollapsed: boolean =
+    saveSearchSettings.isPending && saveSearchSettings.variables
+      ? saveSearchSettings.variables.filtersCollapsed
+      : (searchSettingsQuery.data?.filtersCollapsed ?? true);
+  /**
    * Don't paint either layout until the persisted choice resolves — a hard
    * refresh would otherwise flash the card grid (the `?? 'cards'` fallback)
    * for a beat even when list mode is stored. Errors fall back to cards.
@@ -114,6 +124,29 @@ export function SearchPage() {
     setLoadingMore(false);
     setLoadMoreError(null);
   };
+
+  /**
+   * Live mirrors for the infinite-scroll loader below.
+   * `loadNextInfinitePage` runs from an IntersectionObserver callback that
+   * can outlive its render: `placeholderData` keeps `search.data`
+   * referentially stable across a source switch, so the sentinel effect —
+   * and its stale `source`/`params` closure — survives the tap. Reading
+   * through refs (plus the post-fetch identity check) means a stale
+   * callback can neither append another source's page nor navigate the URL
+   * back to it (the "source snaps back" bug).
+   */
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const genreFilterRef = useRef(genreFilter);
+  genreFilterRef.current = genreFilter;
+  const excludedGenreRef = useRef(excludedGenre);
+  excludedGenreRef.current = excludedGenre;
+  const extraPagesRef = useRef(extraPages);
+  extraPagesRef.current = extraPages;
 
   // Fresh result identity (query / source / server-side filters / mode
   // switch) — drop appended pages so page 2 of the old query never leaks
@@ -212,6 +245,9 @@ export function SearchPage() {
   }, [allResults, statusFilter, includeSet, excludeSet]);
 
   const filtersActive = statusFilter !== '' || genreFilter.length > 0 || excludedGenre.length > 0;
+  /** Applied-refinement count for the filters disclosure badge. */
+  const activeFilterCount =
+    (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
   // Keyboard paging: ←/A = previous page, →/D = next page (mirrors the
   // latest page). Only active while results are on screen, skipped when
@@ -262,21 +298,29 @@ export function SearchPage() {
   async function loadNextInfinitePage() {
     if (!infiniteScroll || loadingMore || search.isLoading) return;
     if (!infiniteHasMore) return;
-    const next = extraPages.length + 2;
+    // Snapshot live values (see refs above) — never the render closure's.
+    const liveQuery = queryRef.current;
+    const liveSource = sourceRef.current;
+    const liveGenres = genreFilterRef.current;
+    const liveExcludes = excludedGenreRef.current;
+    const next = extraPagesRef.current.length + 2;
     const generation = generationRef.current;
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
       const payload = await api.search(
-        query,
+        liveQuery,
         next,
-        source,
-        genreFilter.length > 0 ? genreFilter : undefined,
-        excludedGenre.length > 0 ? excludedGenre : undefined,
+        liveSource,
+        liveGenres.length > 0 ? liveGenres : undefined,
+        liveExcludes.length > 0 ? liveExcludes : undefined,
       );
       if (generationRef.current !== generation) return;
+      // Query or source moved on mid-flight — drop the stale page instead
+      // of mixing result sets or rewriting the URL.
+      if (queryRef.current !== liveQuery || sourceRef.current !== liveSource) return;
       setExtraPages((prev) => [...prev, payload]);
-      const nextParams = new URLSearchParams(params);
+      const nextParams = new URLSearchParams(paramsRef.current);
       nextParams.set('page', String(next));
       setParams(nextParams, { replace: true });
     } catch (error) {
@@ -340,12 +384,17 @@ export function SearchPage() {
       else nextParams.delete('page');
       setParams(nextParams, { replace: true });
     }
-    saveSearchSettings.mutate({ infiniteScroll: next, cardLayout });
+    saveSearchSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed });
   }
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveSearchSettings.mutate({ infiniteScroll, cardLayout: next });
+    saveSearchSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed });
+  }
+
+  function handleFiltersToggle(next: boolean) {
+    if (next === filtersCollapsed) return;
+    saveSearchSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next });
   }
 
   function changeSource(next: string) {
@@ -390,8 +439,9 @@ export function SearchPage() {
         <div className="search-toolbar__search">
           <SearchBar initialValue={query} autoFocus={query.length === 0} showPasteButton />
         </div>
-          {search.isSuccess && search.data.results.length > 0 && (
-            <div className="search-filters" role="group" aria-label="Refine results">
+          {layoutReady && search.isSuccess && search.data.results.length > 0 && (
+            <>
+          <div className="search-filters search-filters--toggles" role="group" aria-label="Search view options">
               {/* Infinite-scroll toggle first — left of the status dropdown.
                   Persisted to `data/display/search.json` on the server. */}
               <span className="search-filters__switch">
@@ -405,11 +455,28 @@ export function SearchPage() {
                   size="sm"
                 />
               </span>
+              <button
+                type="button"
+                className={`search-filters__disclosure${filtersCollapsed ? '' : ' search-filters__disclosure--open'}`}
+                aria-expanded={!filtersCollapsed}
+                aria-label={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+                title={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+                onClick={() => handleFiltersToggle(!filtersCollapsed)}
+              >
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="search-filters__disclosure-count">{activeFilterCount}</span>
+                )}
+                <IconChevronDown size={14} />
+              </button>
               <CardLayoutToggle
                 value={cardLayout}
                 onChange={handleLayoutChange}
                 labelId="search-layout-label"
               />
+          </div>
+              {!filtersCollapsed && (
+          <div className="search-filters search-filters--fields" role="group" aria-label="Refine results">
               <select
                 className={
                   'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -453,7 +520,9 @@ export function SearchPage() {
                   Clear filters
                 </button>
               )}
-            </div>
+          </div>
+              )}
+            </>
           )}
       </div>
 

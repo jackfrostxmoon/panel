@@ -378,8 +378,13 @@ input::placeholder {
   background: var(--surface-2);
   border-color: var(--border-strong);
 }
+/* Bookmarked highlight — same gold ring as `.panel-card--bookmarked` so
+   list and card views read identically. */
 .panel-list__row--bookmarked {
-  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--bookmark-single), var(--shadow-sm);
+}
+[data-theme='light'] .panel-list__row--bookmarked {
+  box-shadow: 0 0 0 2px #b8891f, var(--shadow-sm);
 }
 /* Title + meta stack: the primary line and one dim secondary line. */
 .panel-list__main {
@@ -435,8 +440,10 @@ input::placeholder {
   flex: 0 0 auto;
   margin-left: auto;
 }
-/* Rows stay compact — icon buttons only (titles carry tooltips). */
-.panel-list__actions .bookmark-card__action-label {
+/* Rows stay compact — icon buttons only (titles carry tooltips). Scoped
+   to list rows: card hover strips elsewhere keep their text labels. */
+.panel-list__actions .bookmark-card__action-label,
+.panel-list__actions .latest-card-actions span {
   display: none;
 }
 @media (max-width: 560px) {

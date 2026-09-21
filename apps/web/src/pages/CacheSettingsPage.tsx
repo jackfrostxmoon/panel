@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type { Bookmark, Chapter } from '@panel/shared';
 import {
@@ -8,6 +8,8 @@ import {
 } from '../utils/format';
 import { cacheTagPrefix } from '../utils/sha256';
 import {
+  useCacheSettings,
+  useSaveCacheSettings,
   useClearImageCache,
   useClearImageCacheByTag,
   useClearRecentlyViewed,
@@ -29,10 +31,11 @@ import { useToast } from '../components/Toast';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { FilterSearchBar } from '../components/FilterSearchBar';
+import { Switch } from '../components/Switch';
 import {
   IconArrowLeft,
   IconChevronRight,
-  IconRefresh,
+  IconExternal,
   IconTrash,
   IconX,
 } from '../components/icons';
@@ -58,6 +61,9 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
  */
 type ClearKind = 'cover' | 'chapter' | 'both';
 
+/** Live-refresh poll interval — matches the page's freshness expectations. */
+const LIVE_REFRESH_MS = 5_000;
+
 export function CacheSettingsPage() {
   useDocumentTitle('Image cache');
   const { toast } = useToast();
@@ -67,6 +73,50 @@ export function CacheSettingsPage() {
   const coverTags = useImageCacheTags('cover');
   const chapterTags = useImageCacheTags('chapter');
   const bookmarksQuery = useBookmarks();
+  /**
+   * Live-refresh preference, persisted server-side to
+   * `data/display/cache.json`. OFF by default (manual refresh). While a
+   * save is in flight the pending value wins so the switch flips
+   * instantly instead of waiting for the round-trip.
+   */
+  const cacheSettingsQuery = useCacheSettings();
+  const saveCacheSettings = useSaveCacheSettings();
+  const liveRefresh =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? saveCacheSettings.variables.liveRefresh
+      : (cacheSettingsQuery.data?.liveRefresh ?? false);
+
+  function handleLiveToggle(next: boolean) {
+    if (next === liveRefresh) return;
+    saveCacheSettings.mutate({ liveRefresh: next });
+    // Refresh immediately on opting in — otherwise the first poll lands
+    // a full interval later and the toggle feels dead.
+    if (next) refetchAllRef.current();
+  }
+
+  /**
+   * Latest refetch-all closure for the live interval below. Kept in a ref
+   * (mirroring the reader's *Ref pattern) because the query result objects
+   * are referentially new every render — depending on them would reset the
+   * interval on every render and it would never fire.
+   */
+  const refetchAllRef = useRef(() => {});
+  refetchAllRef.current = () => {
+    void stats.refetch();
+    void limitQuery.refetch();
+    void coverTags.refetch();
+    void chapterTags.refetch();
+    void tagsSizeQuery.refetch();
+    void bookmarksQuery.refetch();
+  };
+
+  /* Live refresh: re-poll every stats/size query on an interval. Manual
+     mode (default) only refetches on mount and after clear actions. */
+  useEffect(() => {
+    if (!liveRefresh) return;
+    const id = window.setInterval(() => refetchAllRef.current(), LIVE_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [liveRefresh]);
   const clearMutation = useClearImageCache();
   const clearByTagMutation = useClearImageCacheByTag();
   const clearRecentlyViewedMutation = useClearRecentlyViewed();
@@ -77,6 +127,16 @@ export function CacheSettingsPage() {
       without a server round-trip so it stays snappy even with hundreds of
       bookmarks. Empty string means "no filter". */
 const [panelQuery, setPanelQuery] = useState('');
+  /** Hide 0 B rows in the "Your panel" list. ON by default (see loader). */
+  const [hideUncached, setHideUncached] = useState(loadPanelHideUncached);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PANEL_HIDE_UNCACHED_KEY, hideUncached ? '1' : '0');
+    } catch {
+      // Storage blocked — the toggle just won't survive a reload.
+    }
+  }, [hideUncached]);
 
   const isPending =
     clearMutation.isPending || clearByTagMutation.isPending || pruneLegacyMutation.isPending;
@@ -198,10 +258,10 @@ const [panelQuery, setPanelQuery] = useState('');
   const cachedChapterIds = useCachedChapterIds();
 
   /** Total cached footprint per panel (cover + chapter pages merged), in a
-      * single round-trip. Zeroed rows for panel with no cached files, so the
-      * list renders a stable "0 B / 0 files" instead of omitting the row.
-      * Refetched from the page's manual Refresh button — no background
-      * polling, so a just-cleared row updates only when the user asks. */
+       * single round-trip. Zeroed rows for panel with no cached files, so the
+       * list renders a stable "0 B / 0 files" instead of omitting the row.
+       * Refreshed by the Live-refresh toggle's interval — in manual mode a
+       * just-cleared row updates on revisit or after a clear action. */
   const tagsSizeQuery = useImageCacheTagsSize(panelIds, cachedChapterIds);
 
   /** 8-hex-tag-hash → total-size lookup for the "Your panel" rows. The
@@ -229,17 +289,26 @@ const [panelQuery, setPanelQuery] = useState('');
 
   /** Filtered view of `yourPanel` — matches the trimmed query against the
       title, the source code (mk/nk/rk/…) and the friendly source label
-      ("MangaKatana") so a user can type either. Empty query = passthrough. */
+      ("MangaKatana") so a user can type either. Empty query = passthrough.
+      On top, the Hide-uncached toggle drops 0 B rows — but only once the
+      size data has arrived, so rows never vanish-then-pop-back while the
+      sizes are still loading. */
   const filteredYourPanel = useMemo<Bookmark[]>(() => {
     const needle = panelQuery.trim().toLowerCase();
-    if (!needle) return yourPanel;
-    return yourPanel.filter((entry) => {
-      const title = entry.title.toLowerCase();
-      const code = entry.source.toLowerCase();
-      const label = sourceLabel(entry.source).toLowerCase();
-      return title.includes(needle) || code.includes(needle) || label.includes(needle);
-    });
-  }, [yourPanel, panelQuery]);
+    const textFiltered = !needle
+      ? yourPanel
+      : yourPanel.filter((entry) => {
+          const title = entry.title.toLowerCase();
+          const code = entry.source.toLowerCase();
+          const label = sourceLabel(entry.source).toLowerCase();
+          return title.includes(needle) || code.includes(needle) || label.includes(needle);
+        });
+    if (!hideUncached || tagsSizeQuery.data == null) return textFiltered;
+    return textFiltered.filter((entry) => panelTotal(entry).entryCount > 0);
+    // panelTotal reads the size map (driven by tagsSizeQuery.data), which
+    // the linter can't see through the function boundary.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [yourPanel, panelQuery, hideUncached, tagsSizeQuery.data]);
 
   /** True only when the filter is hiding rows — drives the result-count
       chip and the "no matches" empty state. */
@@ -341,30 +410,17 @@ const [panelQuery, setPanelQuery] = useState('');
           </p>
         </div>
         <div className="cache-settings__actions">
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => {
-              void stats.refetch();
-              void limitQuery.refetch();
-              void coverTags.refetch();
-              void chapterTags.refetch();
-              void tagsSizeQuery.refetch();
-              void bookmarksQuery.refetch();
-            }}
-            disabled={
-              stats.isFetching ||
-              limitQuery.isFetching ||
-              coverTags.isFetching ||
-              chapterTags.isFetching ||
-              tagsSizeQuery.isFetching ||
-              bookmarksQuery.isFetching
-            }
-            aria-label="Refresh cache stats"
-          >
-            <IconRefresh size={14} />
-            Refresh
-          </button>
+          <span className="search-filters__switch">
+            <span className="search-filters__label" id="cache-live-refresh-label">
+              Live refresh
+            </span>
+            <Switch
+              checked={liveRefresh}
+              onChange={handleLiveToggle}
+              labelledBy="cache-live-refresh-label"
+              size="sm"
+            />
+          </span>
         </div>
       </header>
 
@@ -603,6 +659,17 @@ const [panelQuery, setPanelQuery] = useState('');
                       placeholder="Filter your panel…"
                       label="Filter your panel by title or source"
                     />
+                    <span className="search-filters__switch">
+                      <span className="search-filters__label" id="cache-hide-uncached-label">
+                        Hide uncached
+                      </span>
+                      <Switch
+                        checked={hideUncached}
+                        onChange={setHideUncached}
+                        labelledBy="cache-hide-uncached-label"
+                        size="sm"
+                      />
+                    </span>
                   </div>
                 )}
                 <p className="cache-settings__help">
@@ -619,8 +686,17 @@ const [panelQuery, setPanelQuery] = useState('');
                   </p>
                 ) : filteredYourPanel.length === 0 ? (
                   <p className="cache-settings__empty">
-                    No panel match “{panelQuery.trim()}”. Clear the filter to see all{' '}
-                    {yourPanel.length}.
+                    {isFiltering ? (
+                      <>
+                        No panel match “{panelQuery.trim()}”. Clear the filter to see all{' '}
+                        {yourPanel.length}.
+                      </>
+                    ) : (
+                      <>
+                        Every title is uncached right now. Turn off “Hide uncached”
+                        above to list them anyway.
+                      </>
+                    )}
                   </p>
                 ) : (
                   <ul className="cache-settings__panel-list" role="list">
@@ -762,6 +838,22 @@ function loadDrillCachedOnly(): boolean {
     return window.localStorage.getItem(DRILL_CACHED_ONLY_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+/**
+ * localStorage key for the "Your panel" list's "Hide uncached" toggle.
+ * Same plain-flag pattern as the drill dialog above. ON by default (only
+ * an explicit `'0'` shows 0 B rows), so fresh installs open on the
+ * titles actually holding bytes.
+ */
+const PANEL_HIDE_UNCACHED_KEY = 'panel-cache:hide-uncached:v1';
+
+function loadPanelHideUncached(): boolean {
+  try {
+    return window.localStorage.getItem(PANEL_HIDE_UNCACHED_KEY) !== '0';
+  } catch {
+    return true;
   }
 }
 
@@ -978,14 +1070,26 @@ function PanelDrillDialog({
               {sourceLabel(panel.source)} · {panel.panelId}
             </p>
           </div>
-          <button
-            type="button"
-            className="cache-settings__modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <IconX size={18} />
-          </button>
+          <div className="cache-settings__modal-head-actions">
+            <Link
+              to={`/panel/${encodeURIComponent(panel.panelId)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="cache-settings__modal-close"
+              aria-label={`Open ${panel.title} details in new tab`}
+              title="Open details in new tab"
+            >
+              <IconExternal size={18} />
+            </Link>
+            <button
+              type="button"
+              className="cache-settings__modal-close"
+              onClick={onClose}
+              aria-label="Close dialog"
+            >
+              <IconX size={18} />
+            </button>
+          </div>
         </header>
 
         <div className="cache-settings__modal-body">

@@ -28,7 +28,7 @@ import { DragFolderOverlay } from '../components/DragFolderOverlay';
 import { FilterSearchBar } from '../components/FilterSearchBar';
 import { FolderPickerDialog } from '../components/FolderPickerDialog';
 import { GenreMultiSelect } from '../components/GenreMultiSelect';
-import { IconFolder } from '../components/icons';
+import { IconChevronDown, IconFolder } from '../components/icons';
 import {
   CardLayoutToggle,
   PanelList,
@@ -240,6 +240,14 @@ export function BookmarksPage() {
     genreFilter.length > 0 ||
     excludedGenre.length > 0;
 
+  /** Applied-refinement count for the filters disclosure badge (excludes
+      the always-visible source pills and title search). */
+  const activeFilterCount =
+    (tagFilter !== '' ? 1 : 0) +
+    (statusFilter !== '' ? 1 : 0) +
+    genreFilter.length +
+    excludedGenre.length;
+
   function clearAllFilters() {
     setSourceFilter('');
     setQuery('');
@@ -394,6 +402,15 @@ export function BookmarksPage() {
       ? saveBookmarksSettings.variables.cardLayout
       : (bookmarksSettingsQuery.data?.cardLayout ?? 'cards');
   /**
+   * Collapsed refinement filters, persisted server-side to
+   * `data/display/bookmarks.json`. Collapsed by default so the toolbar
+   * stays compact; same pending-wins pattern as the layout toggle.
+   */
+  const filtersCollapsed: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? saveBookmarksSettings.variables.filtersCollapsed
+      : (bookmarksSettingsQuery.data?.filtersCollapsed ?? true);
+  /**
    * Don't paint either layout until the persisted choice resolves — a hard
    * refresh would otherwise flash the card grid (the `?? 'cards'` fallback)
    * for a beat even when list mode is stored. Errors fall back to cards.
@@ -407,7 +424,12 @@ export function BookmarksPage() {
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveBookmarksSettings.mutate({ cardLayout: next });
+    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed });
+  }
+
+  function handleFiltersToggle(next: boolean) {
+    if (next === filtersCollapsed) return;
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next });
   }
 
   // --- Export / Import (.sql dump) --------------------------------------------
@@ -544,15 +566,32 @@ export function BookmarksPage() {
             </>
           )}
         />
-        {bookmarks.isSuccess && bookmarks.data.length > 0 && (
+        {layoutReady && bookmarks.isSuccess && bookmarks.data.length > 0 && (
           <>
             <SourceFilter value={sourceFilter} onChange={setSourceFilter} allowAll />
-            <div className="search-filters" role="group" aria-label="Refine bookmarks">
+            <div className="search-filters search-filters--toggles" role="group" aria-label="Bookmarks view options">
+              <button
+                type="button"
+                className={`search-filters__disclosure${filtersCollapsed ? '' : ' search-filters__disclosure--open'}`}
+                aria-expanded={!filtersCollapsed}
+                aria-label={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+                title={filtersCollapsed ? 'Show filters' : 'Hide filters'}
+                onClick={() => handleFiltersToggle(!filtersCollapsed)}
+              >
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="search-filters__disclosure-count">{activeFilterCount}</span>
+                )}
+                <IconChevronDown size={14} />
+              </button>
               <CardLayoutToggle
                 value={cardLayout}
                 onChange={handleLayoutChange}
                 labelId="bookmarks-layout-label"
               />
+            </div>
+            {!filtersCollapsed && (
+            <div className="search-filters search-filters--fields" role="group" aria-label="Refine bookmarks">
               <select
                 className={
                   'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -583,28 +622,31 @@ export function BookmarksPage() {
                 emptyLabel="Exclude genre"
                 pluralLabel="Excluded"
               />
+              {!filtersCollapsed && (allTags.data ?? []).length > 0 && (
+                <select
+                  className="search-filters__select"
+                  aria-label="Filter by tag"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                >
+                  <option value="">Any tag</option>
+                  {(allTags.data ?? []).map((tag) => (
+                    <option key={tag.id} value={tag.name}>
+                      {tag.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            {(allTags.data ?? []).length > 0 && (
-              <select
-                className="search-filters__select"
-                aria-label="Filter by tag"
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-              >
-                <option value="">Any tag</option>
-                {(allTags.data ?? []).map((tag) => (
-                  <option key={tag.id} value={tag.name}>
-                    {tag.name}
-                  </option>
-                ))}
-              </select>
             )}
-            <FilterSearchBar
-              value={query}
-              onChange={setQuery}
-              placeholder="Filter bookmarks…"
-              label="Filter bookmarks by title"
-            />
+            {!filtersCollapsed && (
+              <FilterSearchBar
+                value={query}
+                onChange={setQuery}
+                placeholder="Filter bookmarks…"
+                label="Filter bookmarks by title"
+              />
+            )}
           </>
         )}
         <input

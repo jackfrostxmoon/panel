@@ -419,26 +419,38 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-.latest-toolbar .search-filters {
+.latest-toolbar .search-filters--toggles {
   margin-left: auto;
   margin-bottom: 0;
   flex: 0 0 auto;
 }
+.latest-toolbar .search-filters--fields {
+  flex-basis: 100%;
+  margin-left: 0;
+  margin-bottom: 0;
+}
 @media (min-width: 641px) {
-  .latest-toolbar .search-filters {
+  .latest-toolbar .search-filters--toggles {
     order: 2;
   }
   .latest-toolbar .latest-toolbar__search {
     order: 3;
   }
+  .latest-toolbar .search-filters--fields {
+    order: 4;
+  }
 }
 @media (max-width: 640px) {
-  .latest-toolbar .search-filters {
+  .latest-toolbar .search-filters--toggles {
     flex-basis: 100%;
     order: 3;
   }
-  .latest-toolbar .latest-toolbar__search {
+  .latest-toolbar .search-filters--fields {
+    flex-basis: 100%;
     order: 4;
+  }
+  .latest-toolbar .latest-toolbar__search {
+    order: 5;
   }
 }
 /* Hero search docked to the toolbar's right: same fluid-but-capped width
@@ -483,14 +495,19 @@
 .search-toolbar__search .search-bar {
   max-width: none;
 }
-/* Desktop only: refinement selects sit between the pills and the field
-   (pills · selects · search). Mobile keeps the DOM stack order. */
+/* Desktop only: toggles sit between the pills and the field
+   (pills · toggles · search), fields take their own full row below.
+   Mobile keeps the DOM stack order. */
 @media (min-width: 641px) {
-  .search-toolbar .search-filters {
+  .search-toolbar .search-filters--toggles {
     order: 2;
   }
   .search-toolbar .search-toolbar__search {
     order: 3;
+  }
+  .search-toolbar .search-filters--fields {
+    order: 4;
+    flex-basis: 100%;
   }
 }
 @media (max-width: 640px) {
@@ -541,10 +558,15 @@
 }
 /* Inline variant: no longer a standalone section — it hugs the toolbar's
    right edge with zero bottom margin so the row stays compact. */
-.search-toolbar .search-filters {
+.search-toolbar .search-filters--toggles {
   margin-left: auto;
   margin-bottom: 0;
   flex: 0 0 auto;
+}
+.search-toolbar .search-filters--fields {
+  flex-basis: 100%;
+  margin-left: 0;
+  margin-bottom: 0;
 }
 
 /* Search refinement filters (T2-5). */
@@ -554,6 +576,18 @@
   gap: var(--space-2);
   flex-wrap: wrap;
   margin-bottom: var(--space-4);
+}
+/* Toggles row (switches + layout + disclosure): one compact no-wrap row
+   that scrolls horizontally on overflow instead of wrapping or stretching,
+   so Infinite / Filter / Layout always read as a single control strip. */
+.search-filters--toggles {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin-bottom: var(--space-2);
+  scrollbar-width: thin;
+}
+.search-filters--toggles > * {
+  flex-shrink: 0;
 }
 /* Text label for an inline switch inside a filter group (e.g. the
    latest-page infinite-scroll toggle). Matches the pill text tone. */
@@ -618,6 +652,54 @@
 .search-filters__select option {
   background-color: var(--surface-2);
   color: var(--text);
+}
+/* Filters disclosure toggle: collapses the refinement selects, leaving the
+   primary inputs visible. Matches the pill selects' height and tone; the
+   chevron rotates open, and the count badge marks active refinements. */
+.search-filters__disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 40px;
+  padding: 9px var(--space-4);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.search-filters__disclosure:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.search-filters__disclosure svg {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.search-filters__disclosure--open svg {
+  transform: rotate(180deg);
+}
+.search-filters__disclosure-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-filters__disclosure svg {
+    transition: none;
+  }
 }
 
 /* Multi-select genre picker (include / exclude filters). The button
@@ -734,22 +816,24 @@
 }
 
 /* Phones: the source strip takes its own swipeable row (see
-   .source-filter). The refinement selects form their own deterministic
-   2-column grid below — status + genre side by side, exclude spanning the
-   full row — so the layout never depends on how long a source's genre
-   catalog is. Applies to both the search and latest toolbars. */
+   .source-filter). The toggles stay a compact scrollable row; the fields
+   form a deterministic 2-column grid below — status full-width, genres
+   side by side — so the layout never depends on how long a source's genre
+   catalog is. Applies to the search, latest and bookmarks toolbars. */
 @media (max-width: 640px) {
   .search-toolbar {
     row-gap: var(--space-2);
   }
-  .search-toolbar .search-filters {
+  .search-toolbar .search-filters--toggles,
+  .latest-toolbar .search-filters--toggles {
     margin-left: 0;
-    width: 100%;
+    flex-basis: 100%;
   }
-  .search-filters {
+  .search-filters--fields {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     width: 100%;
+    flex-basis: 100%;
   }
   .search-filters__select {
     min-width: 0;
@@ -757,12 +841,26 @@
     max-width: none;
     min-height: 44px;
   }
-  /* Exclude genre (always 3rd) and the Clear-filters button span the row. */
-  .search-filters__select:nth-child(3),
-  .search-filters > .btn {
+  /* Genre dropdowns are inline spans — let them shrink into their column
+     with truncated labels instead of forcing their content width. */
+  .search-filters--fields > .genre-multi {
+    min-width: 0;
+    width: 100%;
+  }
+  .search-filters--fields .genre-multi__button {
+    width: 100%;
+    min-width: 0;
+  }
+  .search-filters--fields .genre-multi__button-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The Clear-filters button spans the row below the three dropdowns. */
+  .search-filters--fields > .btn {
     grid-column: 1 / -1;
   }
-  .search-filters > .btn {
+  .search-filters--fields > .btn {
     justify-self: start;
   }
 }
@@ -3108,19 +3206,22 @@
   margin-bottom: var(--space-5);
 }
 
-/* On desktop the chip strip keeps its natural content width, exactly like
-   the Latest page's toolbar. Only on touch/small screens — where the strip
-   becomes a scrollable full-row element — does it flex into the remaining
-   space beside the folder trigger instead of fighting it for the row
-   ("Nihon…" cut off). */
-@media (max-width: 640px), (hover: none) and (pointer: coarse) {
-  .bookmarks-toolbar .source-filter {
-    flex: 1 1 0;
-    min-width: 0;
-    width: auto;
-    align-self: center;
-  }
+/* Row 1: source pills take the full row so the swipe strip never squeezes
+   against the folder trigger. Row 2: folder trigger + layout/filter
+   toggles ride together; selects and title search follow when expanded. */
+.bookmarks-toolbar .source-filter {
+  flex-basis: 100%;
+  order: 1;
 }
+.bookmarks-toolbar .bookmark-folder-selector {
+  order: 2;
+}
+.bookmarks-toolbar .filter-search-bar {
+  order: 4;
+}
+
+/* The pills own row 1 outright (see above), so no responsive fix-up is
+   needed here anymore. */
 
 /* Title filter reuses the hero search-bar pill. Sits at the right end of the
    toolbar on desktop; gets its own full-width row once the toolbar wraps on
@@ -3132,12 +3233,19 @@
 
 /* Refinement selects cluster right, docked before the search field —
    the same pills · filters · search composition as the latest toolbar.
-   The group carries the auto margin (not the search field) so the three
-   dropdowns stay together instead of floating mid-row. */
-.bookmarks-toolbar .search-filters {
-  margin-left: auto;
+   The toggles (layout + disclosure) take their own full row below the
+   pills so the three control groups never squeeze each other. */
+.bookmarks-toolbar .search-filters--toggles {
+  margin-left: 0;
   margin-bottom: 0;
   flex: 0 0 auto;
+  order: 2;
+}
+.bookmarks-toolbar .search-filters--fields {
+  flex-basis: 100%;
+  margin-left: 0;
+  margin-bottom: 0;
+  order: 3;
 }
 
 /* Panel foot: bookmark-level actions (import/export/edit) below the
@@ -4635,8 +4743,16 @@ details[open] > .cache-settings__tags-summary::before {
   flex-wrap: wrap;
 }
 
+.cache-settings__modal-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
 .cache-settings__modal-close {
   flex-shrink: 0;
+  text-decoration: none;
   width: 32px;
   height: 32px;
   display: inline-flex;
