@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import type { BackupExportScope, Bookmark, PanelStatus } from '@panel/shared';
+import type { BackupExportScope, Bookmark, CardLayout, PanelStatus } from '@panel/shared';
 import { api } from '../api/client';
 import {
   useAddBookmark,
   useAddBookmarkToFolder,
   useBookmarkFolders,
   useBookmarks,
+  useBookmarksSettings,
   useRemoveBookmark,
   useRemoveBookmarkFromFolder,
+  useSaveBookmarksSettings,
   useTags,
 } from '../api/hooks';
 import {
@@ -27,6 +29,12 @@ import { FilterSearchBar } from '../components/FilterSearchBar';
 import { FolderPickerDialog } from '../components/FolderPickerDialog';
 import { GenreMultiSelect } from '../components/GenreMultiSelect';
 import { IconFolder } from '../components/icons';
+import {
+  CardLayoutToggle,
+  PanelList,
+  PanelListRow,
+} from '../components/PanelList';
+import { hideCoverPreview, showCoverPreview } from '../components/coverPreview';
 import { SourceFilter } from '../components/SourceFilter';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
@@ -374,6 +382,34 @@ export function BookmarksPage() {
   /** Mobile edit-mode: reveals the per-card Remove buttons. */
   const [manageMode, setManageMode] = useState(false);
 
+  /**
+   * Cards/list layout, persisted server-side to `data/display/bookmarks.json`.
+   * While a save is in flight the pending value wins so the toggle flips
+   * instantly instead of waiting for the round-trip.
+   */
+  const bookmarksSettingsQuery = useBookmarksSettings();
+  const saveBookmarksSettings = useSaveBookmarksSettings();
+  const cardLayout: CardLayout =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? saveBookmarksSettings.variables.cardLayout
+      : (bookmarksSettingsQuery.data?.cardLayout ?? 'cards');
+  /**
+   * Don't paint either layout until the persisted choice resolves — a hard
+   * refresh would otherwise flash the card grid (the `?? 'cards'` fallback)
+   * for a beat even when list mode is stored. Errors fall back to cards.
+   * Renders nothing while waiting (the page has no spinner; content is
+   * usually still loading in the same window anyway).
+   */
+  const layoutReady =
+    (saveBookmarksSettings.isPending && saveBookmarksSettings.variables != null) ||
+    bookmarksSettingsQuery.isSuccess ||
+    bookmarksSettingsQuery.isError;
+
+  function handleLayoutChange(next: CardLayout) {
+    if (next === cardLayout) return;
+    saveBookmarksSettings.mutate({ cardLayout: next });
+  }
+
   // --- Export / Import (.sql dump) --------------------------------------------
   const addBookmark = useAddBookmark();
   const queryClient = useQueryClient();
@@ -512,6 +548,11 @@ export function BookmarksPage() {
           <>
             <SourceFilter value={sourceFilter} onChange={setSourceFilter} allowAll />
             <div className="search-filters" role="group" aria-label="Refine bookmarks">
+              <CardLayoutToggle
+                value={cardLayout}
+                onChange={handleLayoutChange}
+                labelId="bookmarks-layout-label"
+              />
               <select
                 className={
                   'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -627,8 +668,169 @@ export function BookmarksPage() {
         />
       )}
 
-      {sourceData.length > 0 && sorted.length > 0 && (
+      {sourceData.length > 0 && sorted.length > 0 && layoutReady && (
         <>
+          {cardLayout === 'list' ? (
+            <PanelList className="panel-list--bookmarks">
+              {sorted.map((bookmark) => {
+                const progressLabel = bookmark.progress
+                  ? `${bookmark.progress.chapterTitle ?? 'Chapter'} · Page ${bookmark.progress.page + 1}`
+                  : 'Not started yet';
+                const folderNames = (bookmark.folderIds ?? [])
+                  .map((id) => allFolders.find((f) => f.id === id)?.name)
+                  .filter((name): name is string => Boolean(name));
+                const isDragging = draggingId === bookmark.id;
+                return (
+                  <PanelListRow
+                    key={bookmark.id}
+                    cover={{
+                      source: bookmark.source,
+                      coverUrl: bookmark.coverUrl,
+                      panelId: bookmark.panelId,
+                      title: bookmark.title,
+                    }}
+                    title={bookmark.title}
+                    to={`/panel/${encodeURIComponent(bookmark.panelId)}?from=bookmarks`}
+                    className={isDragging ? 'bookmark-card--dragging' : undefined}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, bookmark)}
+                    onDragEnd={handleDragEnd}
+                    badges={
+                      settings.hideCoverBadges ? null : (
+                        <>
+                          {bookmark.status && bookmark.status !== 'unknown' && (
+                            <span
+                              className={`panel-card__status panel-card__status--${bookmark.status}`}
+                            >
+                              {bookmark.status}
+                            </span>
+                          )}
+                          <span
+                            className="panel-card__source"
+                            title={`Source: ${sourceLabel(bookmark.source)}`}
+                          >
+                            {sourceLabel(bookmark.source)}
+                          </span>
+                          {folderNames.length > 0 && (
+                            <ul
+                              className="bookmark-card__folders"
+                              aria-label={`Folders: ${folderNames.join(', ')}`}
+                            >
+                              {folderNames.slice(0, 3).map((name) => (
+                                <li key={name} className="bookmark-card__folder-pill" title={name}>
+                                  <IconFolder size={11} />
+                                  <span>{name}</span>
+                                </li>
+                              ))}
+                              {folderNames.length > 3 && (
+                                <li className="bookmark-card__folder-pill bookmark-card__folder-pill--more">
+                                  +{folderNames.length - 3}
+                                </li>
+                              )}
+                            </ul>
+                          )}
+                        </>
+                      )
+                    }
+                    meta={
+                      <>
+                        <p className="panel-card__meta panel-card__meta--progress">{progressLabel}</p>
+                        {bookmark.latestChapter && (
+                          <p className="panel-card__meta panel-card__meta--latest">
+                            Latest · {bookmark.latestChapter}
+                          </p>
+                        )}
+                      </>
+                    }
+                    actions={
+                      <>
+                        {bookmark.progress && (
+                          <Link
+                            to={`/read/${encodeURIComponent(bookmark.progress.chapterId)}`}
+                            className="btn btn--primary btn--sm bookmark-card__continue"
+                            aria-label={`Continue reading ${bookmark.title}`}
+                            title="Continue reading"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              aria-hidden="true"
+                            >
+                              <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86a1 1 0 0 0-1.5.86Z" />
+                            </svg>
+                            <span className="bookmark-card__action-label">Continue</span>
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm bookmark-card__folder"
+                          onClick={() => setPickerBookmark(bookmark)}
+                          aria-label={`Move ${bookmark.title} to a folder`}
+                          title="Move to folder"
+                        >
+                          <IconFolder size={14} />
+                          <span className="bookmark-card__action-label">Folder</span>
+                        </button>
+                        <Link
+                          to={`/panel/${encodeURIComponent(bookmark.panelId)}?from=bookmarks`}
+                          className="btn btn--ghost btn--sm bookmark-card__open"
+                          aria-label={`Open ${bookmark.title}`}
+                          title="Open panel"
+                        >
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                          </svg>
+                          <span className="bookmark-card__action-label">Open</span>
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn--danger-ghost btn--sm bookmark-card__remove"
+                          onClick={() => setPendingRemoval(bookmark)}
+                          aria-label={`Remove ${bookmark.title} from bookmarks`}
+                          title="Remove from bookmarks"
+                        >
+                          <svg
+                            className="bookmark-card__remove-icon"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                          </svg>
+                          <span className="bookmark-card__action-label">Remove</span>
+                        </button>
+                      </>
+                    }
+                    onPreviewShow={showCoverPreview}
+                    onPreviewHide={hideCoverPreview}
+                  />
+                );
+              })}
+            </PanelList>
+          ) : (
           <ul
             className={`bookmark-grid${manageMode ? ' bookmark-grid--manage' : ''}`}
             role="list"
@@ -813,6 +1015,7 @@ export function BookmarksPage() {
               );
             })}
         </ul>
+          )}
         </>
       )}
 

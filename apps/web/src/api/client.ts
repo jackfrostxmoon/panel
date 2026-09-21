@@ -39,6 +39,7 @@ import type {
   ReaderStylePreset,
   LatestPageSettings,
   SearchPageSettings,
+  BookmarksPageSettings,
 } from '@panel/shared';
 
 /**
@@ -698,6 +699,17 @@ export const api = {
   getSearchSettings: () => request<SearchPageSettings>('/api/search-settings'),
   saveSearchSettings: (settings: SearchPageSettings) =>
     request<SearchPageSettings>('/api/search-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  /**
+   * Bookmarks-page preferences, persisted server-side as a JSON file
+   * (`data/display/bookmarks.json`) — independent from the latest/search
+   * toggles so each list keeps its own layout.
+   */
+  getBookmarksSettings: () => request<BookmarksPageSettings>('/api/bookmarks-settings'),
+  saveBookmarksSettings: (settings: BookmarksPageSettings) =>
+    request<BookmarksPageSettings>('/api/bookmarks-settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),

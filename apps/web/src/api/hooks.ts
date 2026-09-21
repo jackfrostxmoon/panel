@@ -16,6 +16,7 @@ import type {
   GenreCatalog,
   LatestPageSettings,
   SearchPageSettings,
+  BookmarksPageSettings,
   Panel,
   PanelRating,
   PrefetchJob,
@@ -103,6 +104,8 @@ export const queryKeys = {
   latestSettings: () => ['latest-settings'] as const,
   /** Search-page preferences persisted to `data/display/search.json`. */
   searchSettings: () => ['search-settings'] as const,
+  /** Bookmarks-page preferences persisted to `data/display/bookmarks.json`. */
+  bookmarksSettings: () => ['bookmarks-settings'] as const,
   /** A source's full genre catalog for the filter dropdowns. */
   genreCatalog: (source: string) => ['genres', 'catalog', source] as const,
   healthDetailed: () => ['health', 'detailed'] as const,
@@ -190,6 +193,31 @@ export function useSaveSearchSettings() {
     mutationFn: (settings) => api.saveSearchSettings(settings),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.searchSettings(), data);
+    },
+  });
+}
+
+/**
+ * Bookmarks-page preferences (`data/display/bookmarks.json` on the server).
+ * Cards layout by default — the compact list shows a cover preview on
+ * title hover instead.
+ */
+export function useBookmarksSettings(opts?: QueryOpts<BookmarksPageSettings>) {
+  return useQuery<BookmarksPageSettings, ApiClientError>({
+    queryKey: queryKeys.bookmarksSettings(),
+    queryFn: () => api.getBookmarksSettings(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the bookmarks card/list layout; refreshes the settings query on success. */
+export function useSaveBookmarksSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<BookmarksPageSettings, ApiClientError, BookmarksPageSettings>({
+    mutationFn: (settings) => api.saveBookmarksSettings(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.bookmarksSettings(), data);
     },
   });
 }

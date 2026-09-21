@@ -326,3 +326,29 @@ export function IconPencil({ size = 16, className, style }: IconProps) {
     </svg>
   );
 }
+
+/** Grid — cover-card layout option. */
+export function IconGrid({ size = 16, className, style }: IconProps) {
+  return (
+    <svg {...base(size, className, style)}>
+      <rect x="4" y="4" width="7" height="7" rx="1" />
+      <rect x="13" y="4" width="7" height="7" rx="1" />
+      <rect x="4" y="13" width="7" height="7" rx="1" />
+      <rect x="13" y="13" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+/** List — compact row layout option. */
+export function IconList({ size = 16, className, style }: IconProps) {
+  return (
+    <svg {...base(size, className, style)}>
+      <line x1="9" y1="7" x2="20" y2="7" />
+      <line x1="9" y1="12" x2="20" y2="12" />
+      <line x1="9" y1="17" x2="20" y2="17" />
+      <circle cx="5" cy="7" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="17" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

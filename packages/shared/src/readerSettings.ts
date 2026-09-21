@@ -39,17 +39,31 @@ export interface ReaderSettings {
 }
 
 /**
+ * Card-vs-list layout for panel grids. Persisted per page server-side
+ * (`data/display/<page>.json`) so the choice survives cache clears and
+ * follows the user across browsers/devices — same pattern as the
+ * infinite-scroll toggles below.
+ */
+export type CardLayout = 'cards' | 'list';
+
+/** Default grid layout: cover cards. */
+export const DEFAULT_CARD_LAYOUT: CardLayout = 'cards';
+
+/**
  * Latest page preferences. Persisted server-side as a JSON file
  * (`data/display/latest.json`) via the latest-settings endpoints.
  */
 export interface LatestPageSettings {
   /** Append next pages on scroll instead of Previous/Next paging. */
   infiniteScroll: boolean;
+  /** Cover-card grid or compact list with hover cover preview. */
+  cardLayout: CardLayout;
 }
 
-/** Default: classic Previous/Next pagination. */
+/** Default: classic Previous/Next pagination, cover cards. */
 export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
   infiniteScroll: false,
+  cardLayout: DEFAULT_CARD_LAYOUT,
 };
 
 /**
@@ -60,11 +74,28 @@ export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
 export interface SearchPageSettings {
   /** Append next pages on scroll instead of Previous/Next paging. */
   infiniteScroll: boolean;
+  /** Cover-card grid or compact list with hover cover preview. */
+  cardLayout: CardLayout;
 }
 
-/** Default: classic Previous/Next pagination. */
+/** Default: classic Previous/Next pagination, cover cards. */
 export const DEFAULT_SEARCH_PAGE_SETTINGS: SearchPageSettings = {
   infiniteScroll: false,
+  cardLayout: DEFAULT_CARD_LAYOUT,
+};
+
+/**
+ * Bookmarks page preferences. Persisted server-side as a JSON file
+ * (`data/display/bookmarks.json`) via the bookmarks-settings endpoints.
+ */
+export interface BookmarksPageSettings {
+  /** Cover-card grid or compact list with hover cover preview. */
+  cardLayout: CardLayout;
+}
+
+/** Default: cover cards. */
+export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
+  cardLayout: DEFAULT_CARD_LAYOUT,
 };
 
 /**

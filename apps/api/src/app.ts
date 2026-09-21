@@ -40,6 +40,7 @@ import { readerSettingsRoutes } from './routes/reader-settings.js';
 import { readerStylesRoutes } from './routes/reader-styles.js';
 import { latestSettingsRoutes } from './routes/latest-settings.js';
 import { searchSettingsRoutes } from './routes/search-settings.js';
+import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
 import { ImageCache } from './lib/imageCache.js';
 import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
 import { PrefetchWorker } from './lib/prefetchWorker.js';
@@ -195,6 +196,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/reader-styles', readerStylesRoutes());
   app.route('/api/latest-settings', latestSettingsRoutes());
   app.route('/api/search-settings', searchSettingsRoutes());
+  app.route('/api/bookmarks-settings', bookmarksSettingsRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));
 
   return { app, prefetchWorker };

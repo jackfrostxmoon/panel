@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { PanelStatus, SourceSearchResult } from '@panel/shared';
+import type { CardLayout, PanelStatus, SourceSearchResult } from '@panel/shared';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
@@ -14,13 +14,19 @@ import {
 } from '../api/hooks';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid } from '../components/PanelCard';
+import {
+  CardLayoutToggle,
+  PanelList,
+  PanelListRow,
+} from '../components/PanelList';
+import { hideCoverPreview, showCoverPreview } from '../components/coverPreview';
 import { LatestCardActions } from '../components/LatestCardActions';
 import { GenreMultiSelect } from '../components/GenreMultiSelect';
 import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
-import { DEFAULT_SOURCE, formatDate } from '../utils/format';
+import { DEFAULT_SOURCE, formatDate, sourceLabel } from '../utils/format';
 
 /** Latest source updates with page navigation below the grid. */
 export function LatestPage() {
@@ -54,6 +60,24 @@ export function LatestPage() {
     saveLatestSettings.isPending && saveLatestSettings.variables
       ? saveLatestSettings.variables.infiniteScroll
       : (latestSettingsQuery.data?.infiniteScroll ?? false);
+  /**
+   * Cards/list layout, persisted server-side to `data/display/latest.json`
+   * alongside the infinite-scroll toggle. Same pending-wins pattern so the
+   * toggle flips instantly instead of waiting for the round-trip.
+   */
+  const cardLayout: CardLayout =
+    saveLatestSettings.isPending && saveLatestSettings.variables
+      ? saveLatestSettings.variables.cardLayout
+      : (latestSettingsQuery.data?.cardLayout ?? 'cards');
+  /**
+   * Don't paint either layout until the persisted choice resolves — a hard
+   * refresh would otherwise flash the card grid (the `?? 'cards'` fallback)
+   * for a beat even when list mode is stored. Errors fall back to cards.
+   */
+  const layoutReady =
+    (saveLatestSettings.isPending && saveLatestSettings.variables != null) ||
+    latestSettingsQuery.isSuccess ||
+    latestSettingsQuery.isError;
 
   // In infinite mode the base query is pinned to page 1 and extra pages
   // are appended below (fetched imperatively so the hook count stays
@@ -329,7 +353,12 @@ export function LatestPage() {
       else nextParams.delete('page');
       setParams(nextParams, { replace: true });
     }
-    saveLatestSettings.mutate({ infiniteScroll: next });
+    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout });
+  }
+
+  function handleLayoutChange(next: CardLayout) {
+    if (next === cardLayout) return;
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next });
   }
 
   function changeSource(next: string) {
@@ -394,6 +423,11 @@ export function LatestPage() {
                 size="sm"
               />
             </span>
+            <CardLayoutToggle
+              value={cardLayout}
+              onChange={handleLayoutChange}
+              labelId="latest-layout-label"
+            />
             <select
               className={
                 'search-filters__select' + (statusFilter ? ' search-filters__select--active' : '')
@@ -459,6 +493,83 @@ export function LatestPage() {
         <>
           {filteredResults.length > 0 ? (
             <>
+              {!layoutReady ? (
+                <div className="latest-loading" aria-live="polite" />
+              ) : cardLayout === 'list' ? (
+                <PanelList className="panel-list--latest">
+                  {filteredResults.map((panel) => {
+                    const progress = progressByPanelId.get(panel.id) ?? null;
+                    const bookmarked = bookmarkedIds.has(panel.id);
+                    return (
+                      <PanelListRow
+                        key={panel.id}
+                        cover={{
+                          source: panel.source,
+                          coverUrl: panel.coverUrl,
+                          panelId: panel.id,
+                          title: panel.title,
+                        }}
+                        title={panel.title}
+                        to={`/panel/${encodeURIComponent(panel.id)}?from=latest`}
+                        bookmarked={bookmarked}
+                        badges={
+                          settings.hideCoverBadges ? null : (
+                            <>
+                              {panel.status !== 'unknown' && (
+                                <span
+                                  className={`panel-card__status panel-card__status--${panel.status}`}
+                                >
+                                  {panel.status}
+                                </span>
+                              )}
+                              <span
+                                className="panel-card__source"
+                                title={`Source: ${sourceLabel(panel.source)}`}
+                              >
+                                {sourceLabel(panel.source)}
+                              </span>
+                            </>
+                          )
+                        }
+                        meta={
+                          <>
+                            {progress ? (
+                              <p className="panel-card__meta panel-card__meta--progress">
+                                {`${progress.chapterTitle ?? 'Chapter'} · Page ${progress.page + 1}`}
+                              </p>
+                            ) : (
+                              panel.latestChapter && (
+                                <p className="panel-card__meta">{panel.latestChapter}</p>
+                              )
+                            )}
+                            {progress && panel.latestChapter && (
+                              <p className="panel-card__meta panel-card__meta--latest">
+                                Latest · {panel.latestChapter}
+                              </p>
+                            )}
+                            {!progress && panel.updatedAt && (
+                              <p className="panel-card__meta">{formatDate(panel.updatedAt)}</p>
+                            )}
+                          </>
+                        }
+                        actions={
+                          <LatestCardActions
+                            panelId={panel.id}
+                            title={panel.title}
+                            source={panel.source}
+                            sourceUrl={panel.sourceUrl}
+                            coverUrl={panel.coverUrl}
+                            isBookmarked={bookmarked}
+                            progress={progress}
+                          />
+                        }
+                        onPreviewShow={showCoverPreview}
+                        onPreviewHide={hideCoverPreview}
+                      />
+                    );
+                  })}
+                </PanelList>
+              ) : (
               <PanelGrid className="panel-grid--latest">
                 {filteredResults.map((panel) => {
                   const progress = progressByPanelId.get(panel.id) ?? null;
@@ -494,6 +605,7 @@ export function LatestPage() {
                   );
                 })}
               </PanelGrid>
+              )}
               {infiniteScroll ? (
                 <>
                   {/* Sentinel: paged nav is replaced by scroll-appended
