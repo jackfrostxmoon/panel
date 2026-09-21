@@ -39,6 +39,22 @@ import { glideScrollTo } from '../reader/glideScroll';
 const EMPTY_PAGES: PanelPage[] = [];
 
 /**
+ * localStorage ping written after every reader-settings save. The `storage`
+ * event fires in every *other* open tab, telling those readers to reload
+ * the server file — that is the whole cross-tab sync mechanism (same
+ * pattern as the display-settings hook).
+ */
+const READER_SETTINGS_SYNC_KEY = 'panel-reader:settings:sync';
+
+function pingReaderSettingsSync(): void {
+  try {
+    localStorage.setItem(READER_SETTINGS_SYNC_KEY, String(Date.now()));
+  } catch {
+    // Storage blocked — other tabs just won't live-sync.
+  }
+}
+
+/**
  * The reader — orchestrates pages, navigation (keyboard / touch / buttons),
  * chapter transitions, settings, fullscreen and progress persistence.
  */
@@ -68,31 +84,60 @@ export function ReaderPage() {
   const saveProgress = useSaveProgress();
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
 
-  // Load once from server file on mount; auto-instant save on every change.
-  useEffect(() => {
+  /** Reload settings from the server file (cross-tab sync target). */
+  const reloadSettings = useCallback(() => {
     api.getReaderSettings()
       .then((saved) => {
         setSettings(saved);
       })
       .catch(() => {
-        // Keep defaults if file is missing.
+        // Keep current settings if the file is missing.
       });
   }, []);
+
+  // Load once from server file on mount; auto-instant save on every change.
+  useEffect(() => {
+    reloadSettings();
+  }, [reloadSettings]);
+
+  /**
+   * Cross-tab sync: when another tab saves reader settings it writes the
+   * ping key below, and this tab reloads from the server file — no refresh
+   * needed. The `storage` event only fires in *other* tabs, so this never
+   * loops back on the tab that saved.
+   */
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === READER_SETTINGS_SYNC_KEY) reloadSettings();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [reloadSettings]);
 
   const update = useCallback(
     (patch: Partial<ReaderSettings>) => {
       setSettings((current) => {
         const next = { ...current, ...patch };
-        // Auto-instant save: write to file immediately.
-        void api.saveReaderSettings(next);
+        // Auto-instant save: write to file immediately, then ping other
+        // tabs so they reload (see the storage listener above).
+        void api.saveReaderSettings(next).then(() => pingReaderSettingsSync());
         return next;
       });
     },
     [],
   );
-  const switchMode = useCallback((mode: ReadingMode) => {
-    setSettings((current) => ({ ...current, mode }));
-  }, []);
+  const switchMode = useCallback(
+    (mode: ReadingMode) => {
+      setSettings((current) => {
+        const next = { ...current, mode };
+        // Persist like any other change so the mode survives refreshes and
+        // syncs to other open tabs (previously this was session-local).
+        void api.saveReaderSettings(next).then(() => pingReaderSettingsSync());
+        return next;
+      });
+    },
+    [],
+  );
 
   const [page, setPage] = useState(0);
   const [scrollRatio, setScrollRatio] = useState(0);
