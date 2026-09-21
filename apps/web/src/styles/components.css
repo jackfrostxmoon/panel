@@ -184,8 +184,10 @@ input::placeholder {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px);
+  /* Solid background on purpose: a translucent + blurred sticky header
+     forces the browser to re-blur all scrolling content every frame,
+     which janks grid pages. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   height: var(--header-height);
   transition: transform var(--duration-med) var(--ease-out);
@@ -347,6 +349,177 @@ input::placeholder {
   .app-shell--wide .panel-grid,
   .app-shell--wide .bookmark-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* --- Panel list (compact rows) + floating cover preview -------------------- */
+
+/* List layout: one row per panel — title, badges, meta and trailing
+   actions in a single line. Used by latest/search/bookmarks when their
+   cardLayout setting is 'list'. */
+.panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.panel-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.panel-list__row:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.panel-list__row--bookmarked {
+  border-color: var(--accent-soft);
+}
+/* Title + meta stack: the primary line and one dim secondary line. */
+.panel-list__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.panel-list__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel-list__title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.panel-list__title-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.panel-list__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel-list__meta .panel-card__meta {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel-list__badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+.panel-list__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+/* Rows stay compact — icon buttons only (titles carry tooltips). */
+.panel-list__actions .bookmark-card__action-label {
+  display: none;
+}
+@media (max-width: 560px) {
+  /* Narrow screens: the stacked meta stays (it costs no width), the badge
+     pills are what crowd the row — drop those instead. */
+  .panel-list__badges {
+    display: none;
+  }
+  .panel-list__row {
+    padding: var(--space-2);
+  }
+}
+
+/* Cards/List segmented control for page toolbars. */
+.layout-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.layout-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.layout-toggle__btn + .layout-toggle__btn {
+  border-left: 1px solid var(--border);
+}
+.layout-toggle__btn:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+.layout-toggle__btn--active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+/* Floating cover preview: follows the cursor while a list-row title is
+   hovered. Positioned via inline transform (left/top stay 0); above page
+   chrome and dropdowns but below dialogs/toasts. `will-change` promotes it
+   to a compositor layer so per-frame moves composite without repainting. */
+.cover-preview {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 200px;
+  aspect-ratio: 2 / 3;
+  z-index: 200;
+  pointer-events: none;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  background: var(--surface-2);
+  will-change: transform;
+  animation: cover-preview-in 0.12s ease-out;
+}
+/* CoverImage renders a bare <img> — every caller sizes it. Fill the fixed
+   box and crop (object-fit) so all covers render identically regardless of
+   their native dimensions. */
+.cover-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@keyframes cover-preview-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover-preview {
+    animation: none;
   }
 }
 
@@ -556,8 +729,10 @@ input::placeholder {
   text-transform: capitalize;
   padding: 2px 8px;
   border-radius: var(--radius-full);
+  /* No backdrop-filter on purpose: every card carries up to three of these
+     pills, and dozens of live blurs jank grid scrolling. The overlay
+     background alone (0.72 alpha on dark) keeps them readable. */
   background: var(--overlay);
-  backdrop-filter: blur(6px);
 }
 
 .panel-card__status--completed {
@@ -574,7 +749,6 @@ input::placeholder {
   border-radius: var(--radius-full);
   color: var(--text-strong);
   background: var(--overlay);
-  backdrop-filter: blur(6px);
 }
 
 /* Phones: narrow cards squeeze the top-left status chip against the
@@ -844,7 +1018,6 @@ input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  backdrop-filter: blur(6px);
 }
 .panel-card__folder-pill span {
   overflow: hidden;
