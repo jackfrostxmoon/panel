@@ -122,8 +122,13 @@
   text-decoration: none;
 }
 
-.reader-toolbar__btn:hover {
-  background: rgba(127, 127, 127, 0.2);
+/* Hover affordance for fine pointers only: touch browsers keep :hover
+   applied after a tap, which left toolbar buttons (e.g. fullscreen)
+   looking stuck in the active state on mobile. */
+@media (hover: hover) {
+  .reader-toolbar__btn:hover {
+    background: rgba(127, 127, 127, 0.2);
+  }
 }
 
 .reader-toolbar__btn--disabled {

@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import type { Chapter } from '@panel/shared';
 import { useAddChapterBookmark, useChapterBookmarks, useRemoveChapterBookmark } from '../api/hooks';
 import { useToast } from '../components/Toast';
-import { IconArrowLeft, IconBookmark, IconExpand, IconGear, IconX } from '../components/icons';
+import { IconArrowLeft, IconBookmark, IconCompress, IconExpand, IconGear, IconX } from '../components/icons';
 
 /**
  * Reader top toolbar: navigation back to the panel, chapter context,
@@ -147,7 +147,7 @@ export function ReaderToolbar({
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={isFullscreen ? 'Exit fullscreen (E)' : 'Fullscreen (E)'}
           >
-            <IconExpand size={18} />
+            {isFullscreen ? <IconCompress size={18} /> : <IconExpand size={18} />}
           </button>
           <button
             type="button"

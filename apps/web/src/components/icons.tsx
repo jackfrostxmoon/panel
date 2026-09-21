@@ -180,6 +180,19 @@ export function IconExpand({ size = 16, className, style }: IconProps) {
   );
 }
 
+/** Compress (exit fullscreen) — inward arrows, mirror of IconExpand.
+    Shafts run corner-to-tip with no crossings so it stays crisp small. */
+export function IconCompress({ size = 16, className, style }: IconProps) {
+  return (
+    <svg {...base(size, className, style)}>
+      <polyline points="4 14 10 14 10 20" />
+      <polyline points="20 10 14 10 14 4" />
+      <line x1="4" y1="20" x2="10" y2="14" />
+      <line x1="20" y1="4" x2="14" y2="10" />
+    </svg>
+  );
+}
+
 /** Bookmark icon; `filled` renders the solid state. */
 export function IconBookmark({ size = 16, filled = false, className, style }: IconProps & { filled?: boolean }) {
   return (
