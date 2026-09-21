@@ -672,7 +672,7 @@ export class HiperdexSource implements PanelSource {
     // into a "No chapters found" page. Bodies are TTL-cached, so later
     // panels reuse them without refetching.
     const urls = this.sitemapChapterUrls!;
-    const xmls: string[] = new Array(urls.length);
+    const xmls: string[] = [];
     const CONCURRENCY = 8;
     for (let i = 0; i < urls.length; i += CONCURRENCY) {
       const batch = urls.slice(i, i + CONCURRENCY);

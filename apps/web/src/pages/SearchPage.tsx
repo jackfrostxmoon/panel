@@ -282,7 +282,7 @@ export function SearchPage() {
     return () => observer.disconnect();
     // `loadNextInfinitePage` is intentionally invoked, not depended on —
     // it closes over the latest render's state via the effect re-run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [infiniteScroll, search.isSuccess, search.data, extraPages.length, loadingMore]);
 
   // Deep-link restore: a refresh with `?page=N` while infinite scroll is
@@ -293,7 +293,7 @@ export function SearchPage() {
     if (extraPages.length + 1 >= page) return;
     if (!infiniteHasMore) return;
     void loadNextInfinitePage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [infiniteScroll, search.isSuccess, page, extraPages.length]);
 
   function handleInfiniteToggle(next: boolean) {

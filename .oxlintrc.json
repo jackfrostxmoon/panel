@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Default plugins (eslint, typescript, unicorn, oxc) plus react, which
+  // covers react-hooks (rules-of-hooks, exhaustive-deps) and react-refresh
+  // (only-export-components). NOTE: setting `plugins` overwrites the default
+  // set, so the defaults are listed explicitly.
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react"],
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error", "info"] }],
+    "typescript/no-explicit-any": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
+    "typescript/consistent-type-imports": [
+      "warn",
+      { "prefer": "type-imports", "fixStyle": "inline-type-imports" }
+    ],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    // Off: React Compiler rules that contradict this codebase's intentional,
+    // load-bearing patterns (latest-ref sync during render, intentional
+    // setState-in-effect resets, ref-held mutable caches, Date.now
+    // cache-busters). The previous ESLint setup never enabled these.
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/purity": "off",
+    "react/immutability": "off",
+    "react/preserve-manual-memoization": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.{ts,tsx}", "**/tests/**/*.{ts,tsx}"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "database/migrations/**",
+    "tmp/**",
+    "bun.lock"
+  ]
+}

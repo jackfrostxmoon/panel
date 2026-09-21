@@ -154,7 +154,7 @@ Other scripts:
 
 ```bash
 bun run typecheck   # tsc --noEmit (TypeScript 7) across all packages
-bun run lint        # ESLint 10 (flat config)
+bun run lint        # oxlint (.oxlintrc.json)
 bun run format      # Prettier
 ```
 
@@ -173,27 +173,13 @@ All requested versions were verified against the npm registry / local toolchain 
 | Bun 1.4.1    | **1.4.1**     | exact match (also pinned in the Docker base image) |
 | PostgreSQL   | **17** (PGlite, embedded) | no server — runs in-process via `@electric-sql/pglite` |
 
-### TypeScript 7 side-by-side note (important)
+### TypeScript 7 note
 
 TypeScript 7 is the native (Go-based) compiler and **ships no JavaScript API**.
-`typescript-eslint` requires that API and [hard-fails on TS 7.0](https://github.com/typescript-eslint/typescript-eslint/issues/10940).
-Following [Microsoft's official side-by-side guidance](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0),
-this repo installs:
-
-```jsonc
-{
-  "devDependencies": {
-    "@typescript/native": "npm:typescript@^7.0.2", // provides tsc 7.0.2 (typechecking/builds)
-    "typescript": "6.0.3", // provides the TS 6 API (typescript-eslint parser only)
-  },
-}
-```
-
-We depend on `typescript@6.0.3` directly rather than the `@typescript/typescript6`
-shim because the shim's nested `npm:` alias currently resolves into a dependency
-cycle under Bun's isolated installer. `tsc` remains TypeScript **7.0.2**; only the
-lint-time parser API is TS 6. When `typescript-eslint` ships TS ≥ 7.1 API support,
-drop the `typescript@6` pin.
+That used to matter because `typescript-eslint` requires that API (which is why
+the repo carried a `typescript@6.0.3` side-by-side pin). The linter has since
+moved to [oxlint](https://oxc.rs/docs/guide/usage/linter.html), which needs no
+TS JS API — so the pin was dropped and `tsc` is TypeScript **7.0.2** everywhere.
 
 ## Environment variables
 
@@ -549,7 +535,7 @@ no DB). Components are verified via typecheck + lint + manual `bun run dev`.
 bun run test        # vitest run (apps/web) — navigation, shortcuts, chapter markers, format
 bun run test:watch  # or: cd apps/web && bun run test:watch
 bun run typecheck   # tsc --noEmit across shared, api and web
-bun run lint        # ESLint flat config
+bun run lint        # oxlint (.oxlintrc.json)
 ```
 
 Existing specs: `apps/web/src/reader/navigation.test.ts`, `reader/shortcuts.test.ts`,

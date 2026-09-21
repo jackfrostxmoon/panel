@@ -569,7 +569,7 @@ const filteredAndSortedChapters = useMemo(() => {
         status: panel.data.status,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- record once per loaded panel; recordHistory is stable.
+    // oxlint-disable-next-line react/exhaustive-deps -- record once per loaded panel; recordHistory is stable.
   }, [panel.data]);
 
   // Navigate to chapter with proper encoding

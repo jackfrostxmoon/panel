@@ -46,7 +46,7 @@ const WINDOWS_RESERVED = new Set([
  * spaces are trimmed (Windows refuses those), length is capped.
  */
 export function sanitizeFolderSegment(title: string): string {
-  // eslint-disable-next-line no-control-regex -- stripping C0 controls from folder names is the point.
+  // oxlint-disable-next-line no-control-regex -- stripping C0 controls from folder names is the point.
   const collapsed = (title ?? '').replace(/[\x00-\x1f<>:"/\\|?*]/g, '-').replace(/\s+/g, ' ').trim();
   let out = collapsed.replace(/[. ]+$/g, '');
   if (out.length > MAX_TITLE_PART) {

@@ -17,7 +17,7 @@
     "lan": "bun run scripts/lan.ts",
     "clean-install": "bun run scripts/clean-install.ts",
     "typecheck": "cd packages/shared && tsc --noEmit && cd ../../apps/api && tsc --noEmit && cd ../web && tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "test": "cd apps/web && bun run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -27,16 +27,10 @@
     "db:studio": "cd apps/api && bun x drizzle-kit studio"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "concurrently": "^10.0.5",
-    "eslint": "^10.8.1",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.4",
-    "globals": "^17.11.0",
-    "prettier": "^3.9.6",
-    "typescript": "6.0.3",
-    "typescript-eslint": "^8.67.0"
+    "oxlint": "^1.83.0",
+    "prettier": "^3.9.6"
   },
   "engines": {
     "bun": ">=1.4.1",

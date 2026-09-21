@@ -118,7 +118,7 @@ export function LatestPage() {
     return map;
     // bookmarks is the stable TanStack Query result object; the actual
     // change driver is bookmarks.data, which the linter can't see.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [bookmarks.data]);
   const bookmarkedIds = useMemo(
     () => new Set((bookmarks.data ?? []).map((b) => b.panelId)),
@@ -295,7 +295,7 @@ export function LatestPage() {
     return () => observer.disconnect();
     // `loadNextInfinitePage` is intentionally invoked, not depended on —
     // it closes over the latest render's state via the effect re-run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [infiniteScroll, latest.isSuccess, latest.data, extraPages.length, loadingMore]);
 
   // Deep-link restore: a refresh with `?page=N` while infinite scroll is
@@ -306,7 +306,7 @@ export function LatestPage() {
     if (extraPages.length + 1 >= page) return;
     if (!infiniteHasMore) return;
     void loadNextInfinitePage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [infiniteScroll, latest.isSuccess, page, extraPages.length]);
 
   function handleInfiniteToggle(next: boolean) {

@@ -445,7 +445,7 @@ export function ReaderPage() {
     const payload = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (payload) saveProgress.mutate(payload);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate is stable; we key on page
+    // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on page
   }, [page, resumeResolved, pageCount, chapterPages.data, resetChapter]);
 
   /* Flush on the way out. React cleanups don't run when the tab itself
