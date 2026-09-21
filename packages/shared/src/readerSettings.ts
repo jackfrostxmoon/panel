@@ -58,12 +58,15 @@ export interface LatestPageSettings {
   infiniteScroll: boolean;
   /** Cover-card grid or compact list with hover cover preview. */
   cardLayout: CardLayout;
+  /** Collapse the refinement filter group (status/genre selects). */
+  filtersCollapsed: boolean;
 }
 
-/** Default: classic Previous/Next pagination, cover cards. */
+/** Default: classic Previous/Next pagination, cover cards, filters collapsed. */
 export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
   infiniteScroll: false,
   cardLayout: DEFAULT_CARD_LAYOUT,
+  filtersCollapsed: true,
 };
 
 /**
@@ -76,12 +79,15 @@ export interface SearchPageSettings {
   infiniteScroll: boolean;
   /** Cover-card grid or compact list with hover cover preview. */
   cardLayout: CardLayout;
+  /** Collapse the refinement filter group (status/genre selects). */
+  filtersCollapsed: boolean;
 }
 
-/** Default: classic Previous/Next pagination, cover cards. */
+/** Default: classic Previous/Next pagination, cover cards, filters collapsed. */
 export const DEFAULT_SEARCH_PAGE_SETTINGS: SearchPageSettings = {
   infiniteScroll: false,
   cardLayout: DEFAULT_CARD_LAYOUT,
+  filtersCollapsed: true,
 };
 
 /**
@@ -91,11 +97,28 @@ export const DEFAULT_SEARCH_PAGE_SETTINGS: SearchPageSettings = {
 export interface BookmarksPageSettings {
   /** Cover-card grid or compact list with hover cover preview. */
   cardLayout: CardLayout;
+  /** Collapse the refinement filter group (status/genre/tag selects). */
+  filtersCollapsed: boolean;
 }
 
-/** Default: cover cards. */
+/** Default: cover cards, filters collapsed. */
 export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
   cardLayout: DEFAULT_CARD_LAYOUT,
+  filtersCollapsed: true,
+};
+
+/**
+ * Cache page preferences. Persisted server-side as a JSON file
+ * (`data/display/cache.json`) via the cache-settings endpoints.
+ */
+export interface CachePageSettings {
+  /** Poll cache stats/sizes in the background instead of manual refreshes. */
+  liveRefresh: boolean;
+}
+
+/** Default: manual refresh only. */
+export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
+  liveRefresh: false,
 };
 
 /**

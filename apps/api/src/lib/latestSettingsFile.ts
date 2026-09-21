@@ -20,6 +20,10 @@ export function loadLatestSettings(): LatestPageSettings {
           ? parsed.infiniteScroll
           : DEFAULT_LATEST_PAGE_SETTINGS.infiniteScroll,
       cardLayout: coerceCardLayout(parsed.cardLayout),
+      filtersCollapsed:
+        typeof parsed.filtersCollapsed === 'boolean'
+          ? parsed.filtersCollapsed
+          : DEFAULT_LATEST_PAGE_SETTINGS.filtersCollapsed,
     };
   } catch {
     return { ...DEFAULT_LATEST_PAGE_SETTINGS };
@@ -31,6 +35,7 @@ export function saveLatestSettings(settings: LatestPageSettings): LatestPageSett
   const clean: LatestPageSettings = {
     infiniteScroll: settings.infiniteScroll === true,
     cardLayout: coerceCardLayout(settings.cardLayout),
+    filtersCollapsed: settings.filtersCollapsed !== false,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

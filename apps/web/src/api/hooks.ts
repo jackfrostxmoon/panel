@@ -17,6 +17,7 @@ import type {
   LatestPageSettings,
   SearchPageSettings,
   BookmarksPageSettings,
+  CachePageSettings,
   Panel,
   PanelRating,
   PrefetchJob,
@@ -106,6 +107,8 @@ export const queryKeys = {
   searchSettings: () => ['search-settings'] as const,
   /** Bookmarks-page preferences persisted to `data/display/bookmarks.json`. */
   bookmarksSettings: () => ['bookmarks-settings'] as const,
+  /** Cache-page preferences persisted to `data/display/cache.json`. */
+  cacheSettings: () => ['cache-settings'] as const,
   /** A source's full genre catalog for the filter dropdowns. */
   genreCatalog: (source: string) => ['genres', 'catalog', source] as const,
   healthDetailed: () => ['health', 'detailed'] as const,
@@ -218,6 +221,30 @@ export function useSaveBookmarksSettings() {
     mutationFn: (settings) => api.saveBookmarksSettings(settings),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.bookmarksSettings(), data);
+    },
+  });
+}
+
+/**
+ * Cache-page preferences (`data/display/cache.json` on the server).
+ * Manual refresh by default — live mode polls the stats/size queries.
+ */
+export function useCacheSettings(opts?: QueryOpts<CachePageSettings>) {
+  return useQuery<CachePageSettings, ApiClientError>({
+    queryKey: queryKeys.cacheSettings(),
+    queryFn: () => api.getCacheSettings(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the live-refresh toggle; refreshes the settings query on success. */
+export function useSaveCacheSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<CachePageSettings, ApiClientError, CachePageSettings>({
+    mutationFn: (settings) => api.saveCacheSettings(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.cacheSettings(), data);
     },
   });
 }

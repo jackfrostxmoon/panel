@@ -16,16 +16,23 @@ export function searchSettingsRoutes(): Hono {
       !body ||
       typeof body !== 'object' ||
       typeof (body as { infiniteScroll?: unknown }).infiniteScroll !== 'boolean' ||
-      !isCardLayout((body as { cardLayout?: unknown }).cardLayout)
+      !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
+      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list" }.',
+        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list", filtersCollapsed: boolean }.',
       );
     }
-    const typed = body as { infiniteScroll: boolean; cardLayout: CardLayout };
+    const typed = body as { infiniteScroll: boolean; cardLayout: CardLayout; filtersCollapsed: boolean };
     return c.json(
-      ok(saveSearchSettings({ infiniteScroll: typed.infiniteScroll, cardLayout: typed.cardLayout })),
+      ok(
+        saveSearchSettings({
+          infiniteScroll: typed.infiniteScroll,
+          cardLayout: typed.cardLayout,
+          filtersCollapsed: typed.filtersCollapsed,
+        }),
+      ),
     );
   });
 

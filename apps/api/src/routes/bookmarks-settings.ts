@@ -12,14 +12,21 @@ export function bookmarksSettingsRoutes(): Hono {
 
   app.put('/', async (c) => {
     const body = (await c.req.json()) as unknown;
-    if (!body || typeof body !== 'object' || !isCardLayout((body as { cardLayout?: unknown }).cardLayout)) {
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
+      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean'
+    ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { cardLayout: "cards" | "list" }.',
+        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean }.',
       );
     }
-    const typed = body as { cardLayout: CardLayout };
-    return c.json(ok(saveBookmarksSettings({ cardLayout: typed.cardLayout })));
+    const typed = body as { cardLayout: CardLayout; filtersCollapsed: boolean };
+    return c.json(
+      ok(saveBookmarksSettings({ cardLayout: typed.cardLayout, filtersCollapsed: typed.filtersCollapsed })),
+    );
   });
 
   return app;

@@ -20,6 +20,10 @@ export function loadSearchSettings(): SearchPageSettings {
           ? parsed.infiniteScroll
           : DEFAULT_SEARCH_PAGE_SETTINGS.infiniteScroll,
       cardLayout: coerceCardLayout(parsed.cardLayout),
+      filtersCollapsed:
+        typeof parsed.filtersCollapsed === 'boolean'
+          ? parsed.filtersCollapsed
+          : DEFAULT_SEARCH_PAGE_SETTINGS.filtersCollapsed,
     };
   } catch {
     return { ...DEFAULT_SEARCH_PAGE_SETTINGS };
@@ -31,6 +35,7 @@ export function saveSearchSettings(settings: SearchPageSettings): SearchPageSett
   const clean: SearchPageSettings = {
     infiniteScroll: settings.infiniteScroll === true,
     cardLayout: coerceCardLayout(settings.cardLayout),
+    filtersCollapsed: settings.filtersCollapsed !== false,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

@@ -40,6 +40,7 @@ import type {
   LatestPageSettings,
   SearchPageSettings,
   BookmarksPageSettings,
+  CachePageSettings,
 } from '@panel/shared';
 
 /**
@@ -710,6 +711,17 @@ export const api = {
   getBookmarksSettings: () => request<BookmarksPageSettings>('/api/bookmarks-settings'),
   saveBookmarksSettings: (settings: BookmarksPageSettings) =>
     request<BookmarksPageSettings>('/api/bookmarks-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  /**
+   * Cache-page preferences, persisted server-side as a JSON file
+   * (`data/display/cache.json`) — live background polling vs manual
+   * refresh, shared across browsers/devices like the other page toggles.
+   */
+  getCacheSettings: () => request<CachePageSettings>('/api/cache-settings'),
+  saveCacheSettings: (settings: CachePageSettings) =>
+    request<CachePageSettings>('/api/cache-settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
