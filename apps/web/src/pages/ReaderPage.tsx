@@ -1186,6 +1186,10 @@ export function ReaderPage() {
               }}
               onChapterNavigate={goToChapter}
               chapterTag={chapterId}
+              /* Preserve the reading position across mode switches: the
+                 parent keeps `page` while the newly mounted reader starts
+                 at scrollTop 0 — it jumps back here before tracking. */
+              initialPage={page}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
@@ -1205,6 +1209,8 @@ export function ReaderPage() {
               }}
               onChapterNavigate={goToChapter}
               chapterTag={chapterId}
+              /* Preserve the reading position across mode switches (see above). */
+              initialPage={page}
             />
           ) : (
             <PagedReader

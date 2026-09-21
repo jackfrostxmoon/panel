@@ -38,6 +38,12 @@ export const GalleryReader = forwardRef<
     chapterTag?: string | null;
     /** Reading direction; swaps the left/right chapter-hop zones. */
     direction?: ReadingDirection;
+    /**
+     * Page to show on mount. Switching reading modes mounts a fresh reader
+     * at scrollTop 0 while the parent still holds the current page — without
+     * this the first tracking update reports page 0 and the position is lost.
+     */
+    initialPage?: number;
   }
 >(function GalleryReader(
   {
@@ -53,6 +59,7 @@ export const GalleryReader = forwardRef<
     onChapterNavigate,
     chapterTag = null,
     direction = 'ltr',
+    initialPage = 0,
   },
   ref,
 ) {
@@ -67,6 +74,10 @@ export const GalleryReader = forwardRef<
   onPageChangeRef.current = onPageChange;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  /** Jump to `initialPage` once on mount (see prop docs). */
+  const restoredRef = useRef(false);
+  const initialPageRef = useRef(initialPage);
+  initialPageRef.current = initialPage;
 
   useImperativeHandle(ref, () => ({
     scrollToPage(page: number, preset: GlidePreset = 'quick') {
@@ -96,6 +107,34 @@ export const GalleryReader = forwardRef<
       containerRef.current?.closest('.reader-content') as HTMLElement | null;
     const target: HTMLElement | Window = scroller ?? window;
     let ticking = false;
+
+    // A mode switch mounts this reader at scrollTop 0 while the parent still
+    // holds the current page. Jump back there BEFORE the first tracking
+    // update — otherwise update() sees the top and reports page 0, wiping
+    // the preserved position. Centers the page, mirroring scrollToPage.
+    // Runs once; aspect-ratio boxes keep offsets stable even before images
+    // finish loading.
+    if (!restoredRef.current) {
+      const want = Math.max(
+        0,
+        Math.min(initialPageRef.current, pageRefs.current.length - 1),
+      );
+      const el = pageRefs.current[want];
+      if (el && scroller) {
+        const rect = el.getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        const targetTop =
+          scroller.scrollTop +
+          rect.top -
+          scrollerRect.top -
+          scroller.clientHeight / 2 +
+          rect.height / 2;
+        scroller.scrollTop = Math.max(0, targetTop);
+        restoredRef.current = true;
+      } else if (pageRefs.current.length > 0) {
+        restoredRef.current = true;
+      }
+    }
 
     const update = () => {
       ticking = false;
