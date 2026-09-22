@@ -3206,9 +3206,11 @@
   margin-bottom: var(--space-5);
 }
 
-/* Row 1: source pills take the full row so the swipe strip never squeezes
-   against the folder trigger. Row 2: folder trigger + layout/filter
-   toggles ride together; selects and title search follow when expanded. */
+/* Narrow screens: source pills take the full row so the swipe strip never
+   squeezes against the folder trigger. Folder trigger + layout/filter
+   toggles ride together on the next row; selects and title search follow
+   when expanded. Desktop overrides this into the latest-style one-row
+   composition (see the min-width block below). */
 .bookmarks-toolbar .source-filter {
   flex-basis: 100%;
   order: 1;
@@ -3220,8 +3222,8 @@
   order: 4;
 }
 
-/* The pills own row 1 outright (see above), so no responsive fix-up is
-   needed here anymore. */
+/* The pills own row 1 outright on narrow screens (see above); the desktop
+   one-row composition lives in the min-width block further below. */
 
 /* Small phones (360px class): keep folder trigger + layout/filter toggles
    on one row — compact chrome, tighter gap, and the folder name truncates
@@ -3251,19 +3253,17 @@
   }
 }
 
-/* Title filter reuses the hero search-bar pill. The refinement selects take
-   their own full row above, so the field owns its row outright on desktop
-   and stretches full-width; on phones (640px, see below) it keeps its own
-   full-width row so it never squeezes the chip strip's swipe room. */
+/* Title filter reuses the hero search-bar pill. Fluid width that fills its
+   row; on phones (640px, see below) it keeps its own full-width row so it
+   never squeezes the chip strip's swipe room. */
 .bookmarks-toolbar .filter-search-bar {
   flex: 1 1 280px;
   max-width: none;
 }
 
-/* Refinement selects cluster right, docked before the search field —
-   the same pills · filters · search composition as the latest toolbar.
-   The toggles (layout + disclosure) take their own full row below the
-   pills so the three control groups never squeeze each other. */
+/* Refinement selects take their own full row when expanded; the toggles
+   (layout + disclosure) ride the main toolbar row. Desktop pins the
+   toggles right and docks the search at the far end (see below). */
 .bookmarks-toolbar .search-filters--toggles {
   margin-left: 0;
   margin-bottom: 0;
@@ -3275,6 +3275,35 @@
   margin-left: 0;
   margin-bottom: 0;
   order: 3;
+}
+
+/* Desktop (641px+): match the latest toolbar's one-row composition —
+   folder trigger + shrink-wrapped source pills on the left, Filters /
+   Layout toggles pinned right, and the title search docked at the far
+   end. The refinement selects keep their own full row below when
+   expanded; narrow screens keep the stacked rules above. */
+@media (min-width: 641px) {
+  .bookmarks-toolbar .bookmark-folder-selector {
+    order: 1;
+  }
+  .bookmarks-toolbar .source-filter {
+    flex: 0 1 auto;
+    min-width: 0;
+    order: 2;
+  }
+  .bookmarks-toolbar .search-filters--toggles {
+    order: 3;
+    margin-left: auto;
+  }
+  .bookmarks-toolbar .filter-search-bar {
+    order: 4;
+    flex: 1 1 260px;
+    min-width: 0;
+    max-width: 640px;
+  }
+  .bookmarks-toolbar .search-filters--fields {
+    order: 5;
+  }
 }
 
 /* Panel foot: bookmark-level actions (import/export/edit) below the
