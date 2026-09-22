@@ -4300,7 +4300,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  align-self: flex-start;
 }
 .cache-settings__sort-select {
   padding: 6px 10px;
@@ -4321,6 +4320,14 @@
   color: var(--text);
 }
 
+/* Controls row under the search field: Hide-uncached switch + size sort
+   share one line (wrapping on narrow phones instead of squeezing). */
+.cache-settings__panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
 /* Footnote counter — mirrors each row's footprint column (number over a
    small-caps caption): the sheet's headline count up top, its state ("n
    cached", "matching") beneath. */

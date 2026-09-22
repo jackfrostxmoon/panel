@@ -680,32 +680,34 @@ const [panelQuery, setPanelQuery] = useState('');
                       placeholder="Filter your panel…"
                       label="Filter your panel by title or source"
                     />
-                    <span className="search-filters__switch">
-                      <span className="search-filters__label" id="cache-hide-uncached-label">
-                        Hide uncached
+                    <div className="cache-settings__panel-controls">
+                      <span className="search-filters__switch">
+                        <span className="search-filters__label" id="cache-hide-uncached-label">
+                          Hide uncached
+                        </span>
+                        <Switch
+                          checked={hideUncached}
+                          onChange={setHideUncached}
+                          labelledBy="cache-hide-uncached-label"
+                          size="sm"
+                        />
                       </span>
-                      <Switch
-                        checked={hideUncached}
-                        onChange={setHideUncached}
-                        labelledBy="cache-hide-uncached-label"
-                        size="sm"
-                      />
-                    </span>
-                    <label className="cache-settings__sort">
-                      <span className="search-filters__label" id="cache-panel-sort-label">
-                        Sort
-                      </span>
-                      <select
-                        className="cache-settings__sort-select"
-                        aria-labelledby="cache-panel-sort-label"
-                        value={panelSort}
-                        onChange={(e) => setPanelSort(e.target.value as PanelSort)}
-                      >
-                        <option value="recent">Recently updated</option>
-                        <option value="largest">Largest first</option>
-                        <option value="smallest">Smallest first</option>
-                      </select>
-                    </label>
+                      <label className="cache-settings__sort">
+                        <span className="search-filters__label" id="cache-panel-sort-label">
+                          Sort
+                        </span>
+                        <select
+                          className="cache-settings__sort-select"
+                          aria-labelledby="cache-panel-sort-label"
+                          value={panelSort}
+                          onChange={(e) => setPanelSort(e.target.value as PanelSort)}
+                        >
+                          <option value="recent">Recently updated</option>
+                          <option value="largest">Largest first</option>
+                          <option value="smallest">Smallest first</option>
+                        </select>
+                      </label>
+                    </div>
                   </div>
                 )}
                 <p className="cache-settings__help">
