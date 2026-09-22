@@ -262,11 +262,11 @@ export function LatestPage() {
     (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
   // Keyboard paging: ←/A = previous page, →/D = next page.
-  // Plain W/S step-scrolls the viewport (see the step-scroll effect
-  // below) and Shift+W/S smooth-glides — neither ever changes pages.
-  // Paging only runs while results are on screen, skips typing targets
-  // and modifier combos, and stays disabled while infinite scroll owns
-  // the page flow (both scroll behaviors still work there).
+  // W/S fast-glides the viewport (hold to glide, release to stop — no
+  // Shift needed) and never changes pages. Paging only runs while
+  // results are on screen, skips typing targets and modifier combos,
+  // and stays disabled while infinite scroll owns the page flow
+  // (W/S gliding still works there).
   const hasResults = allResults.length > 0;
   const hasMore = latest.data?.hasMore ?? false;
   useEffect(() => {
@@ -307,48 +307,10 @@ export function LatestPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [page, hasMore, source, hasResults, infiniteScroll, navigate]);
 
-  // Step scroll: plain W scrolls up, plain S scrolls down by ~80% of
-  // the viewport (mirrors the reader's vertical step keys). Works in
-  // both paged and infinite modes — it never changes pages.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.shiftKey
-      ) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget =
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-      if (isTypingTarget) return;
-
-      const key = event.key;
-      const step = Math.max(Math.round(window.innerHeight * 0.8), 1);
-      if (key === 'w' || key === 'W') {
-        event.preventDefault();
-        window.scrollBy({ top: -step, behavior: 'smooth' });
-      } else if (key === 's' || key === 'S') {
-        event.preventDefault();
-        window.scrollBy({ top: step, behavior: 'smooth' });
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  // Smooth hold-to-scroll: Shift+W / Shift+↑ glides up, Shift+S / Shift+↓
-  // glides down (mirrors the reader's Shift+W/S smooth scroll — hold the
-  // keys to glide, release to stop). Works in both paged and infinite
-  // modes.
+  // Fast hold-to-scroll: hold W to glide up, S to glide down (no Shift
+  // needed — Shift+W/S still works too). Shift+↑/↓ also glides; plain
+  // arrows keep their native scroll. Release to stop. Works in both
+  // paged and infinite modes.
   const smoothDirRef = useRef<'up' | 'down' | null>(null);
   const smoothRafRef = useRef(0);
   const smoothLastRef = useRef(0);
@@ -402,15 +364,21 @@ export function LatestPage() {
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (!event.shiftKey || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
       if (isTypingTarget(event.target as HTMLElement | null)) return;
       const key = event.key;
-      if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+      if (key === 'w' || key === 'W') {
         event.preventDefault();
         startSmoothScroll('up');
-      } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+      } else if (key === 's' || key === 'S') {
+        event.preventDefault();
+        startSmoothScroll('down');
+      } else if (event.shiftKey && key === 'ArrowUp') {
+        event.preventDefault();
+        startSmoothScroll('up');
+      } else if (event.shiftKey && key === 'ArrowDown') {
         event.preventDefault();
         startSmoothScroll('down');
       }
