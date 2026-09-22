@@ -261,12 +261,12 @@ export function LatestPage() {
   const activeFilterCount =
     (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
-  // Keyboard paging: ←/↑/A/W = previous page, →/↓/D/S = next page
-  // (mirrors the reader's paged-mode navigation keys). Hold Shift with
-  // W/S (or ↑/↓) to smooth-scroll instead — see the hold-to-scroll effect
-  // below. Paging only runs while results are on screen, skips typing
-  // targets and modifier combos, and stays disabled while infinite scroll
-  // owns the page flow (Shift-scroll still works there).
+  // Keyboard paging: ←/A = previous page, →/D = next page.
+  // Plain W/S step-scrolls the viewport (see the step-scroll effect
+  // below) and Shift+W/S smooth-glides — neither ever changes pages.
+  // Paging only runs while results are on screen, skips typing targets
+  // and modifier combos, and stays disabled while infinite scroll owns
+  // the page flow (both scroll behaviors still work there).
   const hasResults = allResults.length > 0;
   const hasMore = latest.data?.hasMore ?? false;
   useEffect(() => {
@@ -292,15 +292,8 @@ export function LatestPage() {
       if (isTypingTarget) return;
 
       const key = event.key;
-      const isPrevPage =
-        key === 'ArrowLeft' || key === 'ArrowUp' || key === 'a' || key === 'A' || key === 'w' || key === 'W';
-      const isNextPage =
-        key === 'ArrowRight' ||
-        key === 'ArrowDown' ||
-        key === 'd' ||
-        key === 'D' ||
-        key === 's' ||
-        key === 'S';
+      const isPrevPage = key === 'ArrowLeft' || key === 'a' || key === 'A';
+      const isNextPage = key === 'ArrowRight' || key === 'd' || key === 'D';
       if (isPrevPage && page > 1) {
         event.preventDefault();
         navigate(latestPath(page - 1, source));
@@ -314,10 +307,48 @@ export function LatestPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [page, hasMore, source, hasResults, infiniteScroll, navigate]);
 
+  // Step scroll: plain W scrolls up, plain S scrolls down by ~80% of
+  // the viewport (mirrors the reader's vertical step keys). Works in
+  // both paged and infinite modes — it never changes pages.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (isTypingTarget) return;
+
+      const key = event.key;
+      const step = Math.max(Math.round(window.innerHeight * 0.8), 1);
+      if (key === 'w' || key === 'W') {
+        event.preventDefault();
+        window.scrollBy({ top: -step, behavior: 'smooth' });
+      } else if (key === 's' || key === 'S') {
+        event.preventDefault();
+        window.scrollBy({ top: step, behavior: 'smooth' });
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Smooth hold-to-scroll: Shift+W / Shift+↑ glides up, Shift+S / Shift+↓
   // glides down (mirrors the reader's Shift+W/S smooth scroll — hold the
   // keys to glide, release to stop). Works in both paged and infinite
-  // modes; plain (Shift-less) W/S keeps the paging behavior above.
+  // modes.
   const smoothDirRef = useRef<'up' | 'down' | null>(null);
   const smoothRafRef = useRef(0);
   const smoothLastRef = useRef(0);
@@ -835,8 +866,8 @@ function Pagination({ page, hasMore, source }: { page: number; hasMore: boolean;
         <Link
           className="btn btn--ghost btn--sm"
           to={latestPath(page - 1, source)}
-          aria-keyshortcuts="ArrowLeft ArrowUp A W"
-          title="Previous page (← / ↑)"
+          aria-keyshortcuts="ArrowLeft A"
+          title="Previous page (←)"
         >
           Previous
         </Link>
@@ -850,8 +881,8 @@ function Pagination({ page, hasMore, source }: { page: number; hasMore: boolean;
         <Link
           className="btn btn--ghost btn--sm"
           to={latestPath(page + 1, source)}
-          aria-keyshortcuts="ArrowRight ArrowDown D S"
-          title="Next page (→ / ↓)"
+          aria-keyshortcuts="ArrowRight D"
+          title="Next page (→)"
         >
           Next
         </Link>
