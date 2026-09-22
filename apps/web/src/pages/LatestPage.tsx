@@ -261,10 +261,11 @@ export function LatestPage() {
   const activeFilterCount =
     (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
-  // Keyboard paging: ←/A = previous page, →/D = next page (mirrors the
-  // reader's navigation keys). Only active while results are on screen,
-  // skipped when typing in an input or using modifier combos — and
-  // disabled entirely while infinite scroll owns the page flow.
+  // Keyboard paging: ←/↑/A/W = previous page, →/↓/D/S = next page
+  // (mirrors the reader's paged-mode navigation keys). Only active while
+  // results are on screen, skipped when typing in an input or using
+  // modifier combos — and disabled entirely while infinite scroll owns
+  // the page flow.
   const hasResults = allResults.length > 0;
   const hasMore = latest.data?.hasMore ?? false;
   useEffect(() => {
@@ -289,10 +290,20 @@ export function LatestPage() {
           target.isContentEditable);
       if (isTypingTarget) return;
 
-      if ((event.key === 'ArrowLeft' || event.key === 'a') && page > 1) {
+      const key = event.key;
+      const isPrevPage =
+        key === 'ArrowLeft' || key === 'ArrowUp' || key === 'a' || key === 'A' || key === 'w' || key === 'W';
+      const isNextPage =
+        key === 'ArrowRight' ||
+        key === 'ArrowDown' ||
+        key === 'd' ||
+        key === 'D' ||
+        key === 's' ||
+        key === 'S';
+      if (isPrevPage && page > 1) {
         event.preventDefault();
         navigate(latestPath(page - 1, source));
-      } else if ((event.key === 'ArrowRight' || event.key === 'd') && hasMore) {
+      } else if (isNextPage && hasMore) {
         event.preventDefault();
         navigate(latestPath(page + 1, source));
       }
@@ -724,8 +735,8 @@ function Pagination({ page, hasMore, source }: { page: number; hasMore: boolean;
         <Link
           className="btn btn--ghost btn--sm"
           to={latestPath(page - 1, source)}
-          aria-keyshortcuts="ArrowLeft A"
-          title="Previous page (←)"
+          aria-keyshortcuts="ArrowLeft ArrowUp A W"
+          title="Previous page (← / ↑)"
         >
           Previous
         </Link>
@@ -739,8 +750,8 @@ function Pagination({ page, hasMore, source }: { page: number; hasMore: boolean;
         <Link
           className="btn btn--ghost btn--sm"
           to={latestPath(page + 1, source)}
-          aria-keyshortcuts="ArrowRight D"
-          title="Next page (→)"
+          aria-keyshortcuts="ArrowRight ArrowDown D S"
+          title="Next page (→ / ↓)"
         >
           Next
         </Link>
