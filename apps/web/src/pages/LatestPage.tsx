@@ -4,6 +4,7 @@ import type { CardLayout, PanelStatus, SourceSearchResult } from '@panel/shared'
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
+import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import {
   useBookmarks,
   useBookmarkFolders,
@@ -307,110 +308,9 @@ export function LatestPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [page, hasMore, source, hasResults, infiniteScroll, navigate]);
 
-  // Fast hold-to-scroll: hold W to glide up, S to glide down (no Shift
-  // needed — Shift+W/S still works too). Shift+↑/↓ also glides; plain
-  // arrows keep their native scroll. Release to stop. Works in both
-  // paged and infinite modes.
-  const smoothDirRef = useRef<'up' | 'down' | null>(null);
-  const smoothRafRef = useRef(0);
-  const smoothLastRef = useRef(0);
-  useEffect(() => {
-    const SPEED_PX_PER_SEC = 3000;
-
-    function stopSmoothScroll() {
-      smoothDirRef.current = null;
-      cancelAnimationFrame(smoothRafRef.current);
-    }
-
-    function tick(now: number) {
-      const dir = smoothDirRef.current;
-      if (dir === null) return;
-      const dt = Math.max((now - smoothLastRef.current) / 1000, 0);
-      smoothLastRef.current = now;
-      if (dt > 0) {
-        const max = document.documentElement.scrollHeight - window.innerHeight;
-        const next = window.scrollY + (dir === 'up' ? -SPEED_PX_PER_SEC * dt : SPEED_PX_PER_SEC * dt);
-        if (next <= 0) {
-          window.scrollTo(0, 0);
-          stopSmoothScroll();
-          return;
-        }
-        if (next >= max) {
-          window.scrollTo(0, Math.max(max, 0));
-          stopSmoothScroll();
-          return;
-        }
-        window.scrollBy(0, dir === 'up' ? -SPEED_PX_PER_SEC * dt : SPEED_PX_PER_SEC * dt);
-      }
-      smoothRafRef.current = requestAnimationFrame(tick);
-    }
-
-    function startSmoothScroll(dir: 'up' | 'down') {
-      if (smoothDirRef.current === dir) return;
-      smoothDirRef.current = dir;
-      cancelAnimationFrame(smoothRafRef.current);
-      smoothLastRef.current = performance.now();
-      smoothRafRef.current = requestAnimationFrame(tick);
-    }
-
-    function isTypingTarget(target: HTMLElement | null) {
-      return (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      );
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-      if (isTypingTarget(event.target as HTMLElement | null)) return;
-      const key = event.key;
-      if (key === 'w' || key === 'W') {
-        event.preventDefault();
-        startSmoothScroll('up');
-      } else if (key === 's' || key === 'S') {
-        event.preventDefault();
-        startSmoothScroll('down');
-      } else if (event.shiftKey && key === 'ArrowUp') {
-        event.preventDefault();
-        startSmoothScroll('up');
-      } else if (event.shiftKey && key === 'ArrowDown') {
-        event.preventDefault();
-        startSmoothScroll('down');
-      }
-    }
-
-    function onKeyUp(event: KeyboardEvent) {
-      const key = event.key;
-      // Releasing a scroll key — or Shift itself — halts the glide.
-      if (
-        key === 'Shift' ||
-        key === 'ArrowUp' ||
-        key === 'ArrowDown' ||
-        key === 'w' ||
-        key === 'W' ||
-        key === 's' ||
-        key === 'S'
-      ) {
-        stopSmoothScroll();
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', stopSmoothScroll);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', stopSmoothScroll);
-      cancelAnimationFrame(smoothRafRef.current);
-      smoothDirRef.current = null;
-    };
-  }, []);
+  // Fast hold-to-scroll: hold W to glide up, S to glide down (shared
+  // with the bookmarks page — see useFastScrollKeys).
+  useFastScrollKeys();
 
   /**
    * Append one page in infinite mode and record the new depth in the URL

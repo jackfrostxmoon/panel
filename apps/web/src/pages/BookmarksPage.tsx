@@ -41,6 +41,7 @@ import { useToast } from '../components/Toast';
 import { useActiveFolderContents } from '../hooks/useActiveFolderContents';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import { readDefaultFolderId, writeDefaultFolderId } from '../utils/defaultBookmarkFolder';
 import { sourceLabel } from '../utils/format';
 
@@ -64,6 +65,8 @@ function sortBookmarks(bookmarks: Bookmark[]): Bookmark[] {
  */
 export function BookmarksPage() {
   useDocumentTitle('Bookmarks');
+  // W/S hold-to-glide fast scroll (shared with the latest page).
+  useFastScrollKeys();
   const bookmarks = useBookmarks();
   const removeBookmark = useRemoveBookmark();
   const { toast } = useToast();

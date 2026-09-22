@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, loadTheme, saveTheme, type Theme } from '../theme';
 import { hideCoverPreview } from './coverPreview';
@@ -11,17 +11,29 @@ const HIDE_THRESHOLD = 100;
  * without this dead-zone the header flickers show/hide on phones.
  */
 const TOGGLE_DELTA = 12;
+/** No scroll/pointer activity for this long → hide the header again (auto-hide routes). */
+const IDLE_HIDE_MS = 1500;
+/** No scroll events for this long → the user stopped scrolling → reveal. */
+const SCROLL_STOP_MS = 400;
 
 /**
  * App shell: compact header with brand + primary nav. On mobile the nav
  * collapses into the header row (icon-first, labels stay for accessibility).
- * The header also auto-hides when scrolling down and returns on scroll up
+ * The header auto-hides when scrolling down and returns on scroll up
  * (mobile only — the hiding is purely visual via a media-gated class).
+ * On the long grid pages (Latest, Bookmarks) it behaves like the reader
+ * chrome instead: hide on scroll down, reveal on scroll up / scroll stop /
+ * mouse movement, hide again once idle — on all viewports.
  */
 export function AppLayout() {
   const [headerHidden, setHeaderHidden] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const { pathname, search } = useLocation();
+
+  /** Reader-style auto-hide header is active on the long grid pages. */
+  const autoHideHeader = pathname === '/latest' || pathname === '/bookmarks';
+  /** True while the pointer hovers the header — pins it visible. */
+  const headerPinnedRef = useRef(false);
 
   useEffect(() => {
     applyTheme(theme);
@@ -33,6 +45,8 @@ export function AppLayout() {
   // entering the reader which renders outside this layout).
   useEffect(() => {
     hideCoverPreview();
+    // A new route starts at the top with the header visible.
+    setHeaderHidden(false);
     return () => hideCoverPreview();
   }, [pathname, search]);
 
@@ -47,6 +61,26 @@ export function AppLayout() {
   useEffect(() => {
     let lastY = Math.max(0, window.scrollY);
     let ticking = false;
+    let idleTimer: number | undefined;
+    let stopTimer: number | undefined;
+    let lastPointerShow = 0;
+
+    const clearIdleTimer = () => {
+      window.clearTimeout(idleTimer);
+      idleTimer = undefined;
+    };
+
+    // Reader-style: after a quiet spell, hide again when past the
+    // threshold (no-op near the top). Only armed on auto-hide routes.
+    const armIdleHide = () => {
+      clearIdleTimer();
+      if (!autoHideHeader) return;
+      idleTimer = window.setTimeout(() => {
+        if (!headerPinnedRef.current && Math.max(0, window.scrollY) > HIDE_THRESHOLD) {
+          setHeaderHidden(true);
+        }
+      }, IDLE_HIDE_MS);
+    };
 
     const onScroll = () => {
       if (ticking) return;
@@ -59,6 +93,7 @@ export function AppLayout() {
         // Always visible near the top.
         if (y <= HIDE_THRESHOLD) {
           lastY = y;
+          clearIdleTimer();
           setHeaderHidden(false);
           return;
         }
@@ -67,20 +102,69 @@ export function AppLayout() {
         // just as rarely, so tiny jitters can't flip the header back and forth.
         if (y - lastY > TOGGLE_DELTA) {
           lastY = y;
+          clearIdleTimer();
+          window.clearTimeout(stopTimer);
+          stopTimer = undefined;
           setHeaderHidden(true);
         } else if (lastY - y > TOGGLE_DELTA) {
           lastY = y;
           setHeaderHidden(false);
+          armIdleHide();
         }
       });
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    // Scroll stop → reveal (then hide again once idle). Auto-hide routes only.
+    const onScrollRaw = () => {
+      onScroll();
+      if (!autoHideHeader) return;
+      window.clearTimeout(stopTimer);
+      stopTimer = window.setTimeout(() => {
+        if (!headerPinnedRef.current && Math.max(0, window.scrollY) > HIDE_THRESHOLD) {
+          setHeaderHidden(false);
+        }
+        armIdleHide();
+      }, SCROLL_STOP_MS);
+    };
+
+    // Any mouse movement reveals (then idle-hides). Throttled so constant
+    // motion doesn't re-render every frame. Auto-hide routes only.
+    const onPointerMove = () => {
+      if (!autoHideHeader || headerPinnedRef.current) return;
+      const now = performance.now();
+      if (now - lastPointerShow < 150) return;
+      lastPointerShow = now;
+      setHeaderHidden(false);
+      armIdleHide();
+    };
+
+    const headerEl = document.querySelector('.app-header');
+    const onHeaderEnter = () => {
+      headerPinnedRef.current = true;
+      clearIdleTimer();
+      setHeaderHidden(false);
+    };
+    const onHeaderLeave = () => {
+      headerPinnedRef.current = false;
+      armIdleHide();
+    };
+
+    window.addEventListener('scroll', onScrollRaw, { passive: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    headerEl?.addEventListener('pointerenter', onHeaderEnter);
+    headerEl?.addEventListener('pointerleave', onHeaderLeave);
+    return () => {
+      window.removeEventListener('scroll', onScrollRaw);
+      window.removeEventListener('pointermove', onPointerMove);
+      headerEl?.removeEventListener('pointerenter', onHeaderEnter);
+      headerEl?.removeEventListener('pointerleave', onHeaderLeave);
+      clearIdleTimer();
+      window.clearTimeout(stopTimer);
+    };
+  }, [autoHideHeader]);
 
   return (
-    <div className="app-shell app-shell--wide">
+    <div className={`app-shell app-shell--wide${autoHideHeader ? ' app-shell--auto-hide-header' : ''}`}>
       <header className={`app-header${headerHidden ? ' app-header--hidden' : ''}`}>
         <div className="app-header__inner">
           <NavLink to="/" className="app-header__brand" aria-label="Panel Reader home">

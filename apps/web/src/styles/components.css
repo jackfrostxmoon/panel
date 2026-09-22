@@ -200,6 +200,12 @@ input::placeholder {
   }
 }
 
+/* Reader-style auto-hide header on Latest + Bookmarks (all viewports —
+   the shell carries .app-shell--auto-hide-header only on those routes). */
+.app-shell--auto-hide-header .app-header--hidden {
+  transform: translateY(-100%);
+}
+
 .app-header__inner {
   max-width: var(--layout-max);
   margin: 0 auto;
