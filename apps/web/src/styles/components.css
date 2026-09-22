@@ -433,6 +433,24 @@ input::placeholder {
   gap: var(--space-1);
   flex: 0 0 auto;
 }
+/* List rows reuse the cover-overlay badge classes for their pills, but
+   those are absolutely positioned for the card cover (see .panel-card
+   below) and the bookmark folder list. Reset them to static in-flow
+   pills here so desktop rows show status / source / folder badges
+   inline instead of losing them off-row. Mobile hides
+   `.panel-list__badges` outright (see below), so this only affects
+   desktop widths. */
+.panel-list__badges .panel-card__status,
+.panel-list__badges .panel-card__source {
+  position: static;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.panel-list__badges .bookmark-card__folders {
+  position: static;
+  max-width: none;
+  pointer-events: auto;
+}
 .panel-list__actions {
   display: flex;
   align-items: center;
