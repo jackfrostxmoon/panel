@@ -262,10 +262,11 @@ export function LatestPage() {
     (statusFilter !== '' ? 1 : 0) + genreFilter.length + excludedGenre.length;
 
   // Keyboard paging: ←/↑/A/W = previous page, →/↓/D/S = next page
-  // (mirrors the reader's paged-mode navigation keys). Only active while
-  // results are on screen, skipped when typing in an input or using
-  // modifier combos — and disabled entirely while infinite scroll owns
-  // the page flow.
+  // (mirrors the reader's paged-mode navigation keys). Hold Shift with
+  // W/S (or ↑/↓) to smooth-scroll instead — see the hold-to-scroll effect
+  // below. Paging only runs while results are on screen, skips typing
+  // targets and modifier combos, and stays disabled while infinite scroll
+  // owns the page flow (Shift-scroll still works there).
   const hasResults = allResults.length > 0;
   const hasMore = latest.data?.hasMore ?? false;
   useEffect(() => {
@@ -312,6 +313,105 @@ export function LatestPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [page, hasMore, source, hasResults, infiniteScroll, navigate]);
+
+  // Smooth hold-to-scroll: Shift+W / Shift+↑ glides up, Shift+S / Shift+↓
+  // glides down (mirrors the reader's Shift+W/S smooth scroll — hold the
+  // keys to glide, release to stop). Works in both paged and infinite
+  // modes; plain (Shift-less) W/S keeps the paging behavior above.
+  const smoothDirRef = useRef<'up' | 'down' | null>(null);
+  const smoothRafRef = useRef(0);
+  const smoothLastRef = useRef(0);
+  useEffect(() => {
+    const SPEED_PX_PER_SEC = 3000;
+
+    function stopSmoothScroll() {
+      smoothDirRef.current = null;
+      cancelAnimationFrame(smoothRafRef.current);
+    }
+
+    function tick(now: number) {
+      const dir = smoothDirRef.current;
+      if (dir === null) return;
+      const dt = Math.max((now - smoothLastRef.current) / 1000, 0);
+      smoothLastRef.current = now;
+      if (dt > 0) {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const next = window.scrollY + (dir === 'up' ? -SPEED_PX_PER_SEC * dt : SPEED_PX_PER_SEC * dt);
+        if (next <= 0) {
+          window.scrollTo(0, 0);
+          stopSmoothScroll();
+          return;
+        }
+        if (next >= max) {
+          window.scrollTo(0, Math.max(max, 0));
+          stopSmoothScroll();
+          return;
+        }
+        window.scrollBy(0, dir === 'up' ? -SPEED_PX_PER_SEC * dt : SPEED_PX_PER_SEC * dt);
+      }
+      smoothRafRef.current = requestAnimationFrame(tick);
+    }
+
+    function startSmoothScroll(dir: 'up' | 'down') {
+      if (smoothDirRef.current === dir) return;
+      smoothDirRef.current = dir;
+      cancelAnimationFrame(smoothRafRef.current);
+      smoothLastRef.current = performance.now();
+      smoothRafRef.current = requestAnimationFrame(tick);
+    }
+
+    function isTypingTarget(target: HTMLElement | null) {
+      return (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      );
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.shiftKey || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      if (isTypingTarget(event.target as HTMLElement | null)) return;
+      const key = event.key;
+      if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+        event.preventDefault();
+        startSmoothScroll('up');
+      } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+        event.preventDefault();
+        startSmoothScroll('down');
+      }
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      const key = event.key;
+      // Releasing a scroll key — or Shift itself — halts the glide.
+      if (
+        key === 'Shift' ||
+        key === 'ArrowUp' ||
+        key === 'ArrowDown' ||
+        key === 'w' ||
+        key === 'W' ||
+        key === 's' ||
+        key === 'S'
+      ) {
+        stopSmoothScroll();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', stopSmoothScroll);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', stopSmoothScroll);
+      cancelAnimationFrame(smoothRafRef.current);
+      smoothDirRef.current = null;
+    };
+  }, []);
 
   /**
    * Append one page in infinite mode and record the new depth in the URL
