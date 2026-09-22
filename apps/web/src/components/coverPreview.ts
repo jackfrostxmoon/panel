@@ -117,4 +117,10 @@ export function hideCoverPreview(): void {
     raf = 0;
   }
   if (box) box.style.display = 'none';
+  if (listening) {
+    listening = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('scroll', onScroll, { capture: true });
+    window.removeEventListener('keydown', onKey);
+  }
 }

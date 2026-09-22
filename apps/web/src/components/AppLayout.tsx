@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, loadTheme, saveTheme, type Theme } from '../theme';
+import { hideCoverPreview } from './coverPreview';
 
 /** Scroll past this distance before the header is allowed to hide. */
 const HIDE_THRESHOLD = 100;
@@ -20,10 +21,20 @@ const TOGGLE_DELTA = 12;
 export function AppLayout() {
   const [headerHidden, setHeaderHidden] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
+  const { pathname, search } = useLocation();
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // The list-mode cover preview is an imperative DOM node outside React.
+  // SPA navigation unmounts the hovered row without a mouse-leave, so clear
+  // any leftover preview on every route change (and on unmount, e.g. when
+  // entering the reader which renders outside this layout).
+  useEffect(() => {
+    hideCoverPreview();
+    return () => hideCoverPreview();
+  }, [pathname, search]);
 
   const toggleTheme = () => {
     setTheme((current) => {

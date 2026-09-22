@@ -60,6 +60,12 @@ export function PanelListRow({
     onPreviewShow?.(cover, event.clientX, event.clientY);
   };
 
+  const handleTitleActivate = () => {
+    // Click/keyboard navigation unmounts the row without a mouse-leave,
+    // which left the imperative preview stuck on the details page.
+    onPreviewHide?.();
+  };
+
   return (
     <li
       className={`panel-list__row${bookmarked ? ' panel-list__row--bookmarked' : ''}${className ? ` ${className}` : ''}`}
@@ -74,6 +80,7 @@ export function PanelListRow({
             className="panel-list__title-link"
             onMouseEnter={handleTitleEnter}
             onMouseLeave={() => onPreviewHide?.()}
+            onClick={handleTitleActivate}
           >
             {title}
           </Link>
