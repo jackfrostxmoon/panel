@@ -30,23 +30,44 @@ const SECTION_CRUMBS: Record<string, { label: string; to: string }> = {
 };
 
 function crumbHref(to: string, params: URLSearchParams, panelId: string): string {
+  const query = new URLSearchParams(params);
+  const parsed = parseGlobalId(panelId);
+  
+  // Clean up the 'from' param as it's only relevant on the details page
+  query.delete('from');
+  
   if (to === '/latest') {
-    const parsed = parseGlobalId(panelId);
-    const query = new URLSearchParams(params);
-    // `from` only made sense on the details page; the latest page doesn't read it.
-    query.delete('from');
     if (parsed) query.set('source', parsed.source);
-    const suffix = query.toString();
-    return suffix ? `${to}?${suffix}` : to;
+  } else if (to === '/search') {
+    // Return to search when "Search" breadcrumb is clicked
+    // Preserve the original search query (q) and page from the current URL
+    const originalQ = params.get('q');
+    if (originalQ) {
+      query.set('q', originalQ);
+    }
+    
+    // Keep the page parameter if it exists (preserve search context)
+    const pageParam = params.get('page');
+    if (pageParam) {
+      query.set('page', pageParam);
+    }
+    
+    // Preserve source if available
+    if (parsed) query.set('source', parsed.source);
+  } else if (to === '/bookmarks') {
+    // For bookmarks, clean up from param
+    if (parsed) query.set('source', parsed.source);
   }
-  return to;
+  
+  const suffix = query.toString();
+  return suffix ? `${to}?${suffix}` : to;
 }
 
 /**
-* Panel details page with professional modern UI/UX.
-  * Features: responsive hero layout, progressive disclosure,
-  * smooth animations, full keyboard navigation, and comprehensive accessibility.
- */
+ * Panel details page with professional modern UI/UX.
+   * Features: responsive hero layout, progressive disclosure,
+   * smooth animations, full keyboard navigation, and comprehensive accessibility.
+  */
 export function PanelDetailsPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
