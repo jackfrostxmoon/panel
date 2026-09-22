@@ -4294,6 +4294,33 @@
   font-size: var(--font-size-md);
 }
 
+/* Size-sort row in the "Your panel" toolbar: quiet label + native dropdown,
+   aligned like the Hide-uncached switch beside it. */
+.cache-settings__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+}
+.cache-settings__sort-select {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.cache-settings__sort-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.cache-settings__sort-select option {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
 /* Footnote counter — mirrors each row's footprint column (number over a
    small-caps caption): the sheet's headline count up top, its state ("n
    cached", "matching") beneath. */

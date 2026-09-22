@@ -129,6 +129,18 @@ export function CacheSettingsPage() {
 const [panelQuery, setPanelQuery] = useState('');
   /** Hide 0 B rows in the "Your panel" list. ON by default (see loader). */
   const [hideUncached, setHideUncached] = useState(loadPanelHideUncached);
+  /** Sort order for the "Your panel" list. `recent` keeps the server's
+      "recently updated first" order; the size options sort by each row's
+      total cached footprint. */
+  const [panelSort, setPanelSort] = useState<PanelSort>(loadPanelSort);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PANEL_SORT_KEY, panelSort);
+    } catch {
+      // Storage blocked — the sort just won't survive a reload.
+    }
+  }, [panelSort]);
 
   useEffect(() => {
     try {
@@ -287,12 +299,14 @@ const [panelQuery, setPanelQuery] = useState('');
     );
   };
 
-  /** Filtered view of `yourPanel` — matches the trimmed query against the
+  /** Filtered + sorted view of `yourPanel` — matches the trimmed query against the
       title, the source code (mk/nk/rk/…) and the friendly source label
       ("MangaKatana") so a user can type either. Empty query = passthrough.
       On top, the Hide-uncached toggle drops 0 B rows — but only once the
       size data has arrived, so rows never vanish-then-pop-back while the
-      sizes are still loading. */
+      sizes are still loading. Finally the size sorts order by each row's
+      total cached footprint (stable — ties keep the server's recent-first
+      order); `recent` skips the sort entirely. */
   const filteredYourPanel = useMemo<Bookmark[]>(() => {
     const needle = panelQuery.trim().toLowerCase();
     const textFiltered = !needle
@@ -303,12 +317,19 @@ const [panelQuery, setPanelQuery] = useState('');
           const label = sourceLabel(entry.source).toLowerCase();
           return title.includes(needle) || code.includes(needle) || label.includes(needle);
         });
-    if (!hideUncached || tagsSizeQuery.data == null) return textFiltered;
-    return textFiltered.filter((entry) => panelTotal(entry).entryCount > 0);
+    const visible =
+      !hideUncached || tagsSizeQuery.data == null
+        ? textFiltered
+        : textFiltered.filter((entry) => panelTotal(entry).entryCount > 0);
+    if (panelSort === 'recent') return visible;
+    return [...visible].sort((a, b) => {
+      const diff = panelTotal(a).totalBytes - panelTotal(b).totalBytes;
+      return panelSort === 'largest' ? -diff : diff;
+    });
     // panelTotal reads the size map (driven by tagsSizeQuery.data), which
     // the linter can't see through the function boundary.
     // oxlint-disable-next-line react/exhaustive-deps
-  }, [yourPanel, panelQuery, hideUncached, tagsSizeQuery.data]);
+  }, [yourPanel, panelQuery, hideUncached, panelSort, tagsSizeQuery.data]);
 
   /** True only when the filter is hiding rows — drives the result-count
       chip and the "no matches" empty state. */
@@ -670,6 +691,21 @@ const [panelQuery, setPanelQuery] = useState('');
                         size="sm"
                       />
                     </span>
+                    <label className="cache-settings__sort">
+                      <span className="search-filters__label" id="cache-panel-sort-label">
+                        Sort
+                      </span>
+                      <select
+                        className="cache-settings__sort-select"
+                        aria-labelledby="cache-panel-sort-label"
+                        value={panelSort}
+                        onChange={(e) => setPanelSort(e.target.value as PanelSort)}
+                      >
+                        <option value="recent">Recently updated</option>
+                        <option value="largest">Largest first</option>
+                        <option value="smallest">Smallest first</option>
+                      </select>
+                    </label>
                   </div>
                 )}
                 <p className="cache-settings__help">
@@ -838,6 +874,29 @@ function loadDrillCachedOnly(): boolean {
     return window.localStorage.getItem(DRILL_CACHED_ONLY_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+/**
+ * Sort order for the "Your panel" list. `recent` is the server's
+ * "recently updated first" order; the size options sort by each row's
+ * total cached footprint.
+ */
+type PanelSort = 'recent' | 'largest' | 'smallest';
+
+/**
+ * localStorage key for the "Your panel" list's sort order. Same plain-flag
+ * pattern as the drill dialog above. Defaults to `recent` (any stored
+ * value outside the three options falls back to it).
+ */
+const PANEL_SORT_KEY = 'panel-cache:panel-sort:v1';
+
+function loadPanelSort(): PanelSort {
+  try {
+    const raw = window.localStorage.getItem(PANEL_SORT_KEY);
+    return raw === 'largest' || raw === 'smallest' ? raw : 'recent';
+  } catch {
+    return 'recent';
   }
 }
 
