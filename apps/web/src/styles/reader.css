@@ -162,14 +162,16 @@
 
 .reader-content {
   flex: 1;
-  padding-bottom: calc(var(--reader-toolbar-height) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
   overflow-y: auto;
 }
 
-/* Add top padding so content clears the fixed toolbar (desktop & mobile).
-   Controlled by the clearToolbarSpace setting. */
+/* Reserve space so content clears the fixed toolbar (top) and footer
+   (bottom). Controlled by the clearToolbarSpace setting — when off the
+   pages run full-bleed edge-to-edge under the translucent chrome. */
 .reader--toolbar-clear .reader-content {
   padding-top: var(--reader-toolbar-height);
+  padding-bottom: calc(var(--reader-toolbar-height) + env(safe-area-inset-bottom));
 }
 
 /* Hide the scrollbar on the reading surface on mobile — the thin dark thumb
@@ -359,8 +361,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+  min-height: 100dvh;
   touch-action: pan-y;
+}
+
+/* Shrink the stage only when toolbar clearance is on — otherwise the page
+   runs full-bleed edge-to-edge. */
+.reader--toolbar-clear .paged-reader {
+  min-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
 .paged-reader__stage {
@@ -374,7 +382,7 @@
      * its range — it only kicked in once the stage narrowed below that width.)
      */
   width: var(--paged-stage-width, 100%);
-  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+  max-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -385,6 +393,10 @@
   /* Allow vertical scroll (tall pages) + pinch-zoom on touch; two-finger
      pinch still reaches the gesture handler since pan-y doesn't block it. */
   touch-action: pan-y;
+}
+
+.reader--toolbar-clear .paged-reader__stage {
+  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
 .paged-reader__stage .reader-image {

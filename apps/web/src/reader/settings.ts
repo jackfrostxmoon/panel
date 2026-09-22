@@ -87,7 +87,7 @@ export interface ReaderSettings {
   showProgressBar: boolean;
   /** Add vertical breathing room between pages in the reader. */
   imageGap: boolean;
-  /** Add top padding so the first page clears the fixed toolbar (desktop & mobile). */
+  /** Add padding so pages clear the fixed toolbar and footer (desktop & mobile). */
   clearToolbarSpace: boolean;
   /** How fast the reader auto-scrolls while holding Shift+W / Shift+S. */
   scrollSpeed: ScrollSpeed;

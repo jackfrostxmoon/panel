@@ -590,7 +590,7 @@ export function ReaderSettingsPanel({
                 Clear toolbar space
               </span>
               <span className="reader-settings__row-hint">
-                Add top padding so the first page clears the fixed toolbar on desktop and mobile.
+                Add padding so pages clear the fixed toolbar and footer on desktop and mobile.
               </span>
             </span>
             <Switch
