@@ -4,7 +4,12 @@
  * reader-styles endpoints; import/export of that same shape via JSON file.
  */
 import type { ReaderStylePreset } from '@panel/shared';
-import { DEFAULT_READER_SETTINGS, type ReaderSettings } from './settings';
+import {
+  DEFAULT_READER_SETTINGS,
+  PRELOAD_AHEAD_MAX,
+  PRELOAD_AHEAD_MIN,
+  type ReaderSettings,
+} from './settings';
 
 export type { ReaderStylePreset } from '@panel/shared';
 export const READER_STYLE_FORMAT = 'panel-viewer-reader-styles';
@@ -72,10 +77,9 @@ function bool(value: unknown, fallback: boolean): boolean {
 export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
   const d = DEFAULT_READER_SETTINGS;
   if (!isRecord(raw)) return { ...d };
-  const preload =
-    raw['preloadAhead'] === 1 || raw['preloadAhead'] === 3 || raw['preloadAhead'] === 5
-      ? raw['preloadAhead']
-      : d.preloadAhead;
+  const preload = Math.trunc(
+    finiteNumber(raw['preloadAhead'], d.preloadAhead, PRELOAD_AHEAD_MIN, PRELOAD_AHEAD_MAX),
+  );
   return {
     mode: oneOf(raw['mode'], ['vertical', 'paged', 'gallery'] as const, d.mode),
     direction: oneOf(raw['direction'], ['ltr', 'rtl'] as const, d.direction),

@@ -4,7 +4,8 @@ export type ReaderBackground = 'dark' | 'light' | 'high-contrast';
 export type ScrollSpeed = 'slow' | 'normal' | 'fast';
 export type SpreadOddPolicy = 'duplicate' | 'blank' | 'single';
 export type ImageLoadMode = 'parallel' | 'sequential';
-export type PreloadAhead = 1 | 3 | 5;
+/** Pages pre-fetched ahead of the reader position (vertical mode). Custom 1–50. */
+export type PreloadAhead = number;
 
 export interface ReaderSettings {
   mode: ReadingMode;

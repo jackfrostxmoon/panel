@@ -61,9 +61,13 @@ export type SpreadOddPolicy = 'duplicate' | 'blank' | 'single';
  */
 export type ImageLoadMode = 'parallel' | 'sequential';
 /** How many upcoming pages the vertical reader fetches early while scrolling. */
-export type PreloadAhead = 1 | 3 | 5;
+export type PreloadAhead = number;
 /** Presets offered in the settings panel. */
 export const PRELOAD_AHEAD_OPTIONS: PreloadAhead[] = [1, 3, 5];
+/** Bounds for a user-supplied custom value (see the settings panel number field). */
+export const PRELOAD_AHEAD_MIN = 1;
+export const PRELOAD_AHEAD_MAX = 50;
+export const PRELOAD_AHEAD_STEP = 1;
 
 /** Page brightness in percent (100 = untouched image). Slider bounds/step. */
 export const IMAGE_BRIGHTNESS_MIN = 30;

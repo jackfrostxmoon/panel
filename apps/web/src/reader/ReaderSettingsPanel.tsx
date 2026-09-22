@@ -19,6 +19,9 @@ import {
   IMAGE_WIDTH_MAX,
   IMAGE_WIDTH_MIN,
   IMAGE_WIDTH_STEP,
+  PRELOAD_AHEAD_MAX,
+  PRELOAD_AHEAD_MIN,
+  PRELOAD_AHEAD_STEP,
   type ImageLoadMode,
   type PreloadAhead,
   type ReaderBackground,
@@ -622,18 +625,34 @@ export function ReaderSettingsPanel({
             <SettingGroup
               id="rs-preloadAhead"
               title="Preload ahead"
-              hint="While scrolling, how many upcoming pages stay pre-fetched. Higher means fewer waits but more data."
+              hint="While scrolling, how many upcoming pages stay pre-fetched. Higher means fewer waits but more data. Pick a preset or type a custom 1–50 value."
             >
-              <Segmented<'1' | '3' | '5'>
+              <Segmented<string>
                 labelledBy="rs-preloadAhead"
                 options={[
                   { value: '1', label: '1' },
                   { value: '3', label: '3' },
                   { value: '5', label: '5' },
                 ]}
-                value={String(settings.preloadAhead) as '1' | '3' | '5'}
+                value={String(settings.preloadAhead)}
                 onChange={(value) => onUpdate({ preloadAhead: Number(value) as PreloadAhead })}
               />
+              <div className="reader-settings__size-row">
+                <NumberField
+                  label="Custom"
+                  value={settings.preloadAhead}
+                  min={PRELOAD_AHEAD_MIN}
+                  max={PRELOAD_AHEAD_MAX}
+                  step={PRELOAD_AHEAD_STEP}
+                  unit="pages"
+                  onChange={(preloadAhead) =>
+                    onUpdate({
+                      preloadAhead:
+                        preloadAhead ?? DEFAULT_READER_SETTINGS.preloadAhead,
+                    })
+                  }
+                />
+              </div>
             </SettingGroup>
           )}
 
@@ -1196,6 +1215,7 @@ function NumberField({
   min = 1,
   max,
   step = 10,
+  unit = 'px',
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
@@ -1203,6 +1223,8 @@ function NumberField({
   min?: number;
   max?: number;
   step?: number;
+  /** Unit shown beside the input (`px` for sizes, `pages` for preload). */
+  unit?: string;
 }) {
   const id = useId();
   const clamp = (n: number) =>
@@ -1247,7 +1269,7 @@ function NumberField({
           }}
         />
         <span className="reader-settings__number-unit" aria-hidden="true">
-          px
+          {unit}
         </span>
         {stepBtn(step, `Increase ${label.toLowerCase()}`, '+')}
       </span>
