@@ -216,15 +216,19 @@ commit real values).
 | `SOURCE_REQUEST_TIMEOUT_MS`           | `15000`                                              | Hard timeout for every outbound source request  |
 | `SOURCE_REQUEST_RETRY_COUNT`          | `2`                                                  | Retries on transient failures (timeout/429/5xx); each attempt gets a fresh `timeoutMs` budget |
 | `SOURCE_REQUEST_RETRY_BASE_DELAY_MS`  | `500`                                                | Base delay (ms) for the first retry; doubles + jitter per attempt |
+| `SOURCE_MAX_TEXT_BYTES`               | `3145728`                                            | Max HTML/JSON/sitemap response size (3 MiB)         |
+| `SOURCE_MAX_IMAGE_BYTES`              | `8388608`                                            | Max proxied image size (8 MiB)                      |
 | `CACHE_TTL_SEARCH_MS`                 | `120000`                                             | In-memory TTL for search results                |
 | `CACHE_TTL_PANEL_MS`                  | `600000`                                             | TTL for panel metadata                          |
 | `CACHE_TTL_CHAPTERS_MS`               | `300000`                                             | TTL for chapter lists                           |
 | `CACHE_TTL_PAGES_MS`                  | `1800000`                                            | TTL for chapter page lists                      |
+| `CACHE_MAX_ENTRIES`                   | `200`                                                | Max entries in the in-memory source-response cache |
 | `VITE_API_BASE_URL`                   | _(empty)_                                            | Override API origin for the web build (rare)    |
 | `IMAGE_CACHE_DIR`                     | `data/.imagecache`                                   | On-disk cache for proxied cover/chapter images  |
 | `IMAGE_CACHE_MAX_FRACTION`            | `0.5`                                                | Max fraction of available disk the cache may use (clamped between min/max bytes) |
 | `IMAGE_CACHE_MIN_BYTES`               | `268435456`                                          | Cache cap lower bound (256 MiB)                 |
 | `IMAGE_CACHE_MAX_BYTES`               | `8589934592`                                         | Cache cap upper bound (8 GiB)                   |
+| `IMAGE_PROXY_CONCURRENCY`             | `6`                                                  | Max concurrent upstream image-proxy fetches (disk hits bypass) |
 
 ## Database & migrations
 

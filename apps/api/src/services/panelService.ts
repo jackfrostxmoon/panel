@@ -85,14 +85,18 @@ function genreKeyFragment(labels: string[] | null): string {
  *     (offline after a prior visit, or a source 5xx).
  */
 export class PanelService {
-  private readonly cache = new TtlCache<unknown>(1000);
+  private readonly cache: TtlCache<unknown>;
   private readonly inFlight = new InFlight<unknown>();
 
   constructor(
     private readonly registry: SourceRegistry,
     private readonly cacheConfig: CacheConfig,
     private readonly panelCache: PanelCacheRepository,
-  ) {}
+  ) {
+    // Bounded so a long browse can't pin hundreds of MB of listing/page
+    // payloads in heap (see CACHE_MAX_ENTRIES).
+    this.cache = new TtlCache<unknown>(Math.max(16, Math.floor(cacheConfig.maxEntries)));
+  }
 
   private async cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key);

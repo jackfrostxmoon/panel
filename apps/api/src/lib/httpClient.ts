@@ -39,8 +39,10 @@ export interface SourceHttpClientOptions {
    * set instead.
    */
   readonly headers?: Record<string, string>;
-  /** Maximum response body size in bytes (default 8 MiB). */
-  readonly maxBodyBytes?: number;
+  /** Maximum TEXT response size in bytes (HTML/JSON/sitemap, default 3 MiB). */
+  readonly maxTextBytes?: number;
+  /** Maximum IMAGE response size in bytes (default 8 MiB). */
+  readonly maxImageBytes?: number;
   /**
    * ADDITIONAL hosts the source's image CDN may be proxied through. These
    * are UNIONED with `allowedHosts` for `fetchImage`, so covers served from
@@ -129,7 +131,8 @@ export class SourceHttpClient {
   private readonly timeoutMs: number;
   private readonly userAgent: string;
   private readonly headers: Record<string, string> | null;
-  private readonly maxBodyBytes: number;
+  private readonly maxTextBytes: number;
+  private readonly maxImageBytes: number;
   private readonly sourceName: string;
   /** Hosts fetchImage may reach: allowedHosts ∪ imageHosts (CDN extras). */
   private readonly imageHosts: readonly string[];
@@ -148,7 +151,8 @@ export class SourceHttpClient {
     this.timeoutMs = options.timeoutMs;
     this.userAgent = options.userAgent ?? DEFAULT_UA;
     this.headers = options.headers ?? null;
-    this.maxBodyBytes = options.maxBodyBytes ?? 8 * 1024 * 1024;
+    this.maxTextBytes = options.maxTextBytes ?? 3 * 1024 * 1024;
+    this.maxImageBytes = options.maxImageBytes ?? 8 * 1024 * 1024;
     this.retryCount = options.retryCount ?? DEFAULT_RETRY_COUNT;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
   }
@@ -348,7 +352,7 @@ export class SourceHttpClient {
     const startedAt = Date.now();
     const response = await this.fetchWithRetry(rawUrl, init, this.allowedHosts);
 
-    const body = await this.readBodyWithLimit(response);
+    const body = await this.readBodyWithLimit(response, this.maxTextBytes);
     logger.debug('Fetched source page', {
       url: rawUrl,
       status: response.status,
@@ -372,7 +376,7 @@ export class SourceHttpClient {
     const response = await this.fetchWithRetry(rawUrl, init, hosts);
 
     const contentType = response.headers.get('content-type');
-    const bytes = await this.readBytesWithLimit(response);
+    const bytes = await this.readBytesWithLimit(response, this.maxImageBytes);
     logger.debug('Fetched source image', {
       url: rawUrl,
       status: response.status,
@@ -453,7 +457,7 @@ export class SourceHttpClient {
     return SourceError.unavailable(this.sourceName, rawUrl, error.status);
   }
 
-  private async readBodyWithLimit(response: Response): Promise<string> {
+  private async readBodyWithLimit(response: Response, maxBytes: number): Promise<string> {
     if (!response.body) return response.text();
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -463,11 +467,11 @@ export class SourceHttpClient {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > this.maxBodyBytes) {
+      if (received > maxBytes) {
         await reader.cancel().catch(() => undefined);
         logger.warn('Source response exceeded size limit', {
           url: response.url,
-          maxBodyBytes: this.maxBodyBytes,
+          maxBodyBytes: maxBytes,
         });
         throw SourceError.unavailable(this.sourceName, response.url);
       }
@@ -477,7 +481,7 @@ export class SourceHttpClient {
     return result;
   }
 
-  private async readBytesWithLimit(response: Response): Promise<ArrayBuffer> {
+  private async readBytesWithLimit(response: Response, maxBytes: number): Promise<ArrayBuffer> {
     if (!response.body) {
       return new ArrayBuffer(0);
     }
@@ -488,11 +492,11 @@ export class SourceHttpClient {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > this.maxBodyBytes) {
+      if (received > maxBytes) {
         await reader.cancel().catch(() => undefined);
         logger.warn('Source response exceeded size limit', {
           url: response.url,
-          maxBodyBytes: this.maxBodyBytes,
+          maxBodyBytes: maxBytes,
         });
         throw SourceError.unavailable(this.sourceName, response.url);
       }

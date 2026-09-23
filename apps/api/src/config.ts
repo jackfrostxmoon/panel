@@ -76,6 +76,15 @@ const envSchema = z.object({
   CACHE_TTL_CHAPTERS_MS: z.coerce.number().int().min(0).default(300_000),
   CACHE_TTL_PAGES_MS: z.coerce.number().int().min(0).default(1_800_000),
 
+  /**
+   * Bound on the in-memory source-response cache (PanelService TtlCache).
+   * Each entry can hold a full listing or chapter page list, so an
+   * unbounded-feeling 1000 entries pins hundreds of MB after a long browse.
+   * A single-user journey touches dozens of keys — 200 keeps every revisit's
+   * cache hot while capping the heap.
+   */
+  CACHE_MAX_ENTRIES: z.coerce.number().int().min(16).max(5000).default(200),
+
   // On-disk cache for proxied cover / chapter images. Sized relative to the
   // host's available disk at runtime (see ImageCache.computeCap): we
   // use at most IMAGE_CACHE_MAX_FRACTION of currently-available space, clamped
@@ -91,6 +100,24 @@ const envSchema = z.object({
   IMAGE_CACHE_MAX_FRACTION: z.coerce.number().min(0.05).max(0.9).default(0.5),
   IMAGE_CACHE_MIN_BYTES: z.coerce.number().int().positive().default(256 * 1024 * 1024),
   IMAGE_CACHE_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024 * 1024),
+
+  /**
+   * Max concurrent UPSTREAM image fetches through the /api/source-image
+   * proxy. Cover grids fire dozens of requests at once; each miss buffers a
+   * whole image in heap, so unbounded concurrency is the transient 300MB+
+   * spike. Disk hits bypass the limiter — revisits stay instant. Queued
+   * requests wait FIFO; fewer parallel fetches also means fewer source
+   * 429s/retries.
+   */
+  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(6),
+
+  /**
+   * Split response cap for outbound source traffic. Listings are KBs of
+   * HTML — a rogue multi-MB page used to become a multi-MB JS string. Text
+   * (HTML/JSON/sitemap) fails fast above this; images keep the full 8MB.
+   */
+  SOURCE_MAX_TEXT_BYTES: z.coerce.number().int().positive().default(3 * 1024 * 1024),
+  SOURCE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
 
   /**
    * Path to the `pg_dump` export used by `bun run db:import`. Relative paths
@@ -123,6 +150,7 @@ export interface CacheConfig {
   readonly panelMs: number;
   readonly chaptersMs: number;
   readonly pagesMs: number;
+  readonly maxEntries: number;
 }
 
 /**
@@ -136,6 +164,7 @@ export interface ImageCacheConfig {
   readonly maxFraction: number;
   readonly minBytes: number;
   readonly maxBytes: number;
+  readonly maxUpstreamConcurrency: number;
 }
 
 export interface AppConfig {
@@ -286,6 +315,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       nihonkuni: {
         name: 'nk',
@@ -295,6 +326,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       rawkuma: {
         name: 'rk',
@@ -304,6 +337,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       rawsakura: {
         name: 'rs',
@@ -313,6 +348,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       hiperdex: {
         name: 'hd',
@@ -322,6 +359,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       mangaread: {
         name: 'mr',
@@ -331,6 +370,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       toonily: {
         name: 'tn',
@@ -340,6 +381,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       rawdex: {
         name: 'rd',
@@ -349,6 +392,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       kaliscan: {
         name: 'ks',
@@ -358,6 +403,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
       rawuwu: {
         name: 'ru',
@@ -367,6 +414,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
       },
     },
     cache: {
@@ -374,12 +423,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       panelMs: e.CACHE_TTL_PANEL_MS,
       chaptersMs: e.CACHE_TTL_CHAPTERS_MS,
       pagesMs: e.CACHE_TTL_PAGES_MS,
+      maxEntries: e.CACHE_MAX_ENTRIES,
     },
     imageCache: {
       dir: resolveRepoDir(e.IMAGE_CACHE_DIR),
       maxFraction: e.IMAGE_CACHE_MAX_FRACTION,
       minBytes: e.IMAGE_CACHE_MIN_BYTES,
       maxBytes: e.IMAGE_CACHE_MAX_BYTES,
+      maxUpstreamConcurrency: e.IMAGE_PROXY_CONCURRENCY,
     },
   };
 }

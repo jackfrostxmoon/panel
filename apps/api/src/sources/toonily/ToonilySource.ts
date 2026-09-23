@@ -89,6 +89,8 @@ export class ToonilySource implements PanelSource {
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
+        maxTextBytes: config.maxTextBytes,
+        maxImageBytes: config.maxImageBytes,
         // Two Cloudflare/content quirks (verified 2026-08):
         //  - Requests whose User-Agent claims to be a browser get challenged
         //    (TLS fingerprint mismatch), so NO UA override is sent.

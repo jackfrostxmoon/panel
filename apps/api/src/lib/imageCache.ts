@@ -53,6 +53,13 @@ export interface ImageCacheDeps {
   maxFraction: number;
   minBytes: number;
   maxBytes: number;
+  /**
+   * Max concurrent UPSTREAM image fetches (disk hits bypass the limiter).
+   * Cover grids fire dozens of requests at once and each miss buffers a
+   * whole image in heap — unbounded concurrency is the transient memory
+   * spike. Queued requests wait FIFO. Defaults to 6.
+   */
+  maxUpstreamConcurrency?: number;
   resolveFolder?: ImageFolderResolver;
   /**
    * Path of the JSON file persisting the user-supplied custom cap
@@ -113,6 +120,25 @@ export interface ImageCacheDeps {
  */
 export class ImageCache {
   private readonly inFlight = new Map<string, Promise<ImageCacheEntry>>();
+
+  /**
+   * Upstream-fetch semaphore (see `maxUpstreamConcurrency`). Only upstream
+   * misses take a slot — `readFromDisk` hits return before this. FIFO queue.
+   */
+  private readonly upstreamSlots: number;
+  private upstreamActive = 0;
+  private readonly upstreamQueue: Array<() => void> = [];
+
+  /**
+   * Eviction throttle: `evictIfNeeded` walks the whole cache dir twice, so
+   * running it on every write turns a 37-page download into 74 full walks.
+   * Writes past this either run it (interval elapsed or enough writes
+   * accumulated) or skip it — the cap is best-effort anyway.
+   */
+  private static readonly EVICT_MIN_INTERVAL_MS = 30_000;
+  private static readonly EVICT_MIN_WRITES = 20;
+  private lastEvictAt = 0;
+  private writesSinceEvict = 0;
 
   /**
    * In-memory index of every cached file's stem → relative path.
@@ -176,6 +202,7 @@ export class ImageCache {
   private readonly settingsPath: string;
 
   constructor(private readonly deps: ImageCacheDeps) {
+    this.upstreamSlots = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 6));
     this.settingsPath =
       deps.settingsPath ?? join(dirname(deps.dir), '.imagecache-settings.json');
     this.customCapBytes = this.loadCustomCap();
@@ -386,6 +413,41 @@ export class ImageCache {
     this.dirEnsured = true;
   }
 
+  /** Run `fn` holding one upstream slot (FIFO when saturated). */
+  private async withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.upstreamActive >= this.upstreamSlots) {
+      await new Promise<void>((resolve) => this.upstreamQueue.push(resolve));
+    }
+    this.upstreamActive += 1;
+    try {
+      return await fn();
+    } finally {
+      this.upstreamActive -= 1;
+      this.upstreamQueue.shift()?.();
+    }
+  }
+
+  /**
+   * Throttled `evictIfNeeded`: at most every 30s or every 20 writes unless
+   * forced (custom-cap change). The unthrottled form walks the whole cache
+   * directory twice per call.
+   */
+  private async maybeEvict(force = false): Promise<void> {
+    this.writesSinceEvict += 1;
+    if (!force) {
+      const now = Date.now();
+      if (
+        now - this.lastEvictAt < ImageCache.EVICT_MIN_INTERVAL_MS &&
+        this.writesSinceEvict < ImageCache.EVICT_MIN_WRITES
+      ) {
+        return;
+      }
+    }
+    this.lastEvictAt = Date.now();
+    this.writesSinceEvict = 0;
+    await this.evictIfNeeded();
+  }
+
   async getOrCreate(
     url: string,
     fetcher: () => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
@@ -404,7 +466,9 @@ export class ImageCache {
     const cached = await this.readFromDisk(kind, url, tag, stableKey);
     if (cached) return cached;
 
-    const promise = this.doFetch(url, fetcher, kind, tag, stableKey);
+    const promise = this.withUpstreamSlot(() =>
+      this.doFetch(url, fetcher, kind, tag, stableKey),
+    );
     this.inFlight.set(inFlightKey, promise);
     try {
       return await promise;
@@ -615,7 +679,10 @@ export class ImageCache {
     }
     const tmpPath = join(dir, `${filename}.tmp`);
     const finalPath = join(dir, filename);
-    await writeFile(tmpPath, Buffer.from(bytes));
+    // Zero-copy view: `Buffer.from(arrayBuffer)` would duplicate the whole
+    // image in heap (the fetcher already holds the ArrayBuffer). `writeFile`
+    // accepts the Uint8Array view directly.
+    await writeFile(tmpPath, new Uint8Array(bytes));
     await rm(finalPath, { force: true });
     await rename(tmpPath, finalPath);
     // Mirror the new file into the in-memory index so the next read is
@@ -624,7 +691,7 @@ export class ImageCache {
     // will pick this file up naturally. (Numbered pages resolve through
     // their folder path rather than the index, so they are not tracked.)
     this.indexWrite(relPath);
-    await this.evictIfNeeded();
+    await this.maybeEvict();
     return { url, path: finalPath, bytes: bytes.byteLength, contentType };
   }
 
@@ -799,7 +866,7 @@ export class ImageCache {
     }
     this.customCapBytes = bytes;
     await this.persistCustomCap();
-    await this.evictIfNeeded();
+    await this.maybeEvict(true);
     return this.getCapBytes();
   }
 

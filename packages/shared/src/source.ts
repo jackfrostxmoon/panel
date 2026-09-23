@@ -139,4 +139,11 @@ export interface SourceConfig {  readonly name: string;
    * (plus jitter). Defaults to SOURCE_REQUEST_RETRY_BASE_DELAY_MS.
    */
   readonly requestRetryBaseDelayMs: number;
+  /**
+   * Split response cap (bytes). Listings are KBs of HTML — a rogue multi-MB
+   * page used to become a multi-MB JS string. Optional: the HTTP client
+   * falls back to 3 MiB text / 8 MiB image when unset.
+   */
+  readonly maxTextBytes?: number;
+  readonly maxImageBytes?: number;
 }
