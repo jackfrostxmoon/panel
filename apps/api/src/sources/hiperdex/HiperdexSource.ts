@@ -61,6 +61,12 @@ const SERIES_META_NEGATIVE_TTL_MS = 60_000;
 /** Sitemaps are large and change slowly — reuse them across calls (the site
  *  answers with 429 quickly when hammered). */
 const SITEMAP_TTL_MS = 5 * 60_000;
+/**
+ * Sitemap XMLs are catalog-scale files (the series sitemap lists the whole
+ * catalog) — far above the default 3MB text cap, which guards HTML pages.
+ * Sitemaps still fail fast, just at 10MB.
+ */
+const SITEMAP_MAX_BYTES = 10 * 1024 * 1024;
 /** Parallel detail-page fetches when enriching one latest() page. The site
  *  rate-limits (429) aggressively, so keep this low and pace the requests. */
 const ENRICH_CONCURRENCY = 2;
@@ -150,7 +156,7 @@ export class HiperdexSource implements PanelSource {
   private async fetchSitemap(url: string): Promise<string> {
     const cached = this.sitemapCache.get(url);
     if (cached !== undefined) return cached;
-    const { body } = await this.http.fetchText(url);
+    const { body } = await this.http.fetchText(url, SITEMAP_MAX_BYTES);
     this.sitemapCache.set(url, body, SITEMAP_TTL_MS);
     return body;
   }
@@ -672,19 +678,17 @@ export class HiperdexSource implements PanelSource {
     // Fetch all chapter sitemaps with bounded concurrency — 264 parallel
     // requests trip the site's 429 rate limit and turn a working panel
     // into a "No chapters found" page. Bodies are TTL-cached, so later
-    // panels reuse them without refetching.
+    // panels reuse them without refetching. Parsed per batch so the ~26MB
+    // of bodies never sits in heap at once (the parser handles each XML
+    // independently — concatenating per-batch results is identical).
     const urls = this.sitemapChapterUrls!;
-    const xmls: string[] = [];
+    const rawChapters: RawChapterItem[] = [];
     const CONCURRENCY = 8;
     for (let i = 0; i < urls.length; i += CONCURRENCY) {
       const batch = urls.slice(i, i + CONCURRENCY);
       const bodies = await Promise.all(batch.map((url) => this.fetchSitemap(url)));
-      bodies.forEach((body, j) => {
-        xmls[i + j] = body;
-      });
+      rawChapters.push(...parseChapterSitemaps(bodies, this.baseUrl, nativePanelId));
     }
-
-    const rawChapters = parseChapterSitemaps(xmls, this.baseUrl, nativePanelId);
 
     if (rawChapters.length === 0) {
       logger.warn('No chapters found in sitemaps for panel', { source: this.name, nativePanelId });

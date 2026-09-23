@@ -177,10 +177,14 @@ export class SourceHttpClient {
     return this.isAllowedUrlHost(rawUrl, this.imageHosts);
   }
 
-  async fetchText(rawUrl: string): Promise<FetchedPage> {
-    return this.request(rawUrl, {
-      headers: this.textHeaders(),
-    });
+  async fetchText(rawUrl: string, maxBytes?: number): Promise<FetchedPage> {
+    return this.request(
+      rawUrl,
+      {
+        headers: this.textHeaders(),
+      },
+      maxBytes,
+    );
   }
 
   /**
@@ -192,16 +196,21 @@ export class SourceHttpClient {
   async fetchJson(
     rawUrl: string,
     extraHeaders?: Record<string, string>,
+    maxBytes?: number,
   ): Promise<FetchedPage> {
-    return this.request(rawUrl, {
-      headers: {
-        'User-Agent': this.userAgent,
-        Accept: 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'X-Requested-With': 'XMLHttpRequest',
-        ...extraHeaders,
+    return this.request(
+      rawUrl,
+      {
+        headers: {
+          'User-Agent': this.userAgent,
+          Accept: 'application/json, text/javascript, */*; q=0.01',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...extraHeaders,
+        },
       },
-    });
+      maxBytes,
+    );
   }
 
   /**
@@ -346,13 +355,17 @@ export class SourceHttpClient {
     }
   }
 
-  private async request(rawUrl: string, init: RequestInit): Promise<FetchedPage> {
+  private async request(
+    rawUrl: string,
+    init: RequestInit,
+    maxBytes: number = this.maxTextBytes,
+  ): Promise<FetchedPage> {
     this.assertAllowedUrl(rawUrl);
 
     const startedAt = Date.now();
     const response = await this.fetchWithRetry(rawUrl, init, this.allowedHosts);
 
-    const body = await this.readBodyWithLimit(response, this.maxTextBytes);
+    const body = await this.readBodyWithLimit(response, maxBytes);
     logger.debug('Fetched source page', {
       url: rawUrl,
       status: response.status,
