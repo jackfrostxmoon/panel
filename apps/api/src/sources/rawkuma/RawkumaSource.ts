@@ -92,6 +92,8 @@ export class RawkumaSource implements PanelSource {
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
+        maxTextBytes: config.maxTextBytes,
+        maxImageBytes: config.maxImageBytes,
       });
   }
 
