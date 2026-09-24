@@ -15,6 +15,7 @@
     "build": "cd apps/web && bun run build",
     "start": "cd apps/api && bun run start",
     "lan": "bun run scripts/lan.ts",
+    "backup": "cd apps/api && bun run src/db/backupCli.ts",
     "clean-install": "bun run scripts/clean-install.ts",
     "typecheck": "cd packages/shared && tsc --noEmit && cd ../../apps/api && tsc --noEmit && cd ../web && tsc --noEmit",
     "lint": "oxlint",

@@ -45,6 +45,7 @@ data/.backup/
 database/
 
 # Others
+backup.bat
 .agents/
 scripts/
 AGENTS.md
