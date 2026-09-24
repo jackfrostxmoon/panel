@@ -1250,6 +1250,15 @@
   color: var(--text-dim);
 }
 
+/* Dimmed, inert row — same treatment as disabled SettingGroups. */
+.reader-settings__row[data-disabled] {
+  opacity: 0.5;
+}
+
+.reader-settings__row[data-disabled] .switch {
+  pointer-events: none;
+}
+
 /* Shortcuts section inside the settings sidebar */
 .reader-settings__shortcuts-title {
   margin: var(--space-3) 0 var(--space-2);

@@ -539,25 +539,28 @@ export function ReaderSettingsPanel({
             />
           </SettingGroup>
 
-          <SettingGroup
-            id="rs-fitHeight"
-            title="Fit to height"
-            hint={
-              settings.mode === 'paged'
-                ? 'Fit the page to the screen height so the whole image is visible without scrolling.'
-                : 'Only available in page (F) reading mode.'
-            }
-            disabled={settings.mode !== 'paged'}
+          <div
+            className="reader-settings__row"
+            data-disabled={settings.mode !== 'paged' || undefined}
           >
+            <span className="reader-settings__row-copy">
+              <span id="rs-fitHeight" className="reader-settings__row-title">
+                Fit to height
+              </span>
+              <span className="reader-settings__row-hint">
+                {settings.mode === 'paged'
+                  ? 'Fit the page to the screen height so the whole image is visible without scrolling.'
+                  : 'Only available in page (F) reading mode.'}
+              </span>
+            </span>
             <Switch
               checked={settings.fitToHeight}
               labelledBy="rs-fitHeight"
-              onChange={(fitToHeight) => onUpdate({ fitToHeight })}
+              onChange={(fitToHeight) => {
+                if (settings.mode === 'paged') onUpdate({ fitToHeight });
+              }}
             />
-            <label id="rs-fitHeight" className="reader-settings__switch-label">
-              Fit images to screen height
-            </label>
-          </SettingGroup>
+          </div>
 
           <div className="reader-settings__row">
             <span className="reader-settings__row-copy">
