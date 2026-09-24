@@ -371,6 +371,19 @@
   min-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
+/* Width-limited viewport: matches VerticalReader's width-limited container so
+   tap zones and desktop click handling only cover the image threshold —
+   clicks on the empty side gutters hit the outer .paged-reader and do
+   nothing. The stage fills the viewport; the "Image width" slider drives
+   the viewport width via --paged-stage-width (inherited from .paged-reader). */
+.paged-reader__viewport {
+  position: relative;
+  width: var(--paged-stage-width, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .paged-reader__stage {
   /* Width-driven stage: the page fills the stage width (so the "Image
      * width" slider controls how wide the page renders) and scales
@@ -380,8 +393,8 @@
      * height-capped with max-width, so a portrait page's width was locked to
      * viewportHeight/aspectRatio and the slider had no effect across most of
      * its range — it only kicked in once the stage narrowed below that width.)
-     */
-  width: var(--paged-stage-width, 100%);
+      */
+  width: 100%;
   max-height: 100dvh;
   display: flex;
   align-items: center;

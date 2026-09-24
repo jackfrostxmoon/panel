@@ -280,7 +280,10 @@ export function PagedReader({
      this reproduces the original "click left/right half" behavior while the
      mousedown still reaches the <img> (native drag / copy image keep working;
      a completed drag suppresses the click, so dragging never turns the page).
-     Touch keeps using the physical zone buttons. */
+     Touch keeps using the physical zone buttons.
+     The handler lives on the width-limited viewport (like VerticalReader's
+     container), so only clicks around the image threshold navigate — clicks
+     on the empty side gutters fall on the outer reader and do nothing. */
   const handleHalfClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     if ((event.nativeEvent as PointerEvent).pointerType === 'touch') return;
@@ -294,29 +297,29 @@ export function PagedReader({
       className={`paged-reader${effectiveDoublePage ? ' paged-reader--double' : ''}${imageGap ? ' paged-reader--gap' : ''}`}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onClick={handleHalfClick}
       role="region"
       aria-label="Panel page viewer"
       style={{ ['--paged-stage-width' as string]: `${imageWidth}%` }}
     >
-      <button
-        type="button"
-        className={`paged-reader__zone paged-reader__zone--left${effectiveDoublePage ? ' paged-reader__zone--outer' : ''}`}
-        onClick={() => handleZoneClick('left')}
-        aria-label="Previous page"
-      />
-      <button
-        type="button"
-        className={`paged-reader__zone paged-reader__zone--right${effectiveDoublePage ? ' paged-reader__zone--outer' : ''}`}
-        onClick={() => handleZoneClick('right')}
-        aria-label="Next page"
-      />
+      <div className="paged-reader__viewport" onClick={handleHalfClick}>
+        <button
+          type="button"
+          className={`paged-reader__zone paged-reader__zone--left${effectiveDoublePage ? ' paged-reader__zone--outer' : ''}`}
+          onClick={() => handleZoneClick('left')}
+          aria-label="Previous page"
+        />
+        <button
+          type="button"
+          className={`paged-reader__zone paged-reader__zone--right${effectiveDoublePage ? ' paged-reader__zone--outer' : ''}`}
+          onClick={() => handleZoneClick('right')}
+          aria-label="Next page"
+        />
 
-      <div
-        className="paged-reader__stage"
-        ref={stageRef}
-        {...handlers}
-      >
+        <div
+          className="paged-reader__stage"
+          ref={stageRef}
+          {...handlers}
+        >
         {effectiveDoublePage ? (
           <div className="paged-reader__spread">
             {direction === 'ltr' ? (
@@ -387,6 +390,7 @@ export function PagedReader({
             chapterTag={chapterTag}
           />
         )}
+        </div>
       </div>
     </div>
   );
