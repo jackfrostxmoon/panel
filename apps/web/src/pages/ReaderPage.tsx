@@ -1280,8 +1280,10 @@ export function ReaderPage() {
                  hardcode a 2% sheet pad + 3px seam that ignored it. */
               imageGap={settings.imageGap}
               /* Narrow the stage so a page never overflows — the same
-                 "Image width" slider as vertical/gallery modes. */
+                 "Image width" slider as vertical/gallery modes. Ignored
+                 while fit-to-height is on. */
               imageWidth={settings.imageWidth}
+              fitToHeight={settings.fitToHeight}
             />
           )}
         </main>

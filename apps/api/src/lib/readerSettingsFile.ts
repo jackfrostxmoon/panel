@@ -29,6 +29,7 @@ export function loadReaderSettings(): ReaderSettings {
       wheelPagesPerNotch: 0,
       keyPagesPress: 0,
       zoomLevel: 1,
+      fitToHeight: false,
       autoLandscapeSingle: true,
       dataSaver: false,
       glidePreset: 'quick',

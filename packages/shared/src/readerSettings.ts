@@ -32,6 +32,8 @@ export interface ReaderSettings {
   wheelPagesPerNotch: number;
   keyPagesPress: number;
   zoomLevel: number;
+  /** Paged mode only: constrain the page to the viewport height (fit-to-height). */
+  fitToHeight: boolean;
   autoLandscapeSingle: boolean;
   dataSaver: boolean;
   glidePreset: 'instant' | 'quick' | 'normal' | 'smooth';

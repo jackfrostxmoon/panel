@@ -412,6 +412,64 @@
   max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
+/* Fit-to-height (paged mode only): contain the page vertically so the whole
+   image is visible without scrolling. The width slider is ignored — the
+   height constraint drives the layout and the width follows the aspect
+   ratio via object-fit: contain. */
+.paged-reader--fit-height .paged-reader__viewport {
+  height: 100%;
+  max-height: 100dvh;
+  width: auto;
+  max-width: 100%;
+}
+
+.reader--toolbar-clear .paged-reader--fit-height .paged-reader__viewport {
+  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+}
+
+.paged-reader--fit-height .paged-reader__stage {
+  height: 100%;
+  max-height: 100%;
+  width: auto;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.paged-reader--fit-height .paged-reader__stage .reader-image {
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.paged-reader--fit-height .paged-reader__stage .reader-image__img {
+  width: auto;
+  max-width: 100%;
+  max-height: 100dvh;
+  object-fit: contain;
+}
+
+.reader--toolbar-clear .paged-reader--fit-height .paged-reader__stage .reader-image__img {
+  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+}
+
+.paged-reader--fit-height .paged-reader__spread {
+  height: 100%;
+  max-height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+
+.paged-reader--fit-height .paged-reader__sheet {
+  width: auto;
+  max-width: 50%;
+  height: 100%;
+  max-height: 100%;
+}
+
+.paged-reader--fit-height .paged-reader__sheet .reader-image__img {
+  max-height: 100%;
+}
+
 .paged-reader__stage .reader-image {
   transform-box: fill-box;
   transform-origin: var(--zoom-origin, center center);

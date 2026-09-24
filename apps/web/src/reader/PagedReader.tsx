@@ -55,9 +55,11 @@ export function PagedReader({
    * Image width as a percent of the reader viewport (the "Image width"
    * slider). Shrinks the stage so a page never overflows — useful for
    * narrow text pages that otherwise look tiny in the full-width stage.
-   * 100 % = the old full-width behaviour.
+   * 100 % = the old full-width behaviour. Ignored while `fitToHeight`
+   * is on (the height constraint drives the layout instead).
    */
   imageWidth = 100,
+  fitToHeight = false,
 }: {
   pages: PanelPage[];
   page: number;
@@ -91,6 +93,12 @@ export function PagedReader({
   imageGap?: boolean;
   /** Image width as a percent of the reader viewport (see settings). */
   imageWidth?: number;
+  /**
+   * Fit the page to the viewport height (paged mode only). When on, the
+   * image-width slider is ignored and the page is contained vertically so
+   * the whole image is visible without scrolling.
+   */
+  fitToHeight?: boolean;
 }) {
   const touchStartX = useRef<number | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -294,12 +302,12 @@ export function PagedReader({
 
   return (
     <div
-      className={`paged-reader${effectiveDoublePage ? ' paged-reader--double' : ''}${imageGap ? ' paged-reader--gap' : ''}`}
+      className={`paged-reader${effectiveDoublePage ? ' paged-reader--double' : ''}${imageGap ? ' paged-reader--gap' : ''}${fitToHeight ? ' paged-reader--fit-height' : ''}`}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       role="region"
       aria-label="Panel page viewer"
-      style={{ ['--paged-stage-width' as string]: `${imageWidth}%` }}
+      style={{ ['--paged-stage-width' as string]: fitToHeight ? 'auto' : `${imageWidth}%` }}
     >
       <div className="paged-reader__viewport" onClick={handleHalfClick}>
         <button

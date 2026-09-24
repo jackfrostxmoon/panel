@@ -153,6 +153,12 @@ export interface ReaderSettings {
    */
   zoomLevel: number;
 
+  /**
+   * Paged mode only: fit the page to the viewport height so the whole image
+   * is visible without scrolling. Width slider is ignored while this is on.
+   */
+  fitToHeight: boolean;
+
   // --- Tier 3 QOL additions ---------------------------------------------------
 
   /**
@@ -224,6 +230,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   keyPagesPress: 0,
   /** 1.0 = fit to viewport (default). */
   zoomLevel: 1,
+  /** Off by default — preserves the current width-driven paged layout. */
+  fitToHeight: false,
   // --- Tier 3 QOL additions (defaults) ---
   autoLandscapeSingle: true,
   dataSaver: false,
