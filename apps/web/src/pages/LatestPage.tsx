@@ -145,6 +145,21 @@ export function LatestPage() {
   const extraPagesRef = useRef(extraPages);
   extraPagesRef.current = extraPages;
 
+  /**
+   * Unmount guard for the infinite-scroll loader below. Navigating away
+   * (e.g. Home) while a page fetch is in flight must not let the stale
+   * callback rewrite the URL when it resolves — the router's navigate stays
+   * valid post-unmount, so an unguarded `setParams` snaps the fresh route
+   * back to the old listing page. Setup re-arms on StrictMode remounts.
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Fresh result identity (source / server-side filters / mode switch) —
   // drop appended pages so page 2 of the old query never leaks in.
   // NOTE: this effect must NEVER navigate. A second navigation issued
@@ -335,6 +350,9 @@ export function LatestPage() {
         liveGenres.length > 0 ? liveGenres : undefined,
         liveExcludes.length > 0 ? liveExcludes : undefined,
       );
+      // Navigated away mid-flight (e.g. Home) — drop the stale page
+      // instead of rewriting the new route's URL back to this listing.
+      if (!mountedRef.current) return;
       if (generationRef.current !== generation) return;
       // Source moved on mid-flight (e.g. a pill tap while fetching) — drop
       // the stale page instead of mixing sources or rewriting the URL.

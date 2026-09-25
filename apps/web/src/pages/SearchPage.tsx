@@ -148,6 +148,21 @@ export function SearchPage() {
   const extraPagesRef = useRef(extraPages);
   extraPagesRef.current = extraPages;
 
+  /**
+   * Unmount guard for the infinite-scroll loader below. Navigating away
+   * (e.g. Home) while a page fetch is in flight must not let the stale
+   * callback rewrite the URL when it resolves — the router's navigate stays
+   * valid post-unmount, so an unguarded `setParams` snaps the fresh route
+   * back to the old search page. Setup re-arms on StrictMode remounts.
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Fresh result identity (query / source / server-side filters / mode
   // switch) — drop appended pages so page 2 of the old query never leaks
   // in.
@@ -315,6 +330,9 @@ export function SearchPage() {
         liveGenres.length > 0 ? liveGenres : undefined,
         liveExcludes.length > 0 ? liveExcludes : undefined,
       );
+      // Navigated away mid-flight (e.g. Home) — drop the stale page
+      // instead of rewriting the new route's URL back to this search.
+      if (!mountedRef.current) return;
       if (generationRef.current !== generation) return;
       // Query or source moved on mid-flight — drop the stale page instead
       // of mixing result sets or rewriting the URL.
