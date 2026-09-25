@@ -65,9 +65,10 @@ export class KaliscanSource implements PanelSource {
       http ??
       new SourceHttpClient(config.name, {
         allowedHosts: KaliscanSource.allowedHostsFor(config.baseUrl),
-        // Chapter images rotate across s<N>.1stmggv7.xyz (varying subdomain),
-        // so allow the parent domain rather than one fixed s9 host.
-        imageHosts: ['1stmggv7.xyz', '1stmangago.com'],
+        // Chapter images rotate across s<N> hosts in two CDN families
+        // (legacy 1stmggv7.xyz, current 1stmggv2.org with signed URLs), so
+        // allow the parent domains rather than one fixed s9 host.
+        imageHosts: ['1stmggv7.xyz', '1stmggv2.org', '1stmangago.com'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
