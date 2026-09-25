@@ -85,13 +85,17 @@ export class MangaKatanaSource implements PanelSource {
   }
 
   /**
-   * Covers are served directly from mangakatana.com's own CDN (no hotlink
-   * protection), but routing them through the API's image proxy lets the
-    * client-side cache warm + persist them in the on-disk image cache.
+   * Chapter images live on the i*.mangakatana.com token CDNs, which tar-pit
+   * requests without a mangakatana.com Referer (measured: same URL stalls
+   * to the 15s timeout and truncates without one, returns in ~3s with one).
+   * Covers on the main host are unaffected by the extra header.
    */
   async fetchImage(url: string): Promise<SourceImage> {
     this.assertEnabled();
-    return this.http.fetchImage(url);
+    const { bytes, contentType } = await this.http.fetchImage(url, {
+      Referer: `${this.baseUrl}/`,
+    });
+    return { bytes, contentType };
   }
 
   buildPanelUrl(nativePanelId: string): string {
@@ -112,6 +116,39 @@ export class MangaKatanaSource implements PanelSource {
   nativePanelIdFromUrl(url: string): string | null {
     if (!isSameHost(url, this.baseUrl)) return null;
     return panelNativeIdFromUrl(url);
+  }
+
+  /**
+   * Cheap liveness probe for one image-server variant: a single Range GET
+   * for the first byte of the variant's first page URL. The body is
+   * cancelled immediately — reaching response headers proves the CDN's
+   * TCP/TLS/HTTP path works without downloading the whole image. Bounded by
+   * a short timeout with no retries so a dead CDN fails fast instead of
+   * burning the full (retryCount + 1) * timeoutMs budget of fetchImage.
+   */
+  private async isImageServerReachable(url: string): Promise<boolean> {
+    if (!this.http.isAllowedImageUrl(url)) return false;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          Referer: `${this.baseUrl}/`,
+          Range: 'bytes=0-0',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+      // Redirects must stay inside the image allowlist (same guard the
+      // shared client applies to full fetches).
+      if (response.url && !this.http.isAllowedImageUrl(response.url)) return false;
+      const reachable = response.ok || response.status === 206;
+      await response.body?.cancel().catch(() => undefined);
+      return reachable;
+    } catch {
+      return false;
+    }
   }
 
   async search(query: string, page = 1): Promise<SourceSearchResult> {
@@ -331,13 +368,60 @@ export class MangaKatanaSource implements PanelSource {
       });
     }
 
-    const { body } = await this.http.fetchText(this.buildChapterUrl(nativeChapterId));
+    const chapterUrl = this.buildChapterUrl(nativeChapterId);
+    // The reader offers three image servers ("click another server if the
+    // images is not displayed"): Server 1 (default HTML), Server 2 (?sv=mk)
+    // and Server 3 (?sv=3). Each variant embeds the same pages with
+    // host-bound token URLs for a different i*.mangakatana.com CDN, and any
+    // one CDN can go dark while its HTML still parses fine (verified
+    // 2026-09: Server 1 returns 53 page URLs on the TCP-unreachable i1 host
+    // while i6/i7 serve the same pages). So an empty-list check is not
+    // enough — probe the first image URL of each variant and keep the first
+    // variant whose CDN actually answers. The chapter <select> is identical
+    // on all three variants, so prev/next navigation is unaffected by which
+    // variant wins.
+    const serverSuffixes = ['', '?sv=mk', '?sv=3'];
+    let raw: Awaited<ReturnType<typeof parseChapterReaderPage>> | null = null;
+    let usedSuffix = '';
+    let lastNotFound = false;
+    for (const suffix of serverSuffixes) {
+      const { body } = await this.http.fetchText(`${chapterUrl}${suffix}`);
+      let parsed;
+      try {
+        parsed = parseChapterReaderPage(body, this.baseUrl);
+      } catch (error) {
+        if (!(error instanceof PageNotRecognizedError)) throw error;
+        lastNotFound = true;
+        logger.warn('Chapter server variant not recognized', {
+          source: this.name,
+          nativeChapterId,
+          serverSuffix: suffix || '(default)',
+        });
+        continue;
+      }
+      if (parsed.imageUrls.length === 0) {
+        logger.warn('Chapter server variant had no extractable images', {
+          source: this.name,
+          nativeChapterId,
+          serverSuffix: suffix || '(default)',
+        });
+        continue;
+      }
+      const firstUrl = parsed.imageUrls[0];
+      if (firstUrl && (await this.isImageServerReachable(firstUrl))) {
+        raw = parsed;
+        usedSuffix = suffix;
+        break;
+      }
+      logger.warn('Chapter server image host unreachable, trying next server', {
+        source: this.name,
+        nativeChapterId,
+        serverSuffix: suffix || '(default)',
+      });
+    }
 
-    let raw;
-    try {
-      raw = parseChapterReaderPage(body, this.baseUrl);
-    } catch (error) {
-      if (error instanceof PageNotRecognizedError) {
+    if (!raw) {
+      if (lastNotFound) {
         throw new SourceError(
           this.name,
           ErrorCodes.CHAPTER_NOT_FOUND,
@@ -345,16 +429,20 @@ export class MangaKatanaSource implements PanelSource {
           { nativeChapterId },
         );
       }
-      throw error;
-    }
-
-    if (raw.imageUrls.length === 0) {
-      // Reader container existed but no image array — the site markup changed.
-      logger.error('Chapter page had no extractable images', {
+      // Every variant parsed but no CDN answered (or every reader container
+      // held no image array — the site markup changed).
+      logger.error('Chapter image servers unreachable on all variants', {
         source: this.name,
         nativeChapterId,
       });
-      throw SourceError.parse(this.name, 'chapter image list');
+      throw SourceError.unavailable(this.name, chapterUrl);
+    }
+    if (usedSuffix) {
+      logger.info('Chapter pages served from fallback image server', {
+        source: this.name,
+        nativeChapterId,
+        serverSuffix: usedSuffix,
+      });
     }
 
     const pages: PanelPage[] = raw.imageUrls.map((url, index) => {
