@@ -83,12 +83,14 @@ export class RawkumaSource implements PanelSource {
       http ??
       new SourceHttpClient(config.name, {
         allowedHosts: RawkumaSource.allowedHostsFor(config.baseUrl),
-        // Chapter images are served from Rawkuma's kyut.dev CDN pool (observed:
-        // kuma.kyut.dev, rcdn.kyut.dev, …) — separate hosts, NOT the
-        // rawkuma.net domain. Declaring the kyut.dev root covers every
-        // subdomain (the allowlist matches subdomains) while keeping the
-        // SSRF guard in place for the image proxy.
-        imageHosts: [...RawkumaSource.allowedHostsFor(config.baseUrl), 'kyut.dev'],
+        // Chapter images are served from dedicated CDN hosts, NOT the
+        // rawkuma.net domain: the kyut.dev pool (observed: kuma.kyut.dev,
+        // rcdn.kyut.dev, …) and — since ~2026-09 — cdn.rawkuma.com (note
+        // the .com: a different registrable domain from the source host).
+        // Declaring the roots covers every subdomain (the allowlist
+        // matches subdomains) while keeping the SSRF guard in place for
+        // the image proxy.
+        imageHosts: [...RawkumaSource.allowedHostsFor(config.baseUrl), 'kyut.dev', 'rawkuma.com'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
