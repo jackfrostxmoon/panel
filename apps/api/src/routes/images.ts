@@ -5,7 +5,9 @@ import { AppError, SourceError } from '../lib/errors.js';
 import { recordImageResult } from '../lib/stats.js';
 import {
   MAX_CUSTOM_CAP_BYTES,
+  MAX_UPSTREAM_CONCURRENCY,
   MIN_CUSTOM_CAP_BYTES,
+  MIN_UPSTREAM_CONCURRENCY,
   type ImageCache,
   type ImageCacheSizeInfo,
   type ImageCacheTagSummary,
@@ -425,6 +427,71 @@ return new Response(Bun.file(entry.path), {
         customMaxBytes: imageCache.getCustomCapBytes(),
         computedCapBytes: imageCache.getComputedCapBytes(),
         capBytes: imageCache.getCapBytes(),
+      }),
+    );
+  });
+
+  /**
+   * Read the upstream-fetch concurrency. `concurrency` is the effective
+   * value (what the proxy semaphore enforces); `customConcurrency` is the
+   * persisted user override (`null` = env default); `defaultConcurrency`
+   * is the startup (`IMAGE_PROXY_CONCURRENCY`) value the override replaces
+   * while set. `min`/`max` bound the settable range.
+   */
+  app.get('/cache/concurrency', async (c) => {
+    return c.json(
+      ok({
+        customConcurrency: imageCache.getCustomUpstreamConcurrency(),
+        defaultConcurrency: imageCache.getDefaultUpstreamConcurrency(),
+        concurrency: imageCache.getUpstreamConcurrency(),
+        min: MIN_UPSTREAM_CONCURRENCY,
+        max: MAX_UPSTREAM_CONCURRENCY,
+      }),
+    );
+  });
+
+  /**
+   * Set (`{ "concurrency": <int 1–32> }`) or clear (`{ "concurrency": null }`,
+   * back to the env default) the upstream-fetch concurrency. Persisted
+   * beside the cache dir so it survives restarts, and enforced immediately
+   * — lowering it below the in-flight count just pauses new acquisitions
+   * until active fetches drain. Settable from the reader settings panel so
+   * the "All at once" preload throughput can be compared live.
+   */
+  app.put('/cache/concurrency', async (c) => {
+    let body: { concurrency?: unknown };
+    try {
+      body = (await c.req.json()) as { concurrency?: unknown };
+    } catch {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Request body must be valid JSON.');
+    }
+    const { concurrency } = body;
+    if (concurrency !== null && concurrency !== undefined) {
+      if (typeof concurrency !== 'number' || !Number.isInteger(concurrency)) {
+        throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Field "concurrency" must be an integer number of fetches, or null.');
+      }
+      if (concurrency < MIN_UPSTREAM_CONCURRENCY || concurrency > MAX_UPSTREAM_CONCURRENCY) {
+        throw new AppError(
+          ErrorCodes.VALIDATION_ERROR,
+          `Field "concurrency" must be between ${MIN_UPSTREAM_CONCURRENCY} and ${MAX_UPSTREAM_CONCURRENCY}, or null.`,
+        );
+      }
+    }
+    try {
+      await imageCache.setUpstreamConcurrency(concurrency ?? null);
+    } catch (error) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        error instanceof Error ? error.message : 'Could not update the upstream concurrency.',
+      );
+    }
+    return c.json(
+      ok({
+        customConcurrency: imageCache.getCustomUpstreamConcurrency(),
+        defaultConcurrency: imageCache.getDefaultUpstreamConcurrency(),
+        concurrency: imageCache.getUpstreamConcurrency(),
+        min: MIN_UPSTREAM_CONCURRENCY,
+        max: MAX_UPSTREAM_CONCURRENCY,
       }),
     );
   });

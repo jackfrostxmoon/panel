@@ -10,6 +10,14 @@ export type ImageKind = 'cover' | 'chapter';
 export const MIN_CUSTOM_CAP_BYTES = 64 * 1024 * 1024;
 export const MAX_CUSTOM_CAP_BYTES = 1024 * 1024 * 1024 * 1024;
 
+/**
+ * Bounds for a user-supplied upstream-concurrency override (see
+ * `setUpstreamConcurrency`). Mirrors the `IMAGE_PROXY_CONCURRENCY` env
+ * validation in config.ts so the route and the env agree on the range.
+ */
+export const MIN_UPSTREAM_CONCURRENCY = 1;
+export const MAX_UPSTREAM_CONCURRENCY = 32;
+
 export interface ImageCacheEntry {
   url: string;
   path: string;
@@ -62,10 +70,11 @@ export interface ImageCacheDeps {
   maxUpstreamConcurrency?: number;
   resolveFolder?: ImageFolderResolver;
   /**
-   * Path of the JSON file persisting the user-supplied custom cap
-   * (`{ "maxBytes": number | null }`). Defaults to a sibling of the cache
-   * dir (NOT inside it — clear/evict operations must never delete it, and
-   * it must not count toward the cached size).
+   * Path of the JSON file persisting user-supplied overrides
+   * (`{ "maxBytes": number | null, "maxUpstreamConcurrency": number | null }`).
+   * Defaults to a sibling of the cache dir (NOT inside it — clear/evict
+   * operations must never delete it, and it must not count toward the
+   * cached size).
    */
   settingsPath?: string;
 }
@@ -124,8 +133,11 @@ export class ImageCache {
   /**
    * Upstream-fetch semaphore (see `maxUpstreamConcurrency`). Only upstream
    * misses take a slot — `readFromDisk` hits return before this. FIFO queue.
+   * Mutable at runtime via `setUpstreamConcurrency` (reader settings panel):
+   * lowering it below the in-flight count just pauses new acquisitions
+   * until the active fetches drain.
    */
-  private readonly upstreamSlots: number;
+  private upstreamSlots: number;
   private upstreamActive = 0;
   private readonly upstreamQueue: Array<() => void> = [];
 
@@ -199,12 +211,22 @@ export class ImageCache {
    * survives restarts; `null` means "automatic" (computed from disk).
    */
   private customCapBytes: number | null = null;
+  /**
+   * User-supplied upstream-concurrency override, replacing the startup
+   * (`maxUpstreamConcurrency`) value while set. Same persistence file as
+   * the cap override; `null` means "env default".
+   */
+  private customUpstreamConcurrency: number | null = null;
+  /** Startup value — the fallback when no override is set. */
+  private readonly defaultUpstreamConcurrency: number;
   private readonly settingsPath: string;
 
   constructor(private readonly deps: ImageCacheDeps) {
-    this.upstreamSlots = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 6));
+    this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 6));
     this.settingsPath =
       deps.settingsPath ?? join(dirname(deps.dir), '.imagecache-settings.json');
+    this.customUpstreamConcurrency = this.loadCustomConcurrency();
+    this.upstreamSlots = this.customUpstreamConcurrency ?? this.defaultUpstreamConcurrency;
     this.customCapBytes = this.loadCustomCap();
   }
 
@@ -849,6 +871,43 @@ export class ImageCache {
     return this.customCapBytes;
   }
 
+  /** Effective upstream concurrency: the override while set, else the startup default. */
+  getUpstreamConcurrency(): number {
+    return this.upstreamSlots;
+  }
+
+  /** The persisted concurrency override, or null when the env default applies. */
+  getCustomUpstreamConcurrency(): number | null {
+    return this.customUpstreamConcurrency;
+  }
+
+  /** The startup (`maxUpstreamConcurrency`) fallback. */
+  getDefaultUpstreamConcurrency(): number {
+    return this.defaultUpstreamConcurrency;
+  }
+
+  /**
+   * Set (`n`) or clear (`null`, back to the env default) the upstream-
+   * concurrency override. Persisted to disk immediately and enforced at
+   * once — lowering it below the in-flight count just pauses new
+   * acquisitions until active fetches drain. Returns the effective value.
+   * Range validation lives in the route; values outside
+   * [MIN_UPSTREAM_CONCURRENCY, MAX_UPSTREAM_CONCURRENCY] throw.
+   */
+  async setUpstreamConcurrency(n: number | null): Promise<number> {
+    if (n !== null) {
+      if (!Number.isInteger(n) || n < MIN_UPSTREAM_CONCURRENCY || n > MAX_UPSTREAM_CONCURRENCY) {
+        throw new Error(
+          `Upstream concurrency must be an integer between ${MIN_UPSTREAM_CONCURRENCY} and ${MAX_UPSTREAM_CONCURRENCY}.`,
+        );
+      }
+    }
+    this.customUpstreamConcurrency = n;
+    this.upstreamSlots = n ?? this.defaultUpstreamConcurrency;
+    await this.persistSettings();
+    return this.upstreamSlots;
+  }
+
   /**
    * Set (`bytes`) or clear (`null`) the custom cap override. Persisted to
    * disk immediately and enforced at once — lowering the cap below current
@@ -885,11 +944,38 @@ export class ImageCache {
     }
   }
 
+  private loadCustomConcurrency(): number | null {
+    try {
+      if (!existsSync(this.settingsPath)) return null;
+      const raw = JSON.parse(readFileSync(this.settingsPath, 'utf-8')) as {
+        maxUpstreamConcurrency?: unknown;
+      };
+      const value = raw.maxUpstreamConcurrency;
+      if (value === null || value === undefined) return null;
+      if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+      // Out-of-range (e.g. written by a newer client) is ignored rather
+      // than clamped, so the startup default applies instead of a surprise.
+      if (value < MIN_UPSTREAM_CONCURRENCY || value > MAX_UPSTREAM_CONCURRENCY) return null;
+      return value;
+    } catch {
+      // Corrupt/unreadable settings — fall back to the startup default.
+      return null;
+    }
+  }
+
   private async persistCustomCap(): Promise<void> {
+    await this.persistSettings();
+  }
+
+  private async persistSettings(): Promise<void> {
     await mkdir(dirname(this.settingsPath), { recursive: true });
     await writeFile(
       this.settingsPath,
-      JSON.stringify({ maxBytes: this.customCapBytes }, null, 2) + '\n',
+      JSON.stringify(
+        { maxBytes: this.customCapBytes, maxUpstreamConcurrency: this.customUpstreamConcurrency },
+        null,
+        2,
+      ) + '\n',
     );
   }
 

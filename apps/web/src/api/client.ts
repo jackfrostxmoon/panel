@@ -530,6 +530,26 @@ export const api = {
     }),
 
   /**
+   * Read the upstream-fetch concurrency. `concurrency` is the effective
+   * value (what the proxy semaphore enforces); `customConcurrency` is the
+   * persisted user override (`null` = env default); `defaultConcurrency`
+   * is the startup value; `min`/`max` bound the settable range.
+   */
+  getImageConcurrency: () =>
+    request<ImageConcurrencyInfo>('/api/source-image/cache/concurrency'),
+
+  /**
+   * Set (`concurrency`) or clear (`null`, back to the env default) the
+   * upstream-fetch concurrency. Persisted server-side, enforced
+   * immediately, and returned as the updated info shape. Valid range: 1–32.
+   */
+  setImageConcurrency: (concurrency: number | null) =>
+    request<ImageConcurrencyInfo>('/api/source-image/cache/concurrency', {
+      method: 'PUT',
+      body: JSON.stringify({ concurrency }),
+    }),
+
+  /**
    * Probe which 0-based page indices of a chapter are already on the server's
    * ImageCache. Used by the chapter downloader to skip pages that were
    * cached by a previous (possibly partial) run, so a retry doesn't re-fetch
@@ -783,6 +803,21 @@ export interface ImageCacheLimitInfo {
   computedCapBytes: number;
   /** Effective cap in bytes (custom override while set, else computed). */
   capBytes: number;
+}
+
+/**
+ * Upstream-fetch concurrency for the image proxy (covers + chapter pages).
+ */
+export interface ImageConcurrencyInfo {
+  /** Persisted user override, or null when the env default applies. */
+  customConcurrency: number | null;
+  /** Startup (`IMAGE_PROXY_CONCURRENCY`) value. */
+  defaultConcurrency: number;
+  /** Effective value (custom override while set, else default). */
+  concurrency: number;
+  /** Settable range bounds. */
+  min: number;
+  max: number;
 }
 
 /**

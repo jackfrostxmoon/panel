@@ -39,6 +39,7 @@ import {
   type ShortcutCategory,
 } from './shortcuts';
 import { api } from '../api/client';
+import { useImageConcurrency, useSetImageConcurrency } from '../api/hooks';
 import {
   READER_STYLE_MAX_NAME,
   clearLegacyLocalPresets,
@@ -99,6 +100,31 @@ export function ReaderSettingsPanel({
   /** True while a style list is being written to the server JSON file. */
   const [persisting, setPersisting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Server-side image-proxy concurrency (see `useImageConcurrency`).
+   * Refresh on open so the presets reflect the live value; the pending
+   * mutation value wins while a save is in flight so the control flips
+   * instantly instead of waiting for the round-trip.
+   */
+  const concurrencyQuery = useImageConcurrency();
+  const saveConcurrency = useSetImageConcurrency();
+  const { refetch: refetchConcurrency } = concurrencyQuery;
+  useEffect(() => {
+    if (open) void refetchConcurrency();
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [open ]);
+  const pendingConcurrency = saveConcurrency.isPending ? saveConcurrency.variables : undefined;
+  const concurrencyInfo = concurrencyQuery.data;
+  const displayConcurrency =
+    pendingConcurrency !== undefined
+      ? (pendingConcurrency ?? concurrencyInfo?.defaultConcurrency ?? 6)
+      : (concurrencyInfo?.concurrency ?? 6);
+  const concurrencyMin = concurrencyInfo?.min ?? 1;
+  const concurrencyMax = concurrencyInfo?.max ?? 32;
+  const concurrencyError =
+    saveConcurrency.error?.message ??
+    (concurrencyQuery.isError ? 'Could not reach the server.' : null);
 
   useEffect(() => {
     if (!open) return;
@@ -678,6 +704,51 @@ export function ReaderSettingsPanel({
               </div>
             </SettingGroup>
           )}
+
+          <SettingGroup
+            id="rs-downloadConcurrency"
+            title="Download concurrency"
+            hint="How many images the server fetches from the source at once. Higher warms All at once chapters faster but spikes memory and can trip source rate limits. Applies server-wide immediately and survives restarts."
+          >
+            <Segmented<string>
+              labelledBy="rs-downloadConcurrency"
+              options={[
+                { value: '6', label: '6' },
+                { value: '10', label: '10' },
+                { value: '12', label: '12' },
+                { value: '16', label: '16' },
+              ]}
+              value={String(displayConcurrency)}
+              onChange={(value) => saveConcurrency.mutate(Number(value))}
+            />
+            <div className="reader-settings__size-row">
+              <NumberField
+                label="Custom"
+                value={displayConcurrency}
+                min={concurrencyMin}
+                max={concurrencyMax}
+                step={1}
+                unit="fetches"
+                onChange={(concurrency) => {
+                  if (concurrency !== null) saveConcurrency.mutate(concurrency);
+                }}
+              />
+            </div>
+            {concurrencyInfo?.customConcurrency != null && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => saveConcurrency.mutate(null)}
+              >
+                Reset to server default ({concurrencyInfo.defaultConcurrency})
+              </button>
+            )}
+            {concurrencyError && (
+              <p className="reader-settings__sub-hint" role="alert">
+                {concurrencyError}
+              </p>
+            )}
+          </SettingGroup>
 
           <SettingGroup
             id="rs-direction"

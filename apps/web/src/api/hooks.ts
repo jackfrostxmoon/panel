@@ -41,6 +41,7 @@ import {
   type ChapterDiskState,
   type DetailedSourceHealth,
   type ImageCacheSizeInfo,
+  type ImageConcurrencyInfo,
   type ImageCacheKindInfo,
   type ImageCacheClearResult,
   type ImageCacheLimitInfo,
@@ -86,6 +87,8 @@ export const queryKeys = {
   imageCacheStats: () => ['imageCache', 'stats'] as const,
   /** Custom size-limit override for the on-disk image cache. */
   imageCacheLimit: () => ['imageCache', 'limit'] as const,
+  /** Upstream-fetch concurrency override for the image proxy. */
+  imageConcurrency: () => ['imageCache', 'concurrency'] as const,
   /** Per-panel totals (cover + chapter pages merged) for the "Your panel"
       * rows. The key includes the sorted chapter-tag list as well as the
       * panel-id list: the server only attributes chapter pages to their
@@ -844,6 +847,33 @@ export function useSetImageCacheLimit() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.imageCacheLimit() });
       queryClient.invalidateQueries({ queryKey: queryKeys.imageCacheStats() });
+    },
+  });
+}
+
+/**
+ * Read the upstream-fetch concurrency (effective / persisted-override /
+ * startup-default triple plus bounds).
+ */
+export function useImageConcurrency() {
+  return useQuery<ImageConcurrencyInfo, ApiClientError>({
+    queryKey: queryKeys.imageConcurrency(),
+    queryFn: () => api.getImageConcurrency(),
+    staleTime: 5_000,
+  });
+}
+
+/**
+ * Set (`concurrency`) or clear (`null`, back to the env default) the
+ * upstream-fetch concurrency. Invalidates the concurrency query on success
+ * so the reader panel re-reads immediately.
+ */
+export function useSetImageConcurrency() {
+  const queryClient = useQueryClient();
+  return useMutation<ImageConcurrencyInfo, ApiClientError, number | null>({
+    mutationFn: (concurrency) => api.setImageConcurrency(concurrency),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.imageConcurrency() });
     },
   });
 }
