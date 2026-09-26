@@ -375,12 +375,13 @@ export class MangaKatanaSource implements PanelSource {
     // host-bound token URLs for a different i*.mangakatana.com CDN, and any
     // one CDN can go dark while its HTML still parses fine (verified
     // 2026-09: Server 1 returns 53 page URLs on the TCP-unreachable i1 host
-    // while i6/i7 serve the same pages). So an empty-list check is not
-    // enough — probe the first image URL of each variant and keep the first
-    // variant whose CDN actually answers. The chapter <select> is identical
-    // on all three variants, so prev/next navigation is unaffected by which
-    // variant wins.
-    const serverSuffixes = ['', '?sv=mk', '?sv=3'];
+    // while i6/i7 serve the same pages). Server 1 is also consistently the
+    // slowest, so Server 3 is probed first with fallback to the others.
+    // So an empty-list check is not enough — probe the first image URL of
+    // each variant and keep the first variant whose CDN actually answers.
+    // The chapter <select> is identical on all three variants, so prev/next
+    // navigation is unaffected by which variant wins.
+    const serverSuffixes = ['?sv=3', '?sv=mk', ''];
     let raw: Awaited<ReturnType<typeof parseChapterReaderPage>> | null = null;
     let usedSuffix = '';
     let lastNotFound = false;
@@ -437,7 +438,7 @@ export class MangaKatanaSource implements PanelSource {
       });
       throw SourceError.unavailable(this.name, chapterUrl);
     }
-    if (usedSuffix) {
+    if (usedSuffix && usedSuffix !== '?sv=3') {
       logger.info('Chapter pages served from fallback image server', {
         source: this.name,
         nativeChapterId,
