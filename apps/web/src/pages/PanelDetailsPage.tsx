@@ -17,7 +17,7 @@ import { StarRating } from '../components/StarRating';
 import { TagEditor } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconChevronDown, IconCheck, IconDownload, IconX, IconBookmark } from '../components/icons';
+import { IconChevronDown, IconCheck, IconDownload, IconUndo, IconX, IconBookmark } from '../components/icons';
 import { chapterLabel, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
@@ -506,6 +506,72 @@ const filteredAndSortedChapters = useMemo(() => {
       toast(error instanceof Error ? error.message : 'Could not bookmark chapters.', 'error');
     }
   }, [selectedChapters, addChapterBookmarks, id, toast, exitSelectionMode]);
+
+  /** Hook for the multi-select "Mark read selected" / "Unmark selected" buttons. */
+  const bulkMarkSelected = useBulkMarkChaptersRead();
+  /**
+   * Bulk-mark every currently-selected chapter as read. Reuses the same
+   * `/api/progress/bulk` endpoint as "Mark All Read" (`page: 0`), chunked
+   * by `BULK_CHAPTER_LIMIT`. Clears the selection (stays in select mode)
+   * so the row read-markers update without stale highlights.
+   */
+  const handleMarkSelectedRead = useCallback(async () => {
+    const batch = selectedChapters;
+    if (batch.length === 0) {
+      toast('No chapters selected', 'info');
+      return;
+    }
+    let markedRead = 0;
+    try {
+      for (let i = 0; i < batch.length; i += BULK_CHAPTER_LIMIT) {
+        const result = await bulkMarkSelected.mutateAsync({
+          panelId: id,
+          chapters: batch
+            .slice(i, i + BULK_CHAPTER_LIMIT)
+            .map((ch) => ({ chapterId: ch.id, page: 0 })),
+        });
+        markedRead += result.markedRead;
+      }
+      toast(
+        `Marked ${markedRead} chapter${markedRead === 1 ? '' : 's'} read.`,
+        'success',
+      );
+      handleClearSelection();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not mark chapters read.', 'error');
+    }
+  }, [selectedChapters, bulkMarkSelected, id, toast, handleClearSelection]);
+
+  /**
+   * Bulk-unmark every currently-selected chapter (`page: null`), the
+   * counterpart to `handleMarkSelectedRead` and "Unmark All".
+   */
+  const handleMarkSelectedUnread = useCallback(async () => {
+    const batch = selectedChapters;
+    if (batch.length === 0) {
+      toast('No chapters selected', 'info');
+      return;
+    }
+    let markedUnread = 0;
+    try {
+      for (let i = 0; i < batch.length; i += BULK_CHAPTER_LIMIT) {
+        const result = await bulkMarkSelected.mutateAsync({
+          panelId: id,
+          chapters: batch
+            .slice(i, i + BULK_CHAPTER_LIMIT)
+            .map((ch) => ({ chapterId: ch.id, page: null })),
+        });
+        markedUnread += result.markedUnread;
+      }
+      toast(
+        `Unmarked ${markedUnread} chapter${markedUnread === 1 ? '' : 's'}.`,
+        'success',
+      );
+      handleClearSelection();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not unmark chapters.', 'error');
+    }
+  }, [selectedChapters, bulkMarkSelected, id, toast, handleClearSelection]);
 
   /**
    * Per-chapter action from the long-press context menu. Owns the single-
@@ -1327,8 +1393,11 @@ const filteredAndSortedChapters = useMemo(() => {
               onClearSelection={handleClearSelection}
               onBookmarkSelected={handleBookmarkSelected}
               onDownloadSelected={handleDownloadSelected}
+              onMarkSelectedRead={handleMarkSelectedRead}
+              onMarkSelectedUnread={handleMarkSelectedUnread}
               isDownloading={downloader.isDownloading}
               isBookmarking={addChapterBookmarks.isPending}
+              isMarking={bulkMarkSelected.isPending}
             />
           </div>
         )}
@@ -1428,8 +1497,11 @@ function ChapterSelectActions({
   onClearSelection,
   onBookmarkSelected,
   onDownloadSelected,
+  onMarkSelectedRead,
+  onMarkSelectedUnread,
   isDownloading,
   isBookmarking,
+  isMarking,
 }: {
   chapters: Chapter[];
   selectionMode: boolean;
@@ -1439,14 +1511,17 @@ function ChapterSelectActions({
   onClearSelection: () => void;
   onBookmarkSelected: () => void;
   onDownloadSelected: () => void;
+  onMarkSelectedRead: () => void;
+  onMarkSelectedUnread: () => void;
   isDownloading: boolean;
   isBookmarking: boolean;
+  isMarking: boolean;
 }) {
   if (!selectionMode) return null;
 
   const allSelected = chapters.length > 0 && selectedCount === chapters.length;
   const noSelection = selectedCount === 0;
-  const busy = isDownloading || isBookmarking;
+  const busy = isDownloading || isBookmarking || isMarking;
 
   return (
     <div
@@ -1490,6 +1565,46 @@ function ChapterSelectActions({
           <IconBookmark size={14} />
         </span>
         Bookmark selected ({selectedCount})
+      </button>
+
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={onMarkSelectedRead}
+        disabled={noSelection || busy}
+        aria-label={`Mark ${selectedCount} selected chapter${selectedCount === 1 ? '' : 's'} as read`}
+        title={
+          noSelection
+            ? 'Pick at least one chapter to mark read'
+            : isMarking
+              ? 'Marking in progress'
+              : 'Mark the selected chapters as read'
+        }
+      >
+        <span aria-hidden="true">
+          <IconCheck size={14} />
+        </span>
+        Mark read selected ({selectedCount})
+      </button>
+
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={onMarkSelectedUnread}
+        disabled={noSelection || busy}
+        aria-label={`Unmark ${selectedCount} selected chapter${selectedCount === 1 ? '' : 's'} (clear read state)`}
+        title={
+          noSelection
+            ? 'Pick at least one chapter to unmark'
+            : isMarking
+              ? 'Marking in progress'
+              : 'Clear the read state for the selected chapters'
+        }
+      >
+        <span aria-hidden="true">
+          <IconUndo size={14} />
+        </span>
+        Unmark selected ({selectedCount})
       </button>
 
       <button
