@@ -335,7 +335,7 @@ export function PagedReader({
                 <div className="paged-reader__sheet paged-reader__sheet--left">
                   {leftPage ? (
                     <ReaderImage
-                      key={leftPage.index}
+                      key={`${chapterTag ?? ''}:${leftPage.index}`}
                       page={leftPage}
                       eager
                       zoom={currentZoom}
@@ -349,7 +349,7 @@ export function PagedReader({
                 <div className="paged-reader__seam" aria-hidden="true" />
                 <div className="paged-reader__sheet paged-reader__sheet--right">
                   <ReaderImage
-                    key={rightPage.index}
+                    key={`${chapterTag ?? ''}:${rightPage.index}`}
                     page={rightPage}
                     eager
                     zoom={currentZoom}
@@ -362,7 +362,7 @@ export function PagedReader({
               <>
                 <div className="paged-reader__sheet paged-reader__sheet--left">
                   <ReaderImage
-                    key={rightPage.index}
+                    key={`${chapterTag ?? ''}:${rightPage.index}`}
                     page={rightPage}
                     eager
                     zoom={currentZoom}
@@ -374,7 +374,7 @@ export function PagedReader({
                 <div className="paged-reader__sheet paged-reader__sheet--right">
                   {leftPage ? (
                     <ReaderImage
-                      key={leftPage.index}
+                      key={`${chapterTag ?? ''}:${leftPage.index}`}
                       page={leftPage}
                       eager
                       zoom={currentZoom}
@@ -390,7 +390,7 @@ export function PagedReader({
           </div>
         ) : (
           <ReaderImage
-            key={rightPage.index}
+            key={`${chapterTag ?? ''}:${rightPage.index}`}
             page={rightPage}
             eager
             zoom={currentZoom}

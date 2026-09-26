@@ -119,6 +119,22 @@ const isLoaded = status === 'loaded';
   const wrapRef = useRef<HTMLDivElement>(null);
   const [inRange, setInRange] = useState(false);
 
+  /* Chapter hops (and page swaps) must never paint the previous image while
+     the new one downloads: a reused instance would otherwise keep
+     `status === 'loaded'` and the old `<img>` bitmap until the new `src`
+     fires `onLoad`. Reset to a blank shimmer box on every new page, and
+     re-arm the retry budget for the fresh URL. The chapter-scoped `key`
+     in the readers already forces a remount in the common case — this
+     covers any path where the instance is reused. */
+  useEffect(() => {
+    window.clearTimeout(timerRef.current);
+    setStatus('loading');
+    setAttempt(0);
+    setRetryKey(0);
+    setMeasuredRatio(null);
+    setInRange(false);
+  }, [page.url, page.index, chapterTag]);
+
   useEffect(() => {
     if (eager || inRange) return;
     const el = wrapRef.current;

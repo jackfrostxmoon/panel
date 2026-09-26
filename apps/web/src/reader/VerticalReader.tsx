@@ -218,7 +218,7 @@ export const VerticalReader = forwardRef<
       />
       {pages.map((page, index) => (
         <div
-          key={page.index}
+          key={`${chapterTag ?? ''}:${page.index}`}
           data-page-index={index}
           ref={(el) => {
             pageRefs.current[index] = el;
