@@ -55,6 +55,75 @@ function pingReaderSettingsSync(): void {
 }
 
 /**
+ * Chapter-hop handoff keys. Hops are full document loads, so in-memory refs
+ * can't carry intent across — the destination chapter's landing position
+ * (paged mode) and the abandoned chapter's exact page (vertical/gallery)
+ * are stashed in sessionStorage just before the unload. Tab-scoped, so a
+ * hop never leaks position into another tab.
+ */
+const CHAPTER_LANDING_SESSION_KEY = 'panel-reader:chapter-landing:v1';
+const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v1';
+
+/** Read a string map from sessionStorage (tolerates blocked storage). */
+function readSessionMap(key: string): Map<string, string> {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, string>));
+  } catch {
+    return new Map();
+  }
+}
+
+function writeSessionMap(key: string, map: Map<string, string>): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(Object.fromEntries(map)));
+  } catch {
+    // Storage blocked — the hop still works, just without the landing/memory restore.
+  }
+}
+
+/** Stash a paged-mode directed landing for the destination chapter. */
+function stashChapterLanding(destChapterId: string, landing: 'first' | 'last'): void {
+  const map = readSessionMap(CHAPTER_LANDING_SESSION_KEY);
+  map.set(destChapterId, landing);
+  writeSessionMap(CHAPTER_LANDING_SESSION_KEY, map);
+}
+
+/** Consume (read + delete) a stashed landing for this chapter, if any. */
+function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
+  const map = readSessionMap(CHAPTER_LANDING_SESSION_KEY);
+  const landing = map.get(chapterId);
+  if (landing === 'first' || landing === 'last') {
+    map.delete(chapterId);
+    writeSessionMap(CHAPTER_LANDING_SESSION_KEY, map);
+    return landing;
+  }
+  return null;
+}
+
+/** Remember the current page so a later hop back restores the exact position. */
+function stashPageMemory(chapterId: string, page: number): void {
+  const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
+  map.set(chapterId, String(page));
+  // Bound the memory: a long hopping session must not grow storage unbounded.
+  while (map.size > 100) {
+    const oldest = map.keys().next();
+    if (oldest.done) break;
+    map.delete(oldest.value);
+  }
+  writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
+}
+
+/** Exact page previously left on this chapter via chapter navigation, if any. */
+function readPageMemory(chapterId: string): number | undefined {
+  const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
+  if (raw === undefined) return undefined;
+  const page = Number(raw);
+  return Number.isInteger(page) && page >= 0 ? page : undefined;
+}
+
+/**
  * The reader — orchestrates pages, navigation (keyboard / touch / buttons),
  * chapter transitions, settings, fullscreen and progress persistence.
  */
@@ -145,21 +214,12 @@ export function ReaderPage() {
   const [resumeResolved, setResumeResolved] = useState(false);
   /**
    * Chapter the page/resume state was last reset for. Guards the progress-save
-   * effect below: on a hop to a prefetched (cached) chapter, `chapterPages.data`
-   * already points at the NEW chapter while `page`/`resumeResolved` still hold
-   * the OLD chapter's values (the reset effect's setStates haven't re-rendered
-   * yet). Without this gate the save effect persists the previous chapter's
-   * page against the new chapter id, and the resume banner ("Continue from
-   * page N?") shows the previous chapter's position on a chapter never read.
+   * effect below against a stale payload: never persist a page against a
+   * chapter id it doesn't belong to. The reset effect re-renders with the
+   * correct values right after mount, and the save fires then.
    */
   const [resetChapter, setResetChapter] = useState(chapterId);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** Session-only memory: chapterId -> last page the user was on when leaving that chapter via chapter navigation (exact-page restore in vertical/gallery modes). */
-  const chapterPageMemoryRef = useRef<Map<string, number>>(new Map());
-  /** Paged-mode chapter transitions land on a fixed page: the next chapter opens
-      at its first page, the previous chapter at its last. Keyed by the destination
-      chapter id; consumed by the reset effect on arrival. */
-  const chapterLandingRef = useRef<Map<string, 'first' | 'last'>>(new Map());
   /** A paged backward transition targets the previous chapter's last page, which
       is only known once that chapter's pages arrive — hold the destination id here
       until a parallel effect can jump to the final page. */
@@ -210,16 +270,16 @@ export function ReaderPage() {
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
 
-  /* Reset when switching chapters. The reader scrolls inside .reader-content
-     (not the window), so reset both so a cached chapter never opens mid-way.
-     A paged-mode directed transition chooses the landing position: the next
-     chapter opens at its first page, the previous chapter at its last page.
-     Otherwise, if we have a saved page for this chapter from a previous
-     chapter navigation (vertical/gallery), restore it instead of starting
+  /* Reset on mount. Hops are full document loads, so this runs once per
+     chapter with the landing/page-memory stashed in sessionStorage just
+     before the unload (see `hardHopToChapter`). A paged-mode directed
+     transition chooses the landing position: the next chapter opens at
+     its first page, the previous chapter at its last page. Otherwise, if
+     we have a saved page for this chapter from a previous chapter
+     navigation (vertical/gallery), restore it instead of starting
      from page 0. */
   useEffect(() => {
-    const landing = chapterLandingRef.current.get(chapterId);
-    chapterLandingRef.current.delete(chapterId);
+    const landing = consumeChapterLanding(chapterId);
     if (landing) {
       // Directed paged-mode transition — the position is decided for us, so
       // suppress the resume prompt. The previous chapter's last page needs the
@@ -229,7 +289,7 @@ export function ReaderPage() {
       setResumeResolved(true);
       setPage(0);
     } else {
-      const savedPage = chapterPageMemoryRef.current.get(chapterId);
+      const savedPage = readPageMemory(chapterId);
       setPage(savedPage ?? 0);
       setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
@@ -362,6 +422,27 @@ export function ReaderPage() {
     };
   }, [pages, chapterPages.data?.chapterId, settings.imageLoad, settings.dataSaver]);
 
+  /**
+   * Latest unsent progress payload. The save below fires instantly on page
+   * change — this ref lets the unload flush send the freshest position even
+   * when it never fired. Declared above the navigation callbacks so hops
+   * can flush via beacon before the full reload.
+   */
+  const pendingSaveRef = useRef<SaveProgressInput | null>(null);
+
+  /**
+   * Best-effort flush of the pending progress save. Idempotent (nulls the
+   * ref after sending) so the save effect, `pagehide`, unmount, and chapter
+   * hops can all call it without double-sending. Beacon survives the
+   * document unload of a hard hop.
+   */
+  const flushProgress = useCallback(() => {
+    const payload = pendingSaveRef.current;
+    if (!payload) return;
+    pendingSaveRef.current = null;
+    void api.saveProgressBeacon(payload);
+  }, []);
+
   const goToPage = useCallback(
     (target: number, preset?: GlidePreset) => {
       const clamped = clampPage(target, pageCount);
@@ -373,6 +454,25 @@ export function ReaderPage() {
       setPage(clamped);
     },
     [pageCount, settings.mode, settings.glidePreset],
+  );
+
+  /**
+   * Hop to another chapter via a full document load — always refreshes,
+   * whether the destination is cached or not. Unloading the document aborts
+   * every in-flight image and payload request, so the abandoned chapter
+   * stops caching immediately: hopping from a half-cached chapter back to a
+   * cached one kills the half-cached chapter's pending downloads on the
+   * spot. Progress is flushed via beacon first so the position survives the
+   * unload. Paged-mode directed landings are stashed in sessionStorage
+   * because in-memory refs don't survive the reload.
+   */
+  const hardHopToChapter = useCallback(
+    (id: string, landing?: 'first' | 'last') => {
+      if (landing) stashChapterLanding(id, landing);
+      flushProgress();
+      window.location.assign(`/read/${encodeURIComponent(id)}`);
+    },
+    [flushProgress],
   );
 
   /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
@@ -391,14 +491,14 @@ export function ReaderPage() {
         return;
       }
       if (settings.mode === 'paged') {
-        chapterLandingRef.current.set(id, dir === 'next' ? 'first' : 'last');
+        hardHopToChapter(id, dir === 'next' ? 'first' : 'last');
       } else {
-        // Remember the current page for this chapter so a later backward hop restores it.
-        chapterPageMemoryRef.current.set(chapterId, page);
+        // Remember the current page for this chapter so a later hop back restores it.
+        stashPageMemory(chapterId, page);
+        hardHopToChapter(id);
       }
-      navigate(`/read/${encodeURIComponent(id)}`);
     },
-    [chapterPages.data, chapterId, navigate, page, toast, settings.mode],
+    [chapterPages.data, chapterId, hardHopToChapter, page, toast, settings.mode],
   );
 
   const handleIntent = useCallback(
@@ -427,55 +527,21 @@ export function ReaderPage() {
     [navigateToChapter],
   );
 
-  /* Jump to an arbitrary chapter picked from the settings dropdown. */
+  /* Jump to an arbitrary chapter picked from the settings dropdown (full refresh, like all hops). */
   const goToChapterById = useCallback(
     (id: string) => {
-      if (id && id !== chapterId) navigate(`/read/${encodeURIComponent(id)}`);
+      if (id && id !== chapterId) hardHopToChapter(id);
     },
-    [chapterId, navigate],
+    [chapterId, hardHopToChapter],
   );
 
-  /**
-   * Latest unsent progress payload. The debounced save below only fires
-   * 800ms after the user settles on a page — this ref lets the unload
-   * flush send the freshest position even when the timer never fired.
-   */
-  const pendingSaveRef = useRef<SaveProgressInput | null>(null);
-
-  /**
-   * Best-effort flush of the pending progress save. Idempotent (nulls the
-   * ref after sending) so the debounce cleanup, chapter hops, unmount,
-   * and `pagehide` can all call it without double-sending.
-   */
-  const flushProgress = useCallback(() => {
-    const payload = pendingSaveRef.current;
-    if (!payload) return;
-    pendingSaveRef.current = null;
-    void api.saveProgressBeacon(payload);
-  }, []);
-
-  /* Flush the previous chapter's pending position on chapter hops.
-     Declared BEFORE the save effect so it runs first: a fast hop
-     (< 800ms) would otherwise drop the old chapter's timer without ever
-     sending it. */
-  const saveChapterRef = useRef(chapterId);
-  useEffect(() => {
-    if (saveChapterRef.current !== chapterId) {
-      saveChapterRef.current = chapterId;
-      flushProgress();
-    }
-  });
-
-  /* Persist progress (debounced) once the resume decision was made. The
-     cleanup only clears the timer — exits are covered by the hop flush
-     above, the unmount flush below, and `pagehide`. */
+  /* Persist progress once the resume decision was made. Exits are covered
+     by the explicit hop flush, the unmount flush below, and `pagehide`. */
   useEffect(() => {
     if (!resumeResolved || pageCount === 0 || !chapterPages.data) return;
-    // Skip the transition commit: `page`/`resumeResolved` still belong to the
-    // previous chapter while `chapterPages.data` already points at the new one
-    // (prefetched payload). Saving here would persist the old page against the
-    // new chapter id — see `resetChapter`. The reset effect re-renders with
-    // the correct values right after, and the save fires then.
+    // Guard against a stale payload: never persist a page against a chapter
+    // id it doesn't belong to (see `resetChapter`). The reset effect
+    // re-renders with the correct values right after, and the save fires then.
     if (resetChapter !== chapterPages.data.chapterId) return;
     const data = chapterPages.data;
     pendingSaveRef.current = {
