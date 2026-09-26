@@ -118,8 +118,8 @@ export function ReaderSettingsPanel({
   const concurrencyInfo = concurrencyQuery.data;
   const displayConcurrency =
     pendingConcurrency !== undefined
-      ? (pendingConcurrency ?? concurrencyInfo?.defaultConcurrency ?? 6)
-      : (concurrencyInfo?.concurrency ?? 6);
+      ? (pendingConcurrency ?? concurrencyInfo?.defaultConcurrency ?? 16)
+      : (concurrencyInfo?.concurrency ?? 16);
   const concurrencyMin = concurrencyInfo?.min ?? 1;
   const concurrencyMax = concurrencyInfo?.max ?? 32;
   const concurrencyError =

@@ -109,7 +109,7 @@ const envSchema = z.object({
    * requests wait FIFO; fewer parallel fetches also means fewer source
    * 429s/retries.
    */
-  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(6),
+  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(16),
 
   /**
    * Split response cap for outbound source traffic. Listings are KBs of

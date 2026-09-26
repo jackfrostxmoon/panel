@@ -228,7 +228,7 @@ commit real values).
 | `IMAGE_CACHE_MAX_FRACTION`            | `0.5`                                                | Max fraction of available disk the cache may use (clamped between min/max bytes) |
 | `IMAGE_CACHE_MIN_BYTES`               | `268435456`                                          | Cache cap lower bound (256 MiB)                 |
 | `IMAGE_CACHE_MAX_BYTES`               | `8589934592`                                         | Cache cap upper bound (8 GiB)                   |
-| `IMAGE_PROXY_CONCURRENCY`             | `6`                                                  | Max concurrent upstream image-proxy fetches (disk hits bypass) |
+| `IMAGE_PROXY_CONCURRENCY`             | `16`                                                 | Max concurrent upstream image-proxy fetches (disk hits bypass) |
 
 ## Database & migrations
 

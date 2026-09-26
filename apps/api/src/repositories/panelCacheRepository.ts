@@ -101,16 +101,39 @@ export class PanelCacheRepository {
   }
 
   async upsertChapter(panelRowId: string, data: UpsertChapterData): Promise<ChapterRow> {
+    return this.upsertChapterWith(this.db, panelRowId, data);
+  }
+
+  /**
+   * Bulk chapter persist in ONE transaction (one commit instead of N).
+   * Used by the detail background writer so a 500-chapter list doesn't pay
+   * 1000 sequential round-trips + commits on (or behind) the request path.
+   * Best-effort like the single-row form — callers swallow errors.
+   */
+  async upsertChapters(panelRowId: string, items: readonly UpsertChapterData[]): Promise<void> {
+    if (items.length === 0) return;
+    await this.db.transaction(async (tx) => {
+      for (const data of items) {
+        await this.upsertChapterWith(tx, panelRowId, data);
+      }
+    });
+  }
+
+  private async upsertChapterWith(
+    db: Database | Parameters<Parameters<Database['transaction']>[0]>[0],
+    panelRowId: string,
+    data: UpsertChapterData,
+  ): Promise<ChapterRow> {
     // Resolve by globalId first. Rows written by an older bug may carry a
     // stale sourceId under this globalId; updating them here corrects that
     // and avoids tripping the unique index on insert.
-    const [byGlobalId] = await this.db
+    const [byGlobalId] = await db
       .select()
       .from(chapters)
       .where(eq(chapters.globalId, data.globalId))
       .limit(1);
     if (byGlobalId) {
-      const [row] = await this.db
+      const [row] = await db
         .update(chapters)
         .set({
           sourceId: data.sourceId,
@@ -125,7 +148,7 @@ export class PanelCacheRepository {
       return row;
     }
 
-    const [row] = await this.db
+    const [row] = await db
       .insert(chapters)
       .values({
         panelId: panelRowId,

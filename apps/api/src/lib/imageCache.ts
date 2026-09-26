@@ -65,7 +65,7 @@ export interface ImageCacheDeps {
    * Max concurrent UPSTREAM image fetches (disk hits bypass the limiter).
    * Cover grids fire dozens of requests at once and each miss buffers a
    * whole image in heap — unbounded concurrency is the transient memory
-   * spike. Queued requests wait FIFO. Defaults to 6.
+   * spike. Queued requests wait FIFO. Defaults to 16.
    */
   maxUpstreamConcurrency?: number;
   resolveFolder?: ImageFolderResolver;
@@ -222,7 +222,7 @@ export class ImageCache {
   private readonly settingsPath: string;
 
   constructor(private readonly deps: ImageCacheDeps) {
-    this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 6));
+    this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 16));
     this.settingsPath =
       deps.settingsPath ?? join(dirname(deps.dir), '.imagecache-settings.json');
     this.customUpstreamConcurrency = this.loadCustomConcurrency();

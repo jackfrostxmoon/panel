@@ -299,6 +299,15 @@ export class PanelService {
   getPanel(globalId: string): Promise<Panel> {
     return this.cached(`panel:${globalId}`, this.cacheConfig.panelMs, async () => {
       const { source, nativeId } = this.registry.forGlobalId(globalId);
+      // Fast path: serve the DB row immediately (no source round-trip on
+      // the critical path), then refresh from live in the background so
+      // the next visit sees fresh metadata.
+      const stored = await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined);
+      const fast = toApiPanel(stored);
+      if (fast) {
+        void this.refreshPanel(globalId).catch(() => {});
+        return fast;
+      }
       const panel = await this.withOfflineFallback(
         async () => toApiPanel(await this.panelCache.findPanelByGlobalId(globalId)),
         () => source.getPanel(nativeId),
@@ -335,10 +344,43 @@ export class PanelService {
     });
   }
 
+  /** Live revalidation for the panel fast path — never awaited by requests. */
+  private async refreshPanel(globalId: string): Promise<void> {
+    const { source, nativeId } = this.registry.forGlobalId(globalId);
+    const panel = await source.getPanel(nativeId);
+    const cleanedPanel = {
+      ...panel,
+      genres: panel.genres.map((g) => cleanGenreLabel(g)).filter(Boolean),
+    };
+    this.cache.set(`panel:${globalId}`, cleanedPanel, this.cacheConfig.panelMs);
+    await this.panelCache
+      .upsertPanel({
+        source: cleanedPanel.source,
+        sourceId: nativeId,
+        globalId,
+        title: cleanedPanel.title,
+        altTitles: cleanedPanel.altTitles,
+        description: cleanedPanel.description,
+        authors: cleanedPanel.authors,
+        artists: cleanedPanel.artists,
+        genres: cleanedPanel.genres,
+        status: cleanedPanel.status,
+        coverUrl: cleanedPanel.coverUrl,
+        sourceUrl: cleanedPanel.sourceUrl,
+      })
+      .catch(() => {});
+  }
+
   getChapters(globalId: string): Promise<Chapter[]> {
     return this.cached(`chapters:${globalId}`, this.cacheConfig.chaptersMs, async () => {
       const { source, nativeId } = this.registry.forGlobalId(globalId);
-      const panelRow = await this.panelCache.findPanelByGlobalId(globalId);
+      // Fast path: serve cached chapter rows immediately, refresh live behind.
+      const stored = await this.panelCache.findChaptersByPanel(globalId).catch(() => undefined);
+      if (stored && stored.rows.length > 0) {
+        void this.refreshChapters(globalId).catch(() => {});
+        return toApiChapters(stored.rows);
+      }
+      const panelRow = stored?.panelRow ?? (await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined));
       const chapters = await this.withOfflineFallback(
         async () => {
           const cached = await this.panelCache.findChaptersByPanel(globalId);
@@ -357,45 +399,75 @@ export class PanelService {
             { cause: cause instanceof Error ? cause.message : String(cause) },
           ),
       );
-      // Persist in background so detail loads stay fast even while cache clears run —
-      // writes do not block the response.
+      // Persist in background in ONE transaction so detail loads stay fast
+      // even while cache clears run — writes do not block the response.
       if (panelRow) {
-        void (async () => {
-          for (let i = 0; i < chapters.length; i += 8) {
-            await Promise.allSettled(
-              chapters.slice(i, i + 8).map((c) => {
-                // The chapters table is unique on (source, source_id) — the id
-                // must be the CHAPTER's native id ("slug~token"), not the panel's.
-                // Using the panel id collapsed every chapter onto one row.
-                const parsed = parseGlobalId(c.id);
-                return this.panelCache
-                  .upsertChapter(panelRow.id, {
-                    source: c.source,
-                    sourceId: parsed?.nativeId ?? nativeId,
-                    globalId: c.id,
-                    title: c.title,
-                    chapterNumber: c.chapterNumber,
-                    sourceUrl: c.sourceUrl,
-                    publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
-                  })
-                  .catch(() => {
-                    /* persistence is best-effort */
-                  });
-              }),
-            );
-          }
-        })();
+        void this.panelCache
+          .upsertChapters(
+            panelRow.id,
+            chapters.map((c) => {
+              // The chapters table is unique on (source, source_id) — the id
+              // must be the CHAPTER's native id ("slug~token"), not the panel's.
+              // Using the panel id collapsed every chapter onto one row.
+              const parsed = parseGlobalId(c.id);
+              return {
+                source: c.source,
+                sourceId: parsed?.nativeId ?? nativeId,
+                globalId: c.id,
+                title: c.title,
+                chapterNumber: c.chapterNumber,
+                sourceUrl: c.sourceUrl,
+                publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
+              };
+            }),
+          )
+          .catch(() => {});
       }
       return chapters;
     });
   }
 
+  /** Live revalidation for the chapters fast path — never awaited by requests. */
+  private async refreshChapters(globalId: string): Promise<void> {
+    const { source, nativeId } = this.registry.forGlobalId(globalId);
+    const chapters = await source.getChapters(nativeId);
+    this.cache.set(`chapters:${globalId}`, chapters, this.cacheConfig.chaptersMs);
+    const panelRow = await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined);
+    if (!panelRow) return;
+    await this.panelCache
+      .upsertChapters(
+        panelRow.id,
+        chapters.map((c) => {
+          const parsed = parseGlobalId(c.id);
+          return {
+            source: c.source,
+            sourceId: parsed?.nativeId ?? nativeId,
+            globalId: c.id,
+            title: c.title,
+            chapterNumber: c.chapterNumber,
+            sourceUrl: c.sourceUrl,
+            publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
+          };
+        }),
+      )
+      .catch(() => {});
+  }
+
   getChapterPages(globalChapterId: string): Promise<ChapterPages> {
     return this.cached(`pages:${globalChapterId}`, this.cacheConfig.pagesMs, async () => {
       const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
+      // Fast path: previously-read chapter pages render instantly from DB,
+      // with live revalidation behind for URL rotations.
+      const storedPages = await this.panelCache
+        .findChapterPagesByChapterGlobalId(globalChapterId)
+        .catch(() => undefined);
+      if (storedPages) {
+        void this.refreshChapterPages(globalChapterId).catch(() => {});
+        return toApiChapterPages(storedPages, globalChapterId);
+      }
       const panelGlobalId = globalChapterId.slice(0, globalChapterId.lastIndexOf('~'));
       const panelRow = panelGlobalId
-        ? await this.panelCache.findPanelByGlobalId(panelGlobalId)
+        ? await this.panelCache.findPanelByGlobalId(panelGlobalId).catch(() => undefined)
         : undefined;
       const pages = await this.withOfflineFallback(
         async () => {
@@ -414,38 +486,64 @@ export class PanelService {
       );
       // Persist so a later offline visit renders the same pages. The
       // chapter row must exist first — chapter_pages FKs to it.
+      // Background: the reader must not wait on DB writes.
       if (panelRow) {
-        await this.panelCache
-          .upsertChapter(panelRow.id, {
-            source: source.name,
-            sourceId: nativeId,
-            globalId: globalChapterId,
-            title: pages.chapterTitle ?? '',
-            sourceUrl: '',
-          })
-          .catch(() => {
-            /* persistence is best-effort */
-          });
-        const chapterRow = await this.panelCache.findChapterByGlobalId(globalChapterId);
-        if (chapterRow) {
-          await this.panelCache
-            .upsertChapterPages(
-              chapterRow.id,
-              panelRow.id,
-              pages.pages,
-              pages.coverUrl,
-              pages.panelTitle,
-              pages.chapterTitle,
-              pages.prevChapterId,
-              pages.nextChapterId,
-            )
-            .catch(() => {
-              /* persistence is best-effort */
-            });
-        }
+        void this.persistChapterPages(panelRow.id, source.name, nativeId, globalChapterId, pages).catch(
+          () => {},
+        );
       }
       return pages;
     });
+  }
+
+  /** Live revalidation for the pages fast path — never awaited by requests. */
+  private async refreshChapterPages(globalChapterId: string): Promise<void> {
+    const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
+    const pages = await source.getChapterPages(nativeId);
+    this.cache.set(`pages:${globalChapterId}`, pages, this.cacheConfig.pagesMs);
+    const panelGlobalId = globalChapterId.slice(0, globalChapterId.lastIndexOf('~'));
+    const panelRow = panelGlobalId
+      ? await this.panelCache.findPanelByGlobalId(panelGlobalId).catch(() => undefined)
+      : undefined;
+    if (!panelRow) return;
+    await this.persistChapterPages(panelRow.id, source.name, nativeId, globalChapterId, pages);
+  }
+
+  private async persistChapterPages(
+    panelRowId: string,
+    sourceName: string,
+    nativeId: string,
+    globalChapterId: string,
+    pages: ChapterPages,
+  ): Promise<void> {
+    await this.panelCache
+      .upsertChapter(panelRowId, {
+        source: sourceName,
+        sourceId: nativeId,
+        globalId: globalChapterId,
+        title: pages.chapterTitle ?? '',
+        sourceUrl: '',
+      })
+      .catch(() => {
+        /* persistence is best-effort */
+      });
+    const chapterRow = await this.panelCache.findChapterByGlobalId(globalChapterId);
+    if (chapterRow) {
+      await this.panelCache
+        .upsertChapterPages(
+          chapterRow.id,
+          panelRowId,
+          pages.pages,
+          pages.coverUrl,
+          pages.panelTitle,
+          pages.chapterTitle,
+          pages.prevChapterId,
+          pages.nextChapterId,
+        )
+        .catch(() => {
+          /* persistence is best-effort */
+        });
+    }
   }
 
   /**
