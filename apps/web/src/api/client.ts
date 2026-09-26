@@ -422,6 +422,18 @@ export const api = {
     ),
 
   /**
+   * Live fault check across sources. Probes each enabled source with a
+   * direct `latest(1)` (bypassing the server's listing cache) and reports
+   * per-source latency / item count / error. `source` restricts the run
+   * to one source (per-row retry). Manual trigger only — never polled.
+   */
+  benchmarkSources: (source?: string) =>
+    request<{ checkedAt: string; results: SourceBenchmarkResult[] }>(
+      `/api/health/benchmark${source ? `?source=${encodeURIComponent(source)}` : ''}`,
+      { method: 'POST' },
+    ),
+
+  /**
    * Purge the on-disk cache of proxied images. `what` selects covers,
    * chapter images, or both. Returns how many bytes were freed.
    */
@@ -821,8 +833,25 @@ export interface ImageConcurrencyInfo {
 }
 
 /**
+ * One row of the live source benchmark (`POST /api/health/benchmark`).
+ * Mirrors `SourceBenchmarkResult` in `apps/api/src/routes/health.ts`.
+ */
+export interface SourceBenchmarkResult {
+  name: string;
+  label: string;
+  baseUrl: string;
+  enabled: boolean;
+  ok: boolean;
+  latencyMs: number | null;
+  items: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  checkedAt: string;
+}
+
+/**
  * One entry of the per-source list in `/api/health/detailed`. The image
- * counters are rolling-window signals for the source-health banner.
+ * counters are rolling-window signals surfaced on the Sources page.
  */
 export interface DetailedSourceHealth {
   name: string;

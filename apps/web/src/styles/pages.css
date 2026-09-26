@@ -3881,6 +3881,14 @@
   transform: translateY(0);
 }
 
+.home-hero__cache-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
 /* The unused collapse/toast styles from the previous design are kept here as
    dead code-pending removal; they no longer have any JSX counterpart on the
    home page but are harmless if reintroduced. */
@@ -5074,4 +5082,94 @@ details[open] > .cache-settings__tags-summary::before {
   color: var(--text);
   font-variant-numeric: tabular-nums;
   font-size: var(--font-size-md);
+}
+
+/* --- Sources page ----------------------------------------------------------- */
+
+.sources-page__error {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+}
+
+.sources-page__checked {
+  margin: 0 0 var(--space-4);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+}
+
+.sources-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sources-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.sources-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sources-row__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sources-row__code {
+  color: var(--text-faint);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sources-row__url {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.sources-row__meta {
+  margin: var(--space-2) 0 0;
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+}
+
+.sources-row__meta--down {
+  color: var(--danger);
+}
+
+.sources-row__actions {
+  margin-top: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Benchmark outcome pills — extend the shared .status-pill base. */
+.status-pill--up {
+  color: var(--success);
+  background: rgba(70, 167, 88, 0.12);
+  border-color: rgba(70, 167, 88, 0.2);
+}
+
+.status-pill--down {
+  color: var(--danger);
+  background: rgba(229, 72, 77, 0.12);
+  border-color: rgba(229, 72, 77, 0.25);
 }

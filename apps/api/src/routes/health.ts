@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { sql } from 'drizzle-orm';
 import { networkInterfaces } from 'node:os';
 import { createSocket } from 'node:dgram';
-import { ok } from '@panel/shared';
+import { ErrorCodes, ok, type ApiErrorCode, type PanelSource } from '@panel/shared';
 import type { Database } from '../db/client.js';
 import type { ImageCache } from '../lib/imageCache.js';
 import { getVersionInfo } from '../lib/version.js';
@@ -11,6 +11,7 @@ import {
   runtimeStats,
   sourceStatSnapshot,
 } from '../lib/stats.js';
+import { AppError } from '../lib/errors.js';
 import type { SourceRegistry } from '../sources/registry.js';
 
 interface SourceStatWithMeta {
@@ -33,6 +34,94 @@ interface SourceStatWithMeta {
   imageLastFailureAt: string | null;
 }
 
+/** One row of the live source benchmark (`POST /api/health/benchmark`). */
+export interface SourceBenchmarkResult {
+  name: string;
+  label: string;
+  baseUrl: string;
+  enabled: boolean;
+  /** True when the live `latest(1)` probe returned. Disabled sources are `ok: false`. */
+  ok: boolean;
+  /** Wall-clock ms for the probe, or null when it never ran (disabled). */
+  latencyMs: number | null;
+  /** Items on the probed latest page, or null when the probe failed. */
+  items: number | null;
+  errorCode: ApiErrorCode | null;
+  errorMessage: string | null;
+  checkedAt: string;
+}
+
+/**
+ * Upper bound for one source's live probe. Adapters already enforce their
+ * own request timeout + retries; this race guard only caps the tail so one
+ * hung source can't hold the whole benchmark open.
+ */
+const BENCHMARK_TIMEOUT_MS = 20_000;
+
+function benchmarkTimeout(name: string): Promise<never> {
+  return new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => {
+      clearTimeout(timer);
+      reject(
+        new AppError(
+          ErrorCodes.SOURCE_TIMEOUT,
+          `The benchmark for "${name}" timed out after ${BENCHMARK_TIMEOUT_MS / 1000}s.`,
+        ),
+      );
+    }, BENCHMARK_TIMEOUT_MS);
+  });
+}
+
+/**
+ * Live fault check for one source: a direct `latest(1)` on the adapter,
+ * deliberately bypassing the PanelService TTL cache so a cached listing
+ * can't mask a down source.
+ */
+async function benchmarkOne(source: PanelSource): Promise<SourceBenchmarkResult> {
+  const checkedAt = new Date().toISOString();
+  const base = {
+    name: source.name,
+    label: source.label,
+    baseUrl: source.baseUrl,
+    enabled: source.enabled,
+    checkedAt,
+  };
+  if (!source.enabled) {
+    return {
+      ...base,
+      ok: false,
+      latencyMs: null,
+      items: null,
+      errorCode: ErrorCodes.SOURCE_DISABLED,
+      errorMessage: 'Source is disabled.',
+    };
+  }
+  const startedAt = Date.now();
+  try {
+    const result = await Promise.race([source.latest(1), benchmarkTimeout(source.name)]);
+    return {
+      ...base,
+      ok: true,
+      latencyMs: Date.now() - startedAt,
+      items: result.results.length,
+      errorCode: null,
+      errorMessage: null,
+    };
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    if (error instanceof AppError) {
+      return { ...base, ok: false, latencyMs, items: null, errorCode: error.code, errorMessage: error.message };
+    }
+    return {
+      ...base,
+      ok: false,
+      latencyMs,
+      items: null,
+      errorCode: ErrorCodes.INTERNAL_ERROR,
+      errorMessage: error instanceof Error ? error.message : 'Benchmark failed.',
+    };
+  }
+}
 /** The local IPv4 address the OS would actually use to reach the internet —
     i.e. the real LAN adapter (Wi-Fi/Ethernet), not virtual ones. Works by
     opening a UDP socket towards a public address (no packets are sent; UDP
@@ -211,6 +300,30 @@ export function healthRoutes(
       }),
       database === 'up' ? 200 : 503,
     );
+  });
+
+  // POST /api/health/benchmark?source=mk — live fault check across sources.
+  // Probes each enabled source with a direct `latest(1)` on the adapter
+  // (bypassing the PanelService TTL cache so a warm listing can't mask a
+  // down source) and reports per-source latency / item count / error.
+  // `?source=` restricts the run to one source (per-row retry); unknown
+  // codes are a client error. Manual trigger only — never polled.
+  app.post('/health/benchmark', async (c) => {
+    const raw = c.req.query('source')?.trim() ?? '';
+    let targets = registry.list();
+    if (raw) {
+      const known = new Set(targets.map((s) => s.name));
+      if (!known.has(raw)) {
+        throw new AppError(
+          ErrorCodes.VALIDATION_ERROR,
+          `Unknown source: ${raw}. Known sources: ${[...known].join(', ')}.`,
+          { sources: [raw] },
+        );
+      }
+      targets = targets.filter((s) => s.name === raw);
+    }
+    const results = await Promise.all(targets.map((s) => benchmarkOne(s)));
+    return c.json(ok({ checkedAt: new Date().toISOString(), results }));
   });
 
   return app;

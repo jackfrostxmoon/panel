@@ -27,6 +27,9 @@ const ReaderPage = lazy(() =>
 const CacheSettingsPage = lazy(() =>
   import('./pages/CacheSettingsPage').then((m) => ({ default: m.CacheSettingsPage })),
 );
+const SourcesPage = lazy(() =>
+  import('./pages/SourcesPage').then((m) => ({ default: m.SourcesPage })),
+);
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -123,6 +126,14 @@ function AppContent() {
             element={
               <Suspense fallback={null}>
                 <CacheSettingsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="sources"
+            element={
+              <Suspense fallback={null}>
+                <SourcesPage />
               </Suspense>
             }
           />

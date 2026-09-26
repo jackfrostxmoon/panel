@@ -452,10 +452,16 @@ export function HomePage() {
                 />
               </div>
             )}
-            <Link to="/settings/cache" className="home-hero__cache-manage">
-              Open cache settings
-              <IconArrowRight size={14} aria-hidden="true" />
-            </Link>
+            <div className="home-hero__cache-links">
+              <Link to="/settings/cache" className="home-hero__cache-manage">
+                Open cache settings
+                <IconArrowRight size={14} aria-hidden="true" />
+              </Link>
+              <Link to="/sources" className="home-hero__cache-manage">
+                Check source status
+                <IconArrowRight size={14} aria-hidden="true" />
+              </Link>
+            </div>
           </div>
         </div>
       </section>

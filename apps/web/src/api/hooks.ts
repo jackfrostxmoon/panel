@@ -40,6 +40,7 @@ import {
   type ApiClientError,
   type ChapterDiskState,
   type DetailedSourceHealth,
+  type SourceBenchmarkResult,
   type ImageCacheSizeInfo,
   type ImageConcurrencyInfo,
   type ImageCacheKindInfo,
@@ -157,9 +158,9 @@ export function useLatest(
 }
 
 /**
- * Source-health telemetry for the banner (`/api/health/detailed`).
- * Best-effort diagnostics: polled in the background, never retries (a
- * down API must not spin), and failures are ignored by the UI.
+ * Source-health telemetry (`/api/health/detailed`). Best-effort
+ * diagnostics: polled in the background, never retries (a down API must
+ * not spin), and failures are ignored by the UI. Backs the Sources page.
  */
 export function useSourceImageHealth(opts?: QueryOpts<{ status: string; sources: DetailedSourceHealth[] }>) {
   return useQuery<{ status: string; sources: DetailedSourceHealth[] }, ApiClientError>({
@@ -169,6 +170,18 @@ export function useSourceImageHealth(opts?: QueryOpts<{ status: string; sources:
     refetchInterval: 60_000,
     retry: false,
     ...opts,
+  });
+}
+
+/**
+ * Live per-source fault check (`POST /api/health/benchmark`). Manual
+ * trigger only — the probe hits every enabled source's live listing, so
+ * it must never poll in the background.
+ */
+export function useBenchmarkSources() {
+  return useMutation<{ checkedAt: string; results: SourceBenchmarkResult[] }, ApiClientError, string | undefined>({
+    mutationFn: (source) => api.benchmarkSources(source),
+    retry: false,
   });
 }
 
