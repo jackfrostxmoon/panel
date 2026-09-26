@@ -2567,7 +2567,29 @@ input::placeholder {
 
 .source-health-banner__text {
   margin: 0;
+  flex: 1;
   color: var(--text-soft);
   font-size: var(--font-size-sm);
+}
+
+.source-health-banner__dismiss {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.source-health-banner__dismiss:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 

@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useSourceImageHealth } from '../api/hooks';
 import { sourceLabel } from '../utils/format';
-import { IconAlert } from './icons';
+import { IconAlert, IconX } from './icons';
 
 /**
  * Minimum recent image errors (without an allowlist block) before calling
@@ -20,6 +21,7 @@ const ERROR_THRESHOLD = 3;
  */
 export function SourceHealthBanner() {
   const health = useSourceImageHealth();
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   if (!health.data) return null;
 
   const moved = health.data.sources.filter((s) => s.enabled && s.imageBlocked > 0);
@@ -27,6 +29,14 @@ export function SourceHealthBanner() {
     (s) => s.enabled && s.imageBlocked === 0 && s.imageErrors >= ERROR_THRESHOLD,
   );
   if (moved.length === 0 && failing.length === 0) return null;
+
+  // Session-only dismissal: hidden until the failing source set changes
+  // (or the page reloads). A new key — new/different sick sources — re-shows it.
+  const dismissKey = [
+    ...moved.map((s) => `blocked:${s.name}`),
+    ...failing.map((s) => `errors:${s.name}`),
+  ].join('|');
+  if (dismissedKey === dismissKey) return null;
 
   const parts: string[] = [];
   if (moved.length > 0) {
@@ -44,6 +54,15 @@ export function SourceHealthBanner() {
         <IconAlert size={16} />
       </span>
       <p className="source-health-banner__text">{parts.join(' ')}</p>
+      <button
+        type="button"
+        className="source-health-banner__dismiss"
+        aria-label="Dismiss source health warning"
+        title="Dismiss"
+        onClick={() => setDismissedKey(dismissKey)}
+      >
+        <IconX size={16} />
+      </button>
     </div>
   );
 }
