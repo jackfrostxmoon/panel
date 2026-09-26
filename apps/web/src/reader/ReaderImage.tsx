@@ -178,9 +178,25 @@ const isLoaded = status === 'loaded';
   return (
     <div ref={wrapRef} className="reader-image" style={style}>
       {status === 'error' ? (
-        <div className="reader-image__error" role="alert">
+        /* Swallow clicks: tapping the error box must do nothing (no chapter
+           hop, no page turn). The readers navigate on container clicks and
+           their tap zones sit under this box — without this, a tap on the
+           error background bubbles up and changes chapters. The Reload
+           button stops propagation explicitly below so it always retries. */
+        <div
+          className="reader-image__error"
+          role="alert"
+          onClick={(event) => event.stopPropagation()}
+        >
           <p>Page {page.index + 1} failed to load.</p>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={reload}>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={(event) => {
+              event.stopPropagation();
+              reload();
+            }}
+          >
             Reload
           </button>
         </div>

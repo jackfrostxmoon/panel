@@ -352,6 +352,11 @@
   color: inherit;
   min-height: 240px;
   justify-content: center;
+  /* Sit above the chapter-hop tap zones (z-index 5) so the Reload button
+     stays tappable on touch — otherwise the invisible zone overlay swallows
+     the tap and hops chapters instead of retrying. */
+  position: relative;
+  z-index: 6;
 }
 
 /* Paged mode */
