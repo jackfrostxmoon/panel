@@ -313,8 +313,9 @@ export class PanelService {
         ...panel,
         genres: panel.genres.map((g) => cleanGenreLabel(g)).filter(Boolean),
       };
-      // Persist so a later offline visit can still load it.
-      await this.panelCache
+      // Persist so a later offline visit can still load it — best-effort/offline,
+      // fire-and-forget so the HTTP response does not wait for the DB write.
+      void this.panelCache
         .upsertPanel({
           source: cleanedPanel.source,
           sourceId: nativeId,
@@ -329,9 +330,7 @@ export class PanelService {
           coverUrl: cleanedPanel.coverUrl,
           sourceUrl: cleanedPanel.sourceUrl,
         })
-        .catch(() => {
-          /* persistence is best-effort */
-        });
+        .catch(() => {});
       return cleanedPanel;
     });
   }
@@ -358,27 +357,34 @@ export class PanelService {
             { cause: cause instanceof Error ? cause.message : String(cause) },
           ),
       );
-      // Persist so a later offline visit can still load them.
+      // Persist in background so detail loads stay fast even while cache clears run —
+      // writes do not block the response.
       if (panelRow) {
-        for (const c of chapters) {
-          // The chapters table is unique on (source, source_id) — the id
-          // must be the CHAPTER's native id ("slug~token"), not the panel's.
-          // Using the panel id collapsed every chapter onto one row.
-          const parsed = parseGlobalId(c.id);
-          await this.panelCache
-            .upsertChapter(panelRow.id, {
-              source: c.source,
-              sourceId: parsed?.nativeId ?? nativeId,
-              globalId: c.id,
-              title: c.title,
-              chapterNumber: c.chapterNumber,
-              sourceUrl: c.sourceUrl,
-              publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
-            })
-            .catch(() => {
-              /* persistence is best-effort */
-            });
-        }
+        void (async () => {
+          for (let i = 0; i < chapters.length; i += 8) {
+            await Promise.allSettled(
+              chapters.slice(i, i + 8).map((c) => {
+                // The chapters table is unique on (source, source_id) — the id
+                // must be the CHAPTER's native id ("slug~token"), not the panel's.
+                // Using the panel id collapsed every chapter onto one row.
+                const parsed = parseGlobalId(c.id);
+                return this.panelCache
+                  .upsertChapter(panelRow.id, {
+                    source: c.source,
+                    sourceId: parsed?.nativeId ?? nativeId,
+                    globalId: c.id,
+                    title: c.title,
+                    chapterNumber: c.chapterNumber,
+                    sourceUrl: c.sourceUrl,
+                    publishedAt: c.publishedAt ? new Date(c.publishedAt) : null,
+                  })
+                  .catch(() => {
+                    /* persistence is best-effort */
+                  });
+              }),
+            );
+          }
+        })();
       }
       return chapters;
     });

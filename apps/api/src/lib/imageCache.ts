@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { basename as pathBasename } from 'node:path';
-import { existsSync, readFileSync, statSync, statfsSync } from 'node:fs';
+import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 
 export type ImageKind = 'cover' | 'chapter';
@@ -414,6 +414,90 @@ export class ImageCache {
     await clean(this.deps.dir);
   }
 
+  /**
+   * Bulk-delete fast path: high parallel delete fan-out plus single-pass
+   * index invalidation. Every `await` here yields the event loop, so
+   * concurrent detail/image requests keep flowing while a large title
+   * clear runs — the previous sequential `await rm` + per-file O(n)
+   * index scan held the loop (and the stall in the other tab) for the
+   * whole clear. CPU/memory trade-off is intentional: more concurrent
+   * rm/stat calls in exchange for wall-clock speed.
+   */
+  private static readonly BULK_CONCURRENCY = 64;
+
+  private async statSizesParallel(rels: readonly string[]): Promise<{ entryCount: number; totalBytes: number }> {
+    let entryCount = 0;
+    let totalBytes = 0;
+    const C = ImageCache.BULK_CONCURRENCY;
+    for (let i = 0; i < rels.length; i += C) {
+      const chunk = rels.slice(i, i + C);
+      const sizes = await Promise.allSettled(chunk.map((rel) => stat(join(this.deps.dir, rel))));
+      for (const r of sizes) {
+        if (r.status === 'fulfilled') {
+          entryCount += 1;
+          totalBytes += r.value.size;
+        }
+      }
+    }
+    return { entryCount, totalBytes };
+  }
+
+  private async rmParallel(rels: readonly string[]): Promise<string[]> {
+    const deleted: string[] = [];
+    const C = ImageCache.BULK_CONCURRENCY;
+    for (let i = 0; i < rels.length; i += C) {
+      const chunk = rels.slice(i, i + C);
+      const results = await Promise.allSettled(chunk.map((rel) => rm(join(this.deps.dir, rel), { force: true })));
+      results.forEach((r, idx) => {
+        const rel = chunk[idx];
+        if (r.status === 'fulfilled' && rel !== undefined) deleted.push(rel);
+      });
+    }
+    return deleted;
+  }
+
+  /** Single O(n) index pass for a bulk delete (replaces per-file O(n) scans). */
+  private indexRemoveMany(relPaths: readonly string[]): void {
+    if (this.indexStems === null || this.legacyIndex === null) return;
+    if (relPaths.length === 0) return;
+    const dead = new Set(relPaths);
+    for (const [k, v] of this.indexStems) {
+      if (dead.has(v)) this.indexStems.delete(k);
+    }
+    for (const [k, v] of this.legacyIndex) {
+      if (dead.has(v)) this.legacyIndex.delete(k);
+    }
+  }
+
+  /**
+   * Prune only directories that actually lost files (deepest first),
+   * instead of re-walking the whole cache tree. Falls back to the full
+   * walk when the affected set is empty/unknown.
+   */
+  private async pruneParentsOf(deleted: readonly string[]): Promise<void> {
+    if (deleted.length === 0) return;
+    const dirs = new Set<string>();
+    for (const rel of deleted) {
+      const parent = dirname(rel);
+      if (parent && parent !== '.') dirs.add(parent);
+    }
+    if (dirs.size === 0) return;
+    const sorted = Array.from(dirs).sort((a, b) => b.length - a.length);
+    for (const relDir of sorted) {
+      // Chapter dir first, then its panel parent.
+      const parts = relDir.split(/[\\/]/);
+      for (let depth = parts.length; depth >= 1; depth -= 1) {
+        const abs = join(this.deps.dir, ...parts.slice(0, depth));
+        try {
+          if ((await readdir(abs)).length === 0) await rmdir(abs);
+          else break;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
   /** File extensions the proxy writes — see `extFor`. */
   private readonly KNOWN_EXTS = ['.webp', '.avif', '.png', '.gif', '.jpg', '.jpeg', '.bin'];
 
@@ -552,7 +636,7 @@ export class ImageCache {
       for (const ext of this.KNOWN_EXTS) {
         const rel = join(folders.panelFolder, folders.chapterFolder, `${pageStem}${ext}`);
         try {
-          await statSync(join(this.deps.dir, rel));
+          await stat(join(this.deps.dir, rel));
           return rel;
         } catch {
           // Try the next extension, then the scan fallback below.
@@ -621,7 +705,7 @@ export class ImageCache {
         if (hit !== undefined) {
           const fullPath = join(this.deps.dir, hit);
           try {
-            await statSync(fullPath);
+            await stat(fullPath);
             return { url, path: fullPath, bytes: 0, contentType: null };
           } catch {
             // Manually-deleted file while the server is running — a ghost
@@ -639,7 +723,7 @@ export class ImageCache {
         if (hit !== undefined) {
           const fullPath = join(this.deps.dir, hit);
           try {
-            await statSync(fullPath);
+            await stat(fullPath);
             return { url, path: fullPath, bytes: 0, contentType: null };
           } catch {
             // Ghost index entry from a manual delete — drop and fall through
@@ -994,12 +1078,13 @@ export class ImageCache {
   }
 
   private async dirSize(): Promise<number> {
+    const rels = await this.listFiles();
     let total = 0;
-    for (const rel of await this.listFiles()) {
-      try {
-        total += statSync(join(this.deps.dir, rel)).size;
-      } catch {
-        // Unreadable entry — skip it.
+    const C = ImageCache.BULK_CONCURRENCY;
+    for (let i = 0; i < rels.length; i += C) {
+      const sizes = await Promise.allSettled(rels.slice(i, i + C).map((rel) => stat(join(this.deps.dir, rel))));
+      for (const r of sizes) {
+        if (r.status === 'fulfilled') total += r.value.size;
       }
     }
     return total;
@@ -1011,34 +1096,42 @@ export class ImageCache {
     if (total <= cap) return;
 
     try {
-      const files = (await this.listFiles())
-        .map((rel) => {
-          const p = join(this.deps.dir, rel);
-          try {
-            const st = statSync(p);
-            return { path: p, rel, atime: st.atimeMs, mtime: st.mtimeMs, size: st.size };
-          } catch {
-            // Unreadable entry — skip it.
-            return null;
+      const rels = await this.listFiles();
+      const metas: Array<{ path: string; rel: string; atime: number; mtime: number; size: number }> = [];
+      const C = ImageCache.BULK_CONCURRENCY;
+      for (let i = 0; i < rels.length; i += C) {
+        const chunk = rels.slice(i, i + C);
+        const stats = await Promise.allSettled(chunk.map((rel) => stat(join(this.deps.dir, rel))));
+        stats.forEach((r, idx) => {
+          const rel = chunk[idx];
+          if (r.status === 'fulfilled' && rel !== undefined) {
+            metas.push({ path: join(this.deps.dir, rel), rel, atime: r.value.atimeMs, mtime: r.value.mtimeMs, size: r.value.size });
           }
-        })
-        .filter((e): e is NonNullable<typeof e> => e !== null)
+        });
+      }
+      const files = metas
         // Oldest access time first — evict cold entries.
         .sort((a, b) => a.atime - b.atime || a.mtime - b.mtime);
 
       let remaining = total;
+      const evicted: string[] = [];
       for (const e of files) {
         if (remaining <= cap) break;
-        await rm(e.path, { force: true });
-        // Mirror the eviction into the in-memory index so subsequent
-        // reads don't try to look up a path that's no longer on
-        // disk. The directory-scan fallback in `readFromDisk` would
-        // catch this anyway, but removing eagerly keeps the index
-        // honest.
-        this.indexRemove(e.rel);
-        remaining -= e.size;
+        try {
+          await rm(e.path, { force: true });
+          evicted.push(e.rel);
+          remaining -= e.size;
+        } catch {
+          // Best-effort per file.
+        }
       }
-      await this.pruneEmptyDirs();
+      // Mirror the eviction into the in-memory index so subsequent
+      // reads don't try to look up a path that's no longer on
+      // disk. The directory-scan fallback in `readFromDisk` would
+      // catch this anyway, but removing eagerly keeps the index
+      // honest.
+      this.indexRemoveMany(evicted);
+      await this.pruneParentsOf(evicted);
     } catch {
       // Eviction is best-effort — a transient error shouldn't fail the write.
     }
@@ -1046,19 +1139,13 @@ export class ImageCache {
 
   async sizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
-    let entryCount = 0;
-    let totalBytes = 0;
+    const matching: string[] = [];
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
-      try {
-        totalBytes += statSync(join(this.deps.dir, rel)).size;
-        entryCount += 1;
-      } catch {
-        // Unreadable entry — skip it.
-      }
+      matching.push(rel);
     }
-    return { entryCount, totalBytes };
+    return this.statSizesParallel(matching);
   }
 
   /**
@@ -1073,6 +1160,7 @@ export class ImageCache {
   async listTags(kind: ImageKind): Promise<ImageCacheTagSummary[]> {
     await this.ensureDirs();
     const tagMap = new Map<string, { entryCount: number; totalBytes: number }>();
+    const bucket = new Map<string, string[]>();
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
@@ -1082,15 +1170,23 @@ export class ImageCache {
       // skip them so they don't pollute the per-tag breakdown.
       const tagHash = this.attributeTagHash(kind, rel, e);
       if (!tagHash) continue;
-      try {
-        const size = statSync(join(this.deps.dir, rel)).size;
-        const cur = tagMap.get(tagHash) ?? { entryCount: 0, totalBytes: 0 };
-        cur.entryCount += 1;
-        cur.totalBytes += size;
-        tagMap.set(tagHash, cur);
-      } catch {
-        // Unreadable entry — skip it.
+      const arr = bucket.get(tagHash) ?? [];
+      arr.push(rel);
+      bucket.set(tagHash, arr);
+    }
+    const C = ImageCache.BULK_CONCURRENCY;
+    for (const [tagHash, rels] of bucket) {
+      const row = { entryCount: 0, totalBytes: 0 };
+      for (let i = 0; i < rels.length; i += C) {
+        const sizes = await Promise.allSettled(rels.slice(i, i + C).map((rel) => stat(join(this.deps.dir, rel))));
+        for (const r of sizes) {
+          if (r.status === 'fulfilled') {
+            row.entryCount += 1;
+            row.totalBytes += r.value.size;
+          }
+        }
       }
+      tagMap.set(tagHash, row);
     }
     return Array.from(tagMap.entries())
       .map(([tag, v]) => ({ tag, ...v }))
@@ -1101,20 +1197,14 @@ export class ImageCache {
   async sizeInfoByTag(kind: ImageKind, tag: string): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
     const tagHash = this.tagPrefix(kind, tag);
-    let entryCount = 0;
-    let totalBytes = 0;
+    const matching: string[] = [];
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
       if (this.attributeTagHash(kind, rel, e) !== tagHash) continue;
-      try {
-        totalBytes += statSync(join(this.deps.dir, rel)).size;
-        entryCount += 1;
-      } catch {
-        // Unreadable entry — skip it.
-      }
+      matching.push(rel);
     }
-    return { entryCount, totalBytes };
+    return this.statSizesParallel(matching);
   }
 
   /**
@@ -1134,9 +1224,11 @@ export class ImageCache {
     await this.ensureDirs();
     const wanted = new Set(tags.map((t) => this.tagPrefix(kind, t)));
     const result = new Map<string, ImageCacheTagSummary>();
+    const bucket = new Map<string, string[]>();
     for (const tag of tags) {
       const hash = this.tagPrefix(kind, tag);
       result.set(hash, { tag: hash, entryCount: 0, totalBytes: 0 });
+      bucket.set(hash, []);
     }
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
@@ -1146,28 +1238,38 @@ export class ImageCache {
       // are skipped so they don't pollute the per-tag breakdown.
       const tagHash = this.attributeTagHash(kind, rel, e);
       if (!tagHash || !wanted.has(tagHash)) continue;
-      const row = result.get(tagHash)!;
-      try {
-        row.totalBytes += statSync(join(this.deps.dir, rel)).size;
-        row.entryCount += 1;
-      } catch {
-        // Unreadable entry — skip it.
+      bucket.get(tagHash)!.push(rel);
+    }
+    const C = ImageCache.BULK_CONCURRENCY;
+    for (const [hash, rels] of bucket) {
+      const row = result.get(hash)!;
+      for (let i = 0; i < rels.length; i += C) {
+        const sizes = await Promise.allSettled(rels.slice(i, i + C).map((rel) => stat(join(this.deps.dir, rel))));
+        for (const r of sizes) {
+          if (r.status === 'fulfilled') {
+            row.entryCount += 1;
+            row.totalBytes += r.value.size;
+          }
+        }
       }
     }
     return Array.from(result.values());
   }
 
   async clear(kind: ImageKind): Promise<ImageCacheSizeInfo> {
-    const info = await this.sizeInfo(kind);
+    await this.ensureDirs();
+    const matching: string[] = [];
+    for (const rel of await this.listFiles()) {
+      const e = pathBasename(rel);
+      if (this.fileKind(rel, e) !== kind) continue;
+      matching.push(rel);
+    }
+    const info = await this.statSizesParallel(matching);
     if (info.entryCount === 0) return info;
     try {
-      for (const rel of await this.listFiles()) {
-        const e = pathBasename(rel);
-        if (this.fileKind(rel, e) !== kind) continue;
-        await rm(join(this.deps.dir, rel), { force: true });
-        this.indexRemove(rel);
-      }
-      await this.pruneEmptyDirs();
+      const deleted = await this.rmParallel(matching);
+      this.indexRemoveMany(deleted);
+      await this.pruneParentsOf(deleted);
     } catch {
       // Clearing is best-effort — a transient error shouldn't fail the call.
     }
@@ -1179,31 +1281,48 @@ export class ImageCache {
    * the same way as on write, so the caller passes the original provenance
    * string (e.g. `mk:solo-leveling.21708`) and we find all matching files by
    * their 8-hex filename prefix — or, for numbered chapter pages, by their
-   * chapter folder's hash suffix.
+   * chapter folder's hash suffix. Single directory walk + parallel
+   * stat/rm (no second walk, no per-file index scan).
    */
   async clearByTag(kind: ImageKind, tag: string): Promise<ImageCacheSizeInfo> {
-    const info = await this.sizeInfoByTag(kind, tag);
-    if (info.entryCount === 0) return info;
-    const tagHash = this.tagPrefix(kind, tag);
-    const prefix = `${kind}-${tagHash}`;
-    try {
-      for (const rel of await this.listFiles()) {
-        const e = pathBasename(rel);
-        if (this.fileKind(rel, e) !== kind) continue;
-        const matchesPrefix = e.startsWith(prefix);
-        // Numbered pages carry no hash in the filename — match the chapter
-        // folder's hash suffix instead (hash-named files match by prefix
-        // wherever they live, including inside chapter folders).
-        const matchesFolder =
-          !matchesPrefix &&
-          kind === 'chapter' &&
-          this.isNumberedPage(e) &&
-          this.attributeTagHash(kind, rel, e) === tagHash;
-        if (!matchesPrefix && !matchesFolder) continue;
-        await rm(join(this.deps.dir, rel), { force: true });
-        this.indexRemove(rel);
+    return this.clearByTags(kind, [tag]);
+  }
+
+  /**
+   * Clear every file matching ANY of the given provenance tags in a single
+   * directory walk. Used for panel clears (panel id + all its chapter ids)
+   * so a 500-chapter title pays one walk instead of 500+ walks.
+   */
+  async clearByTags(kind: ImageKind, tags: readonly string[]): Promise<ImageCacheSizeInfo> {
+    await this.ensureDirs();
+    if (tags.length === 0) return { entryCount: 0, totalBytes: 0 };
+    const wanted = new Set(tags.map((t) => this.tagPrefix(kind, t)));
+    const prefixes = new Set(Array.from(wanted, (h) => `${kind}-${h}`));
+    const matching: string[] = [];
+    for (const rel of await this.listFiles()) {
+      const e = pathBasename(rel);
+      if (this.fileKind(rel, e) !== kind) continue;
+      let matched = false;
+      for (const prefix of prefixes) {
+        if (e.startsWith(prefix)) {
+          matched = true;
+          break;
+        }
       }
-      await this.pruneEmptyDirs();
+      if (!matched && kind === 'chapter' && this.isNumberedPage(e)) {
+        // Numbered pages carry no hash in the filename — match the chapter
+        // folder's hash suffix instead.
+        const h = this.attributeTagHash(kind, rel, e);
+        if (h && wanted.has(h)) matched = true;
+      }
+      if (matched) matching.push(rel);
+    }
+    const info = await this.statSizesParallel(matching);
+    if (info.entryCount === 0) return info;
+    try {
+      const deleted = await this.rmParallel(matching);
+      this.indexRemoveMany(deleted);
+      await this.pruneParentsOf(deleted);
     } catch {
       // Clearing is best-effort — a transient error shouldn't fail the call.
     }
@@ -1227,8 +1346,7 @@ export class ImageCache {
    */
   async pruneLegacy(): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
-    let entryCount = 0;
-    let totalBytes = 0;
+    const matching: string[] = [];
     for (const rel of await this.listFiles()) {
       const e = pathBasename(rel);
       // A tagged entry has an 8-hex tag hash right after `<kind>-`
@@ -1237,21 +1355,17 @@ export class ImageCache {
       // width, so match the tagged shape explicitly instead.
       if (/^(cover|chapter)-[0-9a-f]{8}[0-9a-f]{56}\.\w+$/.test(e)) continue;
       if (!/^(cover|chapter)-[0-9a-f]{64}\.\w+$/.test(e)) continue;
-      const p = join(this.deps.dir, rel);
-      try {
-        totalBytes += statSync(p).size;
-      } catch {
-        /* unreadable — still try to remove */
-      }
-      try {
-        await rm(p, { force: true });
-        this.indexRemove(rel);
-        entryCount += 1;
-      } catch {
-        /* best-effort */
-      }
+      matching.push(rel);
     }
-    await this.pruneEmptyDirs();
-    return { entryCount, totalBytes };
+    const info = await this.statSizesParallel(matching);
+    try {
+      const deleted = await this.rmParallel(matching);
+      this.indexRemoveMany(deleted);
+      await this.pruneParentsOf(deleted);
+      return { entryCount: deleted.length, totalBytes: info.totalBytes };
+    } catch {
+      /* best-effort */
+      return info;
+    }
   }
 }

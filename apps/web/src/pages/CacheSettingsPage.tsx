@@ -372,29 +372,37 @@ const [panelQuery, setPanelQuery] = useState('');
    * Clear a hand-picked list of chapter global ids (the rows the user
    * ticked in the drill-in dialog, resolved from their tag hashes — the
    * API only accepts raw provenance strings, not 8-hex hashes). The API
-   * has no batch endpoint, so we clear one chapter at a time and
-   * aggregate the totals. We bail on the first failure to avoid leaving
-   * the cache in a half-cleared state the user thinks is complete.
+   * has no batch endpoint, so we clear in parallel with limited
+   * concurrency and aggregate the totals. Failures are logged and
+   * reported but never stop the remaining chapters.
    */
   async function clearSelectedChapters(panelTitle: string, chapterIds: string[]) {
     if (chapterIds.length === 0) return;
     let totalFiles = 0;
     let totalBytes = 0;
-    for (const tag of chapterIds) {
-      try {
-        const result = await clearByTagMutation.mutateAsync({ what: 'chapter', tag });
-        totalFiles += result.entryCount;
-        totalBytes += result.totalBytes;
-      } catch (error) {
-        toast(
-          `Cleared ${totalFiles.toLocaleString()} chapters of ${panelTitle} (${formatBytes(totalBytes)}) before an error stopped the batch.`,
-          'error',
-        );
-        if (error instanceof Error) {
-          console.error('clearSelectedChapters partial failure:', error);
+    let failed = 0;
+    const CONCURRENCY = 6;
+    for (let i = 0; i < chapterIds.length; i += CONCURRENCY) {
+      const chunk = chapterIds.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        chunk.map((tag) => clearByTagMutation.mutateAsync({ what: 'chapter', tag })),
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          totalFiles += result.value.entryCount;
+          totalBytes += result.value.totalBytes;
+        } else {
+          failed += 1;
+          console.error('clearSelectedChapters partial failure:', result.reason);
         }
-        return;
       }
+    }
+    if (failed > 0) {
+      toast(
+        `Cleared ${totalFiles.toLocaleString()} chapters of ${panelTitle} (${formatBytes(totalBytes)}) before an error stopped the batch.`,
+        'error',
+      );
+      return;
     }
     toast(
       `Cleared ${chapterIds.length} ${chapterIds.length === 1 ? 'chapter' : 'chapters'} of ${panelTitle} (${totalFiles.toLocaleString()} files, ${formatBytes(totalBytes)} freed).`,

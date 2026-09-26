@@ -120,20 +120,16 @@ export function sourceImageRoutes(
    * chapter; a panel id additionally expands to every chapter the panel
    * owns (via the metadata cache's chapter rows). The expansion only runs
    * when the exact tag matched zero files, so chapter-level clears never
-   * widen beyond the requested chapter.
+   * widen beyond the requested chapter. Panel expansion clears all
+   * chapter ids in ONE directory walk (not one walk per chapter).
    */
   async function clearChapterTag(tag: string): Promise<ImageCacheSizeInfo> {
-    const direct = await imageCache.clearByTag('chapter', tag);
-    if (direct.entryCount > 0) return direct;
-    let total = direct;
-    for (const chapterId of await resolvePanelChapterIds(tag)) {
-      const info = await imageCache.clearByTag('chapter', chapterId);
-      total = {
-        entryCount: total.entryCount + info.entryCount,
-        totalBytes: total.totalBytes + info.totalBytes,
-      };
-    }
-    return total;
+    const [direct, chapterIds] = await Promise.all([
+      imageCache.clearByTag('chapter', tag),
+      resolvePanelChapterIds(tag).catch((): string[] => []),
+    ]);
+    if (direct.entryCount > 0 || chapterIds.length === 0) return direct;
+    return imageCache.clearByTags('chapter', chapterIds);
   }
 
   /**
@@ -647,8 +643,9 @@ return new Response(Bun.file(entry.path), {
     const tag = parseTag(c.req.query('tag'));
     if (tag) {
       if (what === 'both') {
-        const a = await imageCache.clearByTag('cover', tag);
-        const b = await clearChapterTag(tag);
+        // Cover + chapter walks run concurrently so a per-title clear
+        // pays one walk latency instead of two back-to-back.
+        const [a, b] = await Promise.all([imageCache.clearByTag('cover', tag), clearChapterTag(tag)]);
         return c.json(
           ok({
             what,
