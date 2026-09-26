@@ -2534,3 +2534,40 @@ input::placeholder {
   color: var(--accent);
 }
 
+/* --- Source health banner -------------------------------------------------- */
+
+.source-health-banner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: var(--layout-max);
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--warning);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+}
+
+/* Wide mode goes full-bleed like .app-main — keep the side gutters. */
+.app-shell--wide .source-health-banner {
+  width: auto;
+  max-width: none;
+  margin-left: var(--space-4);
+  margin-right: var(--space-4);
+}
+
+.source-health-banner__icon {
+  flex: none;
+  color: var(--warning);
+  line-height: 1.4;
+}
+
+.source-health-banner__text {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+}
+

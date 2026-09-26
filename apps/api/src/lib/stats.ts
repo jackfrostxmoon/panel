@@ -50,6 +50,74 @@ export function sourceStatSnapshot(): Array<SourceStat & { name: string }> {
   return [...sourceStats.entries()].map(([name, stat]) => ({ name, ...stat }));
 }
 
+/**
+ * Rolling per-source image-proxy statistics (source future-proofing
+ * telemetry). Every proxied image (covers + chapter pages, all sources)
+ * records here, so a CDN move or a dead image host shows up as a per-source
+ * failure signal instead of a silent reader full of broken images.
+ *
+ * Only failure timestamps are kept (capped), inside a 30-minute rolling
+ * window — attempts stay monotonic like the counters above.
+ */
+export interface ImageStatSnapshot {
+  name: string;
+  /** Proxied image requests since boot (cache hits included). */
+  attempts: number;
+  /** Failures inside the rolling window. */
+  recentErrors: number;
+  /** Allowlist rejections inside the window — the signature of a CDN move. */
+  recentBlocked: number;
+  /** Newest failure timestamp (Date.now), or null when the window is clean. */
+  lastFailureAt: number | null;
+}
+
+const IMAGE_WINDOW_MS = 30 * 60_000;
+const IMAGE_TS_CAP = 100;
+
+interface ImageStatInner {
+  attempts: number;
+  errors: number[];
+  blocked: number[];
+}
+
+const imageStats = new Map<string, ImageStatInner>();
+
+function pushCapped(list: number[], at: number): void {
+  list.push(at);
+  if (list.length > IMAGE_TS_CAP) list.splice(0, list.length - IMAGE_TS_CAP);
+}
+
+/** Record one proxied-image outcome for a source. */
+export function recordImageResult(sourceName: string, ok: boolean, blocked: boolean): void {
+  let stat = imageStats.get(sourceName);
+  if (!stat) {
+    stat = { attempts: 0, errors: [], blocked: [] };
+    imageStats.set(sourceName, stat);
+  }
+  stat.attempts += 1;
+  if (!ok) {
+    const at = Date.now();
+    pushCapped(stat.errors, at);
+    if (blocked) pushCapped(stat.blocked, at);
+  }
+}
+
+/** Windowed snapshot of the per-source image stats (registry order agnostic). */
+export function imageStatSnapshot(): ImageStatSnapshot[] {
+  const cutoff = Date.now() - IMAGE_WINDOW_MS;
+  return [...imageStats.entries()].map(([name, stat]) => {
+    const errors = stat.errors.filter((at) => at >= cutoff);
+    const blocked = stat.blocked.filter((at) => at >= cutoff);
+    return {
+      name,
+      attempts: stat.attempts,
+      recentErrors: errors.length,
+      recentBlocked: blocked.length,
+      lastFailureAt: errors.length > 0 ? Math.max(...errors) : null,
+    };
+  });
+}
+
 export function recordSourceCacheHit(): void {
   runtimeStats.sourceCacheHits += 1;
 }

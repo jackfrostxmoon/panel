@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { extname } from 'node:path';
 import { ErrorCodes, ok } from '@panel/shared';
-import { AppError } from '../lib/errors.js';
+import { AppError, SourceError } from '../lib/errors.js';
+import { recordImageResult } from '../lib/stats.js';
 import {
   MAX_CUSTOM_CAP_BYTES,
   MIN_CUSTOM_CAP_BYTES,
@@ -186,6 +187,20 @@ export function sourceImageRoutes(
     return out;
   }
 
+  /**
+   * Classify an image-fetch failure. An SSRF-allowlist rejection means the
+   * source moved its images to a host we don't trust yet (a CDN move) —
+   * distinct from upstream timeouts/5xx (a dead or sick host). The message
+   * match is against our own client's rejection text in lib/httpClient.ts.
+   */
+  function isAllowlistRejection(error: unknown): boolean {
+    return (
+      error instanceof SourceError &&
+      error.code === ErrorCodes.SOURCE_UNAVAILABLE &&
+      /not allowed/i.test(error.message)
+    );
+  }
+
   async function serveImage(
     sourceName: string,
     rawUrl: string,
@@ -212,13 +227,24 @@ export function sourceImageRoutes(
     const stableKey =
       tag !== null && pageIdx !== null ? `${tag}#p${pageIdx}` : null;
 
-    const entry = await imageCache.getOrCreate(
-      cacheUrl,
-      () => source.fetchImage!(cacheUrl),
-      kind,
-      tag,
-      stableKey,
-    );
+    const entry = await imageCache
+      .getOrCreate(
+        cacheUrl,
+        () => source.fetchImage!(cacheUrl),
+        kind,
+        tag,
+        stableKey,
+      )
+      .then(
+        (hit) => {
+          recordImageResult(sourceName, true, false);
+          return hit;
+        },
+        (error) => {
+          recordImageResult(sourceName, false, isAllowlistRejection(error));
+          throw error;
+        },
+      );
 return new Response(Bun.file(entry.path), {
       headers: {
         // Pick the best MIME type we can: prefer the one we stored at fetch

@@ -39,6 +39,7 @@ import {
   api,
   type ApiClientError,
   type ChapterDiskState,
+  type DetailedSourceHealth,
   type ImageCacheSizeInfo,
   type ImageCacheKindInfo,
   type ImageCacheClearResult,
@@ -148,6 +149,22 @@ export function useLatest(
     queryKey: queryKeys.latest(page, source, genres, excludes),
     queryFn: () => api.latest(page, source, genres, excludes),
     staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/**
+ * Source-health telemetry for the banner (`/api/health/detailed`).
+ * Best-effort diagnostics: polled in the background, never retries (a
+ * down API must not spin), and failures are ignored by the UI.
+ */
+export function useSourceImageHealth(opts?: QueryOpts<{ status: string; sources: DetailedSourceHealth[] }>) {
+  return useQuery<{ status: string; sources: DetailedSourceHealth[] }, ApiClientError>({
+    queryKey: queryKeys.healthDetailed(),
+    queryFn: () => api.getDetailedHealth(),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: false,
     ...opts,
   });
 }

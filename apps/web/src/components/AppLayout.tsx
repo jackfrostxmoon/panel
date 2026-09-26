@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, loadTheme, saveTheme, type Theme } from '../theme';
 import { hideCoverPreview } from './coverPreview';
+import { SourceHealthBanner } from './SourceHealthBanner';
 
 /** Scroll past this distance before the header is allowed to hide. */
 const HIDE_THRESHOLD = 100;
@@ -200,6 +201,8 @@ export function AppLayout() {
           </div>
         </div>
       </header>
+
+      <SourceHealthBanner />
 
       <main className="app-main">
         <Outlet />

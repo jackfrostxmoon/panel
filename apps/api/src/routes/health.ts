@@ -7,6 +7,7 @@ import type { Database } from '../db/client.js';
 import type { ImageCache } from '../lib/imageCache.js';
 import { getVersionInfo } from '../lib/version.js';
 import {
+  imageStatSnapshot,
   runtimeStats,
   sourceStatSnapshot,
 } from '../lib/stats.js';
@@ -22,6 +23,14 @@ interface SourceStatWithMeta {
   avgLatencyMs: number | null;
   lastLatencyMs: number | null;
   lastRequestAt: string | null;
+  /** Proxied images served since boot (cache hits included). */
+  imageAttempts: number;
+  /** Image failures inside the rolling window. */
+  imageErrors: number;
+  /** Allowlist rejections inside the window — the signature of a CDN move. */
+  imageBlocked: number;
+  /** Newest image failure, or null when the window is clean. */
+  imageLastFailureAt: string | null;
 }
 
 /** The local IPv4 address the OS would actually use to reach the internet —
@@ -143,8 +152,10 @@ export function healthRoutes(
 
     // Merge registry config with rolling latency stats.
     const statsByName = new Map(sourceStatSnapshot().map((s) => [s.name, s]));
+    const imageByName = new Map(imageStatSnapshot().map((s) => [s.name, s]));
     const sources: SourceStatWithMeta[] = registry.list().map((s) => {
       const stat = statsByName.get(s.name);
+      const image = imageByName.get(s.name);
       return {
         name: s.name,
         label: s.label,
@@ -155,6 +166,11 @@ export function healthRoutes(
         avgLatencyMs: stat && stat.requests > 0 ? Math.round(stat.totalMs / stat.requests) : null,
         lastLatencyMs: stat?.lastMs ?? null,
         lastRequestAt: stat && stat.lastAt > 0 ? new Date(stat.lastAt).toISOString() : null,
+        imageAttempts: image?.attempts ?? 0,
+        imageErrors: image?.recentErrors ?? 0,
+        imageBlocked: image?.recentBlocked ?? 0,
+        imageLastFailureAt:
+          image?.lastFailureAt != null ? new Date(image.lastFailureAt).toISOString() : null,
       };
     });
 

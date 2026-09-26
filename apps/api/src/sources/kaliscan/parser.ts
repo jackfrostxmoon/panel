@@ -9,6 +9,16 @@ export class PageNotRecognizedError extends Error {
   }
 }
 
+/**
+ * Host-agnostic image check (source-wide policy: parsers never filter by
+ * host — host policy lives solely in the adapter's image allowlist, which
+ * is the SSRF-safe gate every parsed URL passes before any fetch).
+ */
+function looksLikeImageUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) return false;
+  return /\.(jpe?g|png|webp|avif|gif)(\?|#|$)/i.test(value) || value.includes('/token/');
+}
+
 export interface RawSearchItem {
   nativeId: string;
   title: string;
@@ -399,10 +409,7 @@ export function parseChapterImagesFromApi(html: string, baseUrl: string): string
     const src = div.getAttribute('data-src');
     if (src) {
       const abs = absoluteUrl(src, baseUrl);
-      // Chapter images rotate across s<N> hosts in two CDN families: the
-      // legacy 1stmggv7.xyz and (since ~2026-09) 1stmggv2.org serving signed
-      // `?acc=&expires=` URLs. Match the family, not one fixed host.
-      if (abs && /s\d+\.1stmggv\d+\.(xyz|org)/i.test(abs)) {
+      if (abs && looksLikeImageUrl(abs)) {
         images.push(abs);
       }
     }
@@ -425,10 +432,7 @@ export function parseChapterReaderPage(html: string, baseUrl: string): RawChapte
     const src = img.getAttribute('data-src') ?? img.getAttribute('src');
     if (src) {
       const abs = absoluteUrl(src, baseUrl);
-      // Same CDN families as the chapterServer API path (see
-      // parseChapterImagesFromApi) — the legacy single-host match below
-      // went stale when the site moved images to s<N>.1stmggv2.org.
-      if (abs && /s\d+\.1stmggv\d+\.(xyz|org)/i.test(abs)) {
+      if (abs && looksLikeImageUrl(abs)) {
         images.push(abs);
       }
     }

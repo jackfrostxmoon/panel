@@ -404,6 +404,15 @@ export const api = {
     request<{ status: string; lanAddress: string | null }>('/api/health'),
 
   /**
+   * Detailed health incl. per-source rolling stats. The image counters back
+   * the source-health banner: `imageBlocked` (allowlist rejections) is the
+   * signature of a CDN move, `imageErrors` counts recent image failures.
+   * Best-effort: failures are ignored by the UI.
+   */
+  getDetailedHealth: () =>
+    request<{ status: string; sources: DetailedSourceHealth[] }>('/api/health/detailed'),
+
+  /**
    * Read how many cached images are on disk, by kind (cover / chapter /
    * both — both returns the sum). Best-effort: failures are ignored by the UI.
    */
@@ -774,4 +783,28 @@ export interface ImageCacheLimitInfo {
   computedCapBytes: number;
   /** Effective cap in bytes (custom override while set, else computed). */
   capBytes: number;
+}
+
+/**
+ * One entry of the per-source list in `/api/health/detailed`. The image
+ * counters are rolling-window signals for the source-health banner.
+ */
+export interface DetailedSourceHealth {
+  name: string;
+  label: string;
+  baseUrl: string;
+  enabled: boolean;
+  requests: number;
+  errors: number;
+  avgLatencyMs: number | null;
+  lastLatencyMs: number | null;
+  lastRequestAt: string | null;
+  /** Proxied images served since boot (cache hits included). */
+  imageAttempts: number;
+  /** Image failures inside the rolling window. */
+  imageErrors: number;
+  /** Allowlist rejections inside the window — the signature of a CDN move. */
+  imageBlocked: number;
+  /** Newest image failure, or null when the window is clean. */
+  imageLastFailureAt: string | null;
 }
