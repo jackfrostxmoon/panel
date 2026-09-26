@@ -387,6 +387,19 @@ const filteredAndSortedChapters = useMemo(() => {
   );
 
   /**
+   * True when the Continue target's images are already fully on disk
+   * (the same "done" signal as the per-row download badge). Clicking
+   * Continue then performs a full document load instead of SPA
+   * navigation, so the reader boots fresh against the warm ImageCache
+   * — the requested auto-refresh. Uncached chapters keep the fast SPA
+   * transition.
+   */
+  const continueIsCached = useMemo(
+    () => (continueEntry ? chapterListDownloader.isDone(continueEntry.chapterId) : false),
+    [continueEntry, chapterListDownloader],
+  );
+
+  /**
    * Multi-select toggle: clicking a chapter row (or the per-row checkbox)
    * adds it to the set, clicking again removes it. Exiting the mode
    * clears the set so the next session starts blank.
@@ -993,6 +1006,14 @@ const filteredAndSortedChapters = useMemo(() => {
                   to={`/read/${encodeURIComponent(continueEntry.chapterId)}`}
                   className="btn btn--primary btn--lg btn--continue"
                   aria-label={`Continue reading ${continueLabel}`}
+                  onClick={(e) => {
+                    if (!continueIsCached) return;
+                    // Chapter is fully cached: full document load instead of
+                    // SPA navigation, so the reader auto-refreshes once
+                    // against the warm ImageCache.
+                    e.preventDefault();
+                    window.location.assign(e.currentTarget.href);
+                  }}
                 >
                   <span className="btn-icon" aria-hidden="true">
                     <svg
