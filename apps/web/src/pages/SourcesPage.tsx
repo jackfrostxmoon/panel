@@ -28,6 +28,13 @@ export function SourcesPage() {
   const benchmark = useBenchmarkSources();
   const [results, setResults] = useState<Record<string, SourceBenchmarkResult>>({});
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  /**
+   * True for the whole sequential run. The mutation's `isPending` alone
+   * can't guard it — it flickers false in the gap between one source's
+   * request settling and the next starting, inviting a double run.
+   */
+  const [running, setRunning] = useState(false);
+  const probing = benchmark.isPending || running;
 
   /** Merge one benchmark response into the per-source result map. */
   function absorb(data: { checkedAt: string; results: SourceBenchmarkResult[] }) {
@@ -40,12 +47,45 @@ export function SourcesPage() {
   }
 
   async function runAll() {
-    if (benchmark.isPending) return;
-    absorb(await benchmark.mutateAsync(undefined));
+    if (probing || sources.length === 0) return;
+    setRunning(true);
+    try {
+      // One source at a time: a single fan-out request puts the slowest
+      // source's wall time (plus the upstream thundering herd) on one HTTP
+      // response, which the server/proxy can hang up on. Sequential probes
+      // stay small, paint rows progressively, and isolate failures — a sick
+      // source records a Down row instead of sinking the whole run.
+      for (const source of sources) {
+        try {
+          absorb(await benchmark.mutateAsync(source.name));
+        } catch (error) {
+          const at = new Date().toISOString();
+          absorb({
+            checkedAt: at,
+            results: [
+              {
+                name: source.name,
+                label: source.label,
+                baseUrl: source.baseUrl,
+                enabled: source.enabled,
+                ok: false,
+                latencyMs: null,
+                items: null,
+                errorCode: 'NETWORK_ERROR',
+                errorMessage: error instanceof Error ? error.message : 'Probe request failed.',
+                checkedAt: at,
+              },
+            ],
+          });
+        }
+      }
+    } finally {
+      setRunning(false);
+    }
   }
 
   async function retryOne(name: string) {
-    if (benchmark.isPending) return;
+    if (probing) return;
     absorb(await benchmark.mutateAsync(name));
   }
 
@@ -83,9 +123,9 @@ export function SourcesPage() {
             type="button"
             className="btn btn--primary btn--sm"
             onClick={() => void runAll()}
-            disabled={benchmark.isPending}
+            disabled={probing || health.isLoading}
           >
-            {benchmark.isPending ? 'Benchmarking…' : hasResults ? 'Re-run benchmark' : 'Run benchmark'}
+            {probing ? 'Benchmarking…' : hasResults ? 'Re-run benchmark' : 'Run benchmark'}
           </button>
         </div>
       </header>
@@ -141,10 +181,10 @@ export function SourcesPage() {
                     type="button"
                     className="btn btn--ghost btn--sm"
                     onClick={() => void retryOne(source.name)}
-                    disabled={!source.enabled || benchmark.isPending}
+                    disabled={!source.enabled || probing}
                     title={source.enabled ? `Probe ${source.label} now` : `${source.label} is disabled`}
                   >
-                    {benchmark.isPending ? 'Probing…' : 'Retry this source'}
+                    {probing ? 'Probing…' : 'Retry this source'}
                   </button>
                 </div>
               </li>

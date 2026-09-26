@@ -129,6 +129,12 @@ const server = Bun.serve({
   // server's memory. Bun's default is 128 MiB, which is way more than
   // any endpoint here needs.
   maxRequestBodySize: 1_048_576,
+  // Close idle connections after 60s instead of Bun's 10s default. Slow
+  // responses are legitimate here: the sources benchmark fans out to live
+  // listings (10s+ wall time) and the backup export streams multi-MB dumps.
+  // With the default the socket is closed mid-request and the dev proxy
+  // surfaces it as a "socket hang up" with no JSON body.
+  idleTimeout: 60,
 });
 
 logger.info(`Panel viewer API listening`, {
