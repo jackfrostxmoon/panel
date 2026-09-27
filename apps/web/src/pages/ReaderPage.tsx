@@ -55,11 +55,14 @@ function pingReaderSettingsSync(): void {
 }
 
 /**
- * Chapter-hop handoff keys. Hops are full document loads, so in-memory refs
- * can't carry intent across — the destination chapter's landing position
- * (paged mode) and the abandoned chapter's exact page (vertical/gallery)
- * are stashed in sessionStorage just before the unload. Tab-scoped, so a
- * hop never leaks position into another tab.
+ * Chapter-hop handoff keys plus the live session position. Hops are full
+ * document loads, so in-memory refs can't carry intent across — the
+ * destination chapter's landing position (paged mode) and the abandoned
+ * chapter's exact page (vertical/gallery) are stashed in sessionStorage
+ * just before the unload. The page memory is additionally rewritten on
+ * every page change, so a soft refresh (same tab) restores the exact page
+ * instead of restarting at the first image. Tab-scoped, so a position
+ * never leaks into another tab. No server progress involved.
  */
 const CHAPTER_LANDING_SESSION_KEY = 'panel-reader:chapter-landing:v1';
 const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v1';
@@ -90,6 +93,12 @@ function stashChapterLanding(destChapterId: string, landing: 'first' | 'last'): 
   writeSessionMap(CHAPTER_LANDING_SESSION_KEY, map);
 }
 
+/** Peek (read without deleting) a stashed landing for this chapter, if any. */
+function peekChapterLanding(chapterId: string): 'first' | 'last' | null {
+  const landing = readSessionMap(CHAPTER_LANDING_SESSION_KEY).get(chapterId);
+  return landing === 'first' || landing === 'last' ? landing : null;
+}
+
 /** Consume (read + delete) a stashed landing for this chapter, if any. */
 function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
   const map = readSessionMap(CHAPTER_LANDING_SESSION_KEY);
@@ -102,7 +111,8 @@ function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
   return null;
 }
 
-/** Remember the current page so a later hop back restores the exact position. */
+/** Remember the current page so a soft refresh or a later hop back restores
+ * the exact position (rewritten live on every page change — session only). */
 function stashPageMemory(chapterId: string, page: number): void {
   const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
   map.set(chapterId, String(page));
@@ -115,7 +125,7 @@ function stashPageMemory(chapterId: string, page: number): void {
   writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
 }
 
-/** Exact page previously left on this chapter via chapter navigation, if any. */
+/** Exact page previously left on this chapter in this tab session, if any. */
 function readPageMemory(chapterId: string): number | undefined {
   const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
   if (raw === undefined) return undefined;
@@ -208,7 +218,13 @@ export function ReaderPage() {
     [],
   );
 
-  const [page, setPage] = useState(0);
+  /* Session-only position: lazy-init from sessionStorage so the first render
+     already starts at the live page — a soft refresh never flashes page 1.
+     A directed hop landing wins over the memory (peeked, not consumed). */
+  const [page, setPage] = useState(() => {
+    if (peekChapterLanding(chapterId) !== null) return 0;
+    return readPageMemory(chapterId) ?? 0;
+  });
   const [scrollRatio, setScrollRatio] = useState(0);
   /** False until the user picks "continue" / "start over" (or nothing to resume). */
   const [resumeResolved, setResumeResolved] = useState(false);
@@ -224,6 +240,9 @@ export function ReaderPage() {
       is only known once that chapter's pages arrive — hold the destination id here
       until a parallel effect can jump to the final page. */
   const lastPageChapterRef = useRef<string | null>(null);
+  /** Session page restored for this chapter mount (>0 means "don't scroll to
+      top on pages-load" — the child reader jumps via `initialPage`). */
+  const restoredMemoryRef = useRef<number | null>(null);
   /** The panel is heavy (shortcuts tables, dropdowns) — keep it out of the
       initial DOM so it can't drag down LCP; mount on first open and leave it
       mounted afterwards so close/reopen still animates. */
@@ -270,14 +289,14 @@ export function ReaderPage() {
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
 
-  /* Reset on mount. Hops are full document loads, so this runs once per
-     chapter with the landing/page-memory stashed in sessionStorage just
-     before the unload (see `hardHopToChapter`). A paged-mode directed
-     transition chooses the landing position: the next chapter opens at
-     its first page, the previous chapter at its last page. Otherwise, if
-     we have a saved page for this chapter from a previous chapter
-     navigation (vertical/gallery), restore it instead of starting
-     from page 0. */
+  /* Reset on mount. Hops and soft refreshes are full document loads, so this
+     runs once per chapter with the landing/page-memory stashed in
+     sessionStorage (see `hardHopToChapter` + the live write below). A
+     paged-mode directed transition chooses the landing position: the next
+     chapter opens at its first page, the previous chapter at its last page.
+     Otherwise, if we have a live session page for this chapter (previous
+     chapter navigation OR a soft refresh of this same chapter), restore it
+     instead of starting from page 0. */
   useEffect(() => {
     const landing = consumeChapterLanding(chapterId);
     if (landing) {
@@ -286,10 +305,12 @@ export function ReaderPage() {
       // payload's page count, which isn't known yet; hold the destination id in
       // lastPageChapterRef and let the page-load effect apply it below.
       lastPageChapterRef.current = landing === 'last' ? chapterId : null;
+      restoredMemoryRef.current = null;
       setResumeResolved(true);
       setPage(0);
     } else {
       const savedPage = readPageMemory(chapterId);
+      restoredMemoryRef.current = savedPage ?? null;
       setPage(savedPage ?? 0);
       setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
@@ -297,11 +318,26 @@ export function ReaderPage() {
     setResetChapter(chapterId);
     setScrollRatio(0);
     setSettingsOpen(false);
-    window.scrollTo(0, 0);
     const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
-    content?.scrollTo({ top: 0 });
-    content?.focus();
+    if (restoredMemoryRef.current == null || restoredMemoryRef.current <= 0) {
+      window.scrollTo(0, 0);
+      content?.scrollTo({ top: 0 });
+    }
+    // Focus without moving the scroll when restoring, so keyboard nav works
+    // immediately but the restored position is kept.
+    if (restoredMemoryRef.current != null && restoredMemoryRef.current > 0) {
+      content?.focus({ preventScroll: true });
+    } else {
+      content?.focus();
+    }
   }, [chapterId]);
+
+  /* Keep the live session position in sync — every page turn/scroll update
+     rewrites it, so a soft refresh restores the exact page (session only,
+     no server progress involved). */
+  useEffect(() => {
+    stashPageMemory(chapterId, page);
+  }, [chapterId, page]);
 
   /* Paged-mode backward transitions land on the previous chapter's last page.
      pageCount is 0 while the payload is loading, so wait for the pages to arrive
@@ -310,10 +346,19 @@ export function ReaderPage() {
   useEffect(() => {
     if (lastPageChapterRef.current === chapterId && pageCount > 0) {
       lastPageChapterRef.current = null;
+      restoredMemoryRef.current = null;
       setPage(pageCount - 1);
+      return;
     }
-    // Once the new chapter's pages load, make sure the scroller is at the top.
+    // Once the new chapter's pages load, make sure the scroller is at the top
+    // — unless we just restored a live session position (soft refresh), which
+    // the child reader already jumped to via `initialPage`.
     if (pages.length > 0 && pageCount > 0) {
+      if (restoredMemoryRef.current != null && restoredMemoryRef.current > 0) {
+        restoredMemoryRef.current = null;
+        return;
+      }
+      restoredMemoryRef.current = null;
       const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
       content?.scrollTo({ top: 0 });
       window.scrollTo(0, 0);
@@ -567,9 +612,18 @@ export function ReaderPage() {
      a restart. The unmount cleanup below covers in-app navigation away
      from the reader. */
   useEffect(() => {
+    // Session-only flush: a refresh can land before React's write effect runs,
+    // so persist the freshest page ref on unload too.
+    const flushSessionPage = () => {
+      stashPageMemory(chapterId, pageRef.current);
+    };
     window.addEventListener('pagehide', flushProgress);
-    return () => window.removeEventListener('pagehide', flushProgress);
-  }, [flushProgress]);
+    window.addEventListener('pagehide', flushSessionPage);
+    return () => {
+      window.removeEventListener('pagehide', flushProgress);
+      window.removeEventListener('pagehide', flushSessionPage);
+    };
+  }, [flushProgress, chapterId]);
   useEffect(() => () => {
     flushProgress();
   }, [flushProgress]);
