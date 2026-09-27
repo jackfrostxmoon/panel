@@ -10,6 +10,7 @@ const saveProgressSchema = z.object({
   page: z.number().int().min(0).max(100_000),
   scrollFraction: z.number().min(0).max(1).nullish(),
   scrollX: z.number().nullish(),
+  anchorRatio: z.number().min(0).max(1).nullish(),
   panelTitle: z.string().max(500).optional(),
   coverUrl: z.url().nullish(),
   chapterTitle: z.string().max(500).optional(),

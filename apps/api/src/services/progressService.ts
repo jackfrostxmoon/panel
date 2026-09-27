@@ -59,6 +59,7 @@ export class ProgressService {
       page: row.page,
       scrollFraction: row.scrollFraction ?? null,
       scrollX: row.scrollX ?? null,
+      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -89,6 +90,16 @@ export class ProgressService {
     ) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'scrollX must be a finite number.');
     }
+    if (
+      input.anchorRatio !== undefined &&
+      input.anchorRatio !== null &&
+      (typeof input.anchorRatio !== 'number' ||
+        !Number.isFinite(input.anchorRatio) ||
+        input.anchorRatio < 0 ||
+        input.anchorRatio > 1)
+    ) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'anchorRatio must be between 0 and 1.');
+    }
     const nativeChapter = splitNativeChapterId(chapterParsed.nativeId);
     if (!nativeChapter || nativeChapter.panelId !== panelParsed.nativeId) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Chapter id does not belong to the panel.');
@@ -114,13 +125,14 @@ export class ProgressService {
       sourceUrl: source.buildChapterUrl(chapterParsed.nativeId),
     });
 
-    const row = await this.progress.upsert(panelRow.id, chapterRow.id, input.page, input.scrollFraction ?? null, input.scrollX ?? null);
+    const row = await this.progress.upsert(panelRow.id, chapterRow.id, input.page, input.scrollFraction ?? null, input.scrollX ?? null, input.anchorRatio ?? null);
     return {
       panelId: input.panelId,
       chapterId: input.chapterId,
       page: row.page,
       scrollFraction: row.scrollFraction ?? null,
       scrollX: row.scrollX ?? null,
+      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -148,6 +160,7 @@ export class ProgressService {
       page: row.page,
       scrollFraction: row.scrollFraction ?? null,
       scrollX: row.scrollX ?? null,
+      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
       panelTitle: panelRow.title,
       coverUrl: panelRow.coverUrl,
@@ -172,6 +185,7 @@ export class ProgressService {
       page: row.progress.page,
       scrollFraction: row.progress.scrollFraction ?? null,
       scrollX: row.progress.scrollX ?? null,
+      anchorRatio: row.progress.anchorRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,
@@ -188,6 +202,7 @@ export class ProgressService {
       page: row.progress.page,
       scrollFraction: row.progress.scrollFraction ?? null,
       scrollX: row.progress.scrollX ?? null,
+      anchorRatio: row.progress.anchorRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,

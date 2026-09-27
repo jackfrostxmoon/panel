@@ -269,6 +269,43 @@ export function fractionScrollTarget(
   return Math.max(0, Math.min(1, fraction)) * max;
 }
 
+/**
+ * Clamp a 0–1 ratio for persistence (finite 0–1, else null). Used for the
+ * page-anchored continue-reading position.
+ */
+export function cleanRatio(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : null;
+}
+
+/**
+ * The scrollTop that places `ratio` (0–1) through a page at the viewport
+ * center: `pageTop + ratio × pageHeight − viewportHeight / 2`.
+ *
+ * Unlike the overall chapter fraction, this is relative to one page's own
+ * box, so it survives non-uniform image growth (long-strip chapters whose
+ * boxes grow 10x on load while lazy siblings stay small) and chapter-total
+ * differences between save and restore. Null when unmeasurable.
+ */
+export function anchorScrollTarget(
+  pageTop: number,
+  pageHeight: number,
+  viewportHeight: number,
+  ratio: number,
+): number | null {
+  if (
+    !Number.isFinite(pageTop) ||
+    !Number.isFinite(pageHeight) ||
+    !Number.isFinite(viewportHeight) ||
+    !Number.isFinite(ratio)
+  ) {
+    return null;
+  }
+  if (pageHeight <= 0 || viewportHeight <= 0) return null;
+  return Math.max(0, pageTop + Math.max(0, Math.min(1, ratio)) * pageHeight - viewportHeight / 2);
+}
+
 /* ------------------------------------------------------------------ */
 /* Double-page spread (T1-1)                                           */
 /* ------------------------------------------------------------------ */

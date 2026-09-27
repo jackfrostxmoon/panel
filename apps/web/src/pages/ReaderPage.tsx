@@ -25,6 +25,7 @@ import { proxiedPageUrl } from '../utils/format';
 import {
   applyIntent,
   clampPage,
+  cleanRatio,
   intentForKey,
   isEditableKeyTarget,
   nextSpreadPage,
@@ -117,19 +118,24 @@ function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
 
 /** Remember the current position so a soft refresh or a later hop back
  * restores the exact scroll spot (rewritten live — session only). In
- * vertical mode the overall chapter fraction plus the exact horizontal pan
- * are stored alongside (`{p, f, x}` JSON); other modes store the plain page
+ * vertical mode the overall chapter fraction, the page anchor (viewport-
+ * center page + intra-page ratio) and the exact horizontal pan are stored
+ * alongside (`{p, f, x, a}` JSON); other modes store the plain page
  * index. */
-function stashPageMemory(chapterId: string, page: number, fraction?: number, scrollX?: number): void {
+function stashPageMemory(chapterId: string, page: number, fraction?: number, scrollX?: number, anchorRatio?: number): void {
   const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
   if (typeof fraction === 'number' && Number.isFinite(fraction)) {
     const clamped = Math.max(0, Math.min(1, fraction));
-    const entry: { p: number; f: number; x?: number } = {
+    const entry: { p: number; f: number; x?: number; a?: number } = {
       p: page,
       f: Math.round(clamped * 1000) / 1000,
     };
     if (typeof scrollX === 'number' && Number.isFinite(scrollX) && scrollX !== 0) {
       entry.x = Math.round(scrollX * 10) / 10;
+    }
+    const anchor = cleanRatio(anchorRatio);
+    if (anchor !== null) {
+      entry.a = Math.round(anchor * 1000) / 1000;
     }
     map.set(chapterId, JSON.stringify(entry));
   } else {
@@ -144,26 +150,29 @@ function stashPageMemory(chapterId: string, page: number, fraction?: number, scr
   writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
 }
 
-/** Page + chapter fraction + horizontal pan previously left on this chapter
- * in this tab session, if any. Reads both the current `{p, f, x}` JSON
- * entries and legacy plain-number entries. (The v1 `{p, r}` per-page ratios
- * live under a different key and are never read here.) */
-function readPageMemory(chapterId: string): { page: number; fraction?: number; scrollX?: number } | undefined {
+/** Page + chapter fraction + page anchor + horizontal pan previously left on
+ * this chapter in this tab session, if any. Reads both the current
+ * `{p, f, x, a}` JSON entries and legacy plain-number entries. (The v1
+ * `{p, r}` per-page ratios live under a different key and are never read
+ * here.) */
+function readPageMemory(chapterId: string): { page: number; fraction?: number; scrollX?: number; anchorRatio?: number } | undefined {
   const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
   if (raw === undefined) return undefined;
   if (raw.startsWith('{')) {
     try {
-      const parsed = JSON.parse(raw) as { p?: unknown; f?: unknown; x?: unknown };
+      const parsed = JSON.parse(raw) as { p?: unknown; f?: unknown; x?: unknown; a?: unknown };
       if (typeof parsed.p !== 'number' || !Number.isInteger(parsed.p) || parsed.p < 0) {
         return undefined;
       }
       if (parsed.f === undefined) return { page: parsed.p };
       if (typeof parsed.f !== 'number' || !Number.isFinite(parsed.f)) return { page: parsed.p };
-      const out: { page: number; fraction?: number; scrollX?: number } = {
+      const out: { page: number; fraction?: number; scrollX?: number; anchorRatio?: number } = {
         page: parsed.p,
         fraction: Math.max(0, Math.min(1, parsed.f)),
       };
       if (typeof parsed.x === 'number' && Number.isFinite(parsed.x)) out.scrollX = parsed.x;
+      const anchor = cleanRatio(typeof parsed.a === 'number' ? parsed.a : null);
+      if (anchor !== null) out.anchorRatio = anchor;
       return out;
     } catch {
       return undefined;
@@ -282,6 +291,14 @@ export function ReaderPage() {
     if (peekChapterLanding(chapterId) !== null) return 0;
     return readPageMemory(chapterId)?.fraction ?? 0;
   });
+  /* Page-anchored position (0–1 ratio through `page`) in vertical mode —
+     the precise continue-reading position for long-strip chapters, where
+     the overall fraction drifts with non-uniform image growth. Seeded from
+     session memory; falls back to the fraction when absent. */
+  const [anchorRatio, setAnchorRatio] = useState(() => {
+    if (peekChapterLanding(chapterId) !== null) return 0;
+    return readPageMemory(chapterId)?.anchorRatio ?? 0;
+  });
   /* Exact horizontal pan (CSS px) in vertical mode — the precision
      complement to the fraction (nonzero while pinch-zoomed). Reported live
      from the scroller every scroll frame; seeded from session memory. */
@@ -356,11 +373,13 @@ export function ReaderPage() {
   const scrollRatioRef = useRef(scrollRatio);
   /** Latest chapter fraction for progress saves (updates every scroll frame). */
   const scrollFractionRef = useRef(scrollFraction);
-  /** Latest horizontal pan in vertical mode (updates every scroll frame). */
-  const scrollXRef = useRef(scrollX);
-  /** Last fraction+page actually sent to the server (dedupes scroll saves). */
-  const lastSavedFractionRef = useRef<number | null>(null);
-  const lastSavedPageRef = useRef<number | null>(null);
+   /** Latest horizontal pan in vertical mode (updates every scroll frame). */
+   const scrollXRef = useRef(scrollX);
+   /** Latest anchor ratio for progress saves (updates every scroll frame). */
+   const anchorRatioRef = useRef(anchorRatio);
+   /** Last fraction+page actually sent to the server (dedupes scroll saves). */
+   const lastSavedFractionRef = useRef<number | null>(null);
+   const lastSavedPageRef = useRef<number | null>(null);
   /** Current reading mode for session-write handlers that must not re-subscribe. */
   const readerModeRef = useRef(settings.mode);
   /** Latest chapter payload for unload-flush handlers (see flushProgress). */
@@ -373,6 +392,7 @@ export function ReaderPage() {
   pageRef.current = page;
   scrollRatioRef.current = scrollRatio;
   scrollFractionRef.current = scrollFraction;
+  anchorRatioRef.current = anchorRatio;
   readerModeRef.current = settings.mode;
   chapterPagesRef.current = chapterPages.data;
   resumeResolvedRef.current = resumeResolved;
@@ -414,6 +434,8 @@ export function ReaderPage() {
       setScrollFraction(saved?.fraction ?? 0);
       scrollXRef.current = saved?.scrollX ?? 0;
       setScrollX(saved?.scrollX ?? 0);
+      anchorRatioRef.current = saved?.anchorRatio ?? 0;
+      setAnchorRatio(saved?.anchorRatio ?? 0);
       setResumeResolved(saved !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
     }

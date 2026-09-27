@@ -109,6 +109,11 @@ export interface SaveProgressInput {
   scrollFraction?: number | null;
   /** Horizontal pan in CSS px (vertical mode); omit or null when unknown. */
   scrollX?: number | null;
+  /**
+   * Intra-page anchor ratio (0–1) for the saved `page` in vertical mode.
+   * Omit or null for page-granular saves or when unknown.
+   */
+  anchorRatio?: number | null;
   /** Optional display metadata so the home screen can render without an
    *  extra source round-trip. */
   panelTitle?: string;

@@ -2,7 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 're
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import { verticalReaderWidthPercent, type ReadingDirection } from './settings';
-import { fractionScrollTarget, halfSideFromClientX, scrollFractionAtOffset } from './navigation';
+import { fractionScrollTarget, anchorScrollTarget, halfSideFromClientX, scrollFractionAtOffset } from './navigation';
 import { useZoomGesture } from './useZoomGesture';
 import { glideScrollTo } from './glideScroll';
 import type { GlidePreset } from './settings';
@@ -25,6 +25,13 @@ export interface VerticalReaderHandle {
    * browser, including RTL negative origins.
    */
   scrollToFraction: (fraction: number, preset?: GlidePreset, scrollX?: number | null) => void;
+  /**
+   * Jump to a page-anchored position: `ratio` (0–1) through `page` at the
+   * viewport center. Preferred for continue-reading restores — unlike the
+   * overall fraction it survives non-uniform image growth (long-strip
+   * chapters), because it is relative to one page's own box.
+   */
+  scrollToAnchor: (page: number, ratio: number, preset?: GlidePreset, scrollX?: number | null) => void;
 }
 
 export const VerticalReader = forwardRef<
@@ -46,9 +53,12 @@ export const VerticalReader = forwardRef<
     onZoomChange?: (zoom: number) => void;
     onPageChange: (page: number) => void;
     onProgress?: (page: number, scrollRatio: number) => void;
-    /** Overall chapter scroll fraction (0–1) for continue-reading saves. */
-    onScrollFraction?: (fraction: number, scrollX: number) => void;
-    onChapterNavigate: (dir: 'next' | 'prev') => void;
+    /**
+     * Overall chapter scroll fraction (0–1) for continue-reading saves, plus
+     * the page-anchored position (viewport-center page + ratio through it).
+     * Reported every tracking update; the parent debounces the server write.
+     */
+    onScrollFraction?: (fraction: number, scrollX: number, anchorPage: number, anchorRatio: number) => void;    onChapterNavigate: (dir: 'next' | 'prev') => void;
     /** Chapter global id used as the cache provenance tag. */
     chapterTag?: string | null;
     /** Reading direction; swaps the left/right chapter-hop zones. */
@@ -64,6 +74,21 @@ export const VerticalReader = forwardRef<
      * to `initialPage` top when absent. Read once on mount. Vertical-only.
      */
     initialFraction?: number | null;
+    /**
+     * Page-anchored restore position (viewport-center page + 0–1 ratio
+     * through it). Preferred over `initialFraction` when present — it
+     * survives the non-uniform image growth of long-strip chapters.
+     * Read once on mount. Vertical-only.
+     */
+    initialAnchorPage?: number | null;
+    initialAnchorRatio?: number | null;
+    /**
+     * Force-fetch every page up to this index (inclusive) regardless of the
+     * lazy-load window. Set to the anchor page during a restore so the
+     * above-viewport images the anchor offset depends on actually resolve
+     * and the correction loop converges.
+     */
+    eagerThroughPage?: number | null;
     /** Exact horizontal pan (CSS px) to restore on mount. Defaults to 0. */
     initialScrollX?: number | null;
   }
@@ -86,6 +111,9 @@ export const VerticalReader = forwardRef<
     direction = 'ltr',
     initialPage = 0,
     initialFraction = null,
+    initialAnchorPage = null,
+    initialAnchorRatio = null,
+    eagerThroughPage = null,
     initialScrollX = null,
   },
   ref,
@@ -113,6 +141,12 @@ export const VerticalReader = forwardRef<
   initialFractionRef.current = initialFraction;
   const initialScrollXRef = useRef(initialScrollX);
   initialScrollXRef.current = initialScrollX;
+  const initialAnchorPageRef = useRef(initialAnchorPage);
+  initialAnchorPageRef.current = initialAnchorPage;
+  const initialAnchorRatioRef = useRef(initialAnchorRatio);
+  initialAnchorRatioRef.current = initialAnchorRatio;
+  const eagerThroughPageRef = useRef(eagerThroughPage);
+  eagerThroughPageRef.current = eagerThroughPage;
   /**
    * Fraction-restore correction: `fraction × total` is computed against the
    * current layout, and every image load changes the total — mostly
@@ -121,36 +155,83 @@ export const VerticalReader = forwardRef<
    * `fraction × newTotal` until everything resolves, the user takes over,
    * or a timeout fires. Corrections write scrollTop directly (no glide) so
    * rapid successive loads converge without animation fighting.
+   *
+   * The anchor correction below is preferred whenever an anchor was saved:
+   * it re-asserts `anchorPage.top + ratio × anchorPage.height − viewport/2`
+   * from live geometry, which converges even when sibling boxes grow
+   * non-uniformly (long-strip chapters with unknown dimensions).
    */
   const correctFractionRef = useRef<number | null>(null);
+  const correctAnchorRef = useRef<{ page: number; ratio: number } | null>(null);
   const correctTimerRef = useRef<number>(0);
   /** Page indices whose images reported loaded (drives correction disarm). */
   const loadedPagesRef = useRef<Set<number>>(new Set());
 
   const clearCorrection = () => {
     correctFractionRef.current = null;
+    correctAnchorRef.current = null;
     window.clearTimeout(correctTimerRef.current);
     correctTimerRef.current = 0;
   };
 
-  /** Recompute the armed fraction against current layout; direct write. */
+  /** Recompute the armed restore target against current layout; direct write. */
   const reassertCorrection = (): void => {
-    const fraction = correctFractionRef.current;
     const scroller = containerRef.current?.closest('.reader-content') as HTMLElement | null;
-    if (fraction === null || !scroller) return;
+    if (!scroller) return;
+    const anchor = correctAnchorRef.current;
+    if (anchor !== null) {
+      const el = pageRefs.current[anchor.page];
+      if (!el) return;
+      const next = anchorScrollTarget(
+        el.offsetTop - (scroller.clientTop || 0),
+        el.offsetHeight,
+        scroller.clientHeight,
+        anchor.ratio,
+      );
+      if (next !== null) scroller.scrollTop = next;
+      return;
+    }
+    const fraction = correctFractionRef.current;
+    if (fraction === null) return;
     const next = fractionScrollTarget(scroller.scrollHeight, scroller.clientHeight, fraction);
     if (next !== null) scroller.scrollTop = next;
   };
 
   const armCorrection = (fraction: number) => {
+    correctAnchorRef.current = null;
     correctFractionRef.current = fraction;
     window.clearTimeout(correctTimerRef.current);
     // Bounded: never fight the user or loop forever.
     correctTimerRef.current = window.setTimeout(() => clearCorrection(), 5000);
   };
 
+  const armAnchorCorrection = (page: number, ratio: number) => {
+    correctFractionRef.current = null;
+    correctAnchorRef.current = { page, ratio };
+    window.clearTimeout(correctTimerRef.current);
+    // Bounded: never fight the user or loop forever.
+    correctTimerRef.current = window.setTimeout(() => clearCorrection(), 8000);
+  };
+
+  /** True once the anchor target can no longer shift: the anchor page and
+   *  every page above it have resolved, so offsetTop/offsetHeight are final. */
+  const isAnchorSettled = (page: number): boolean => {
+    const loaded = loadedPagesRef.current;
+    for (let i = 0; i <= page; i++) {
+      if (pageRefs.current[i] && !loaded.has(i)) return false;
+    }
+    return true;
+  };
+
   const handlePageLoad = (index: number) => {
     loadedPagesRef.current.add(index);
+    const anchor = correctAnchorRef.current;
+    if (anchor !== null) {
+      // The anchor page (or one above it) resolved — re-assert the anchor.
+      if (index <= anchor.page) reassertCorrection();
+      if (isAnchorSettled(anchor.page)) clearCorrection();
+      return;
+    }
     if (correctFractionRef.current === null) return;
     // The total grew as this image resolved — re-assert the fraction.
     reassertCorrection();
@@ -196,6 +277,28 @@ export const VerticalReader = forwardRef<
       if (next !== null) glideScrollTo(scroller, next, glideAnimRef, preset);
       armCorrection(clamped);
     },
+    scrollToAnchor(page: number, ratio: number, preset: GlidePreset = 'quick', scrollX?: number | null) {
+      clearCorrection();
+      if (!Number.isInteger(page) || page < 0 || !Number.isFinite(ratio)) return;
+      const clampedPage = Math.max(0, Math.min(page, pageRefs.current.length - 1));
+      const clampedRatio = Math.max(0, Math.min(1, ratio));
+      const scroller = scrollerOf();
+      const el = pageRefs.current[clampedPage];
+      if (!scroller || !el) return;
+      if (typeof scrollX === 'number' && Number.isFinite(scrollX)) {
+        scroller.scrollLeft = scrollX;
+      }
+      // Best-effort immediate jump from live geometry; the armed anchor
+      // correction converges as the anchor page (and those above it) load.
+      const next = anchorScrollTarget(
+        el.offsetTop - (scroller.clientTop || 0),
+        el.offsetHeight,
+        scroller.clientHeight,
+        clampedRatio,
+      );
+      if (next !== null) glideScrollTo(scroller, next, glideAnimRef, preset);
+      armAnchorCorrection(clampedPage, clampedRatio);
+    },
   }));
 
   /* Fresh image set: forget loaded state + disarm. Runs before the tracking
@@ -203,6 +306,7 @@ export const VerticalReader = forwardRef<
   useEffect(() => {
     loadedPagesRef.current = new Set();
     correctFractionRef.current = null;
+    correctAnchorRef.current = null;
     return () => window.clearTimeout(correctTimerRef.current);
   }, [pages.length]);
 
@@ -210,7 +314,7 @@ export const VerticalReader = forwardRef<
      the armed correction as soon as the user drives with keys. */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (correctFractionRef.current === null) return;
+      if (correctFractionRef.current === null && correctAnchorRef.current === null) return;
       if (
         event.key === 'ArrowUp' ||
         event.key === 'ArrowDown' ||
@@ -251,23 +355,42 @@ export const VerticalReader = forwardRef<
       );
       const el = pageRefs.current[want];
       if (el && scroller) {
-        const fraction = initialFractionRef.current;
-        if (typeof fraction === 'number' && Number.isFinite(fraction)) {
-          // Overall chapter fraction: resilient to per-page box growth, and
-          // re-asserted as images load (see correctFractionRef docs). The X
-          // pan applies immediately — widths never grow, so it needs no
-          // correction loop.
-          const clamped = Math.max(0, Math.min(1, fraction));
+        const anchorPage = initialAnchorPageRef.current;
+        const anchorRatio = initialAnchorRatioRef.current;
+        const panX = initialScrollXRef.current;
+        if (typeof panX === 'number' && Number.isFinite(panX)) {
+          scroller.scrollLeft = panX;
+        }
+        if (
+          typeof anchorPage === 'number' &&
+          Number.isInteger(anchorPage) &&
+          anchorPage >= 0 &&
+          anchorPage < pageRefs.current.length &&
+          typeof anchorRatio === 'number' &&
+          Number.isFinite(anchorRatio)
+        ) {
+          // Page-anchored restore: relative to one page's own box, so it
+          // survives the non-uniform image growth of long-strip chapters.
+          // Re-asserted as the anchor page (and those above it) load.
+          const anchorEl = pageRefs.current[anchorPage] ?? el;
+          const ratio = Math.max(0, Math.min(1, anchorRatio));
+          const next = anchorScrollTarget(
+            anchorEl.offsetTop - (scroller.clientTop || 0),
+            anchorEl.offsetHeight,
+            scroller.clientHeight,
+            ratio,
+          );
+          if (next !== null) scroller.scrollTop = next;
+          armAnchorCorrection(anchorPage, ratio);
+        } else if (typeof initialFractionRef.current === 'number' && Number.isFinite(initialFractionRef.current)) {
+          // Overall chapter fraction fallback (legacy rows without anchors).
+          const clamped = Math.max(0, Math.min(1, initialFractionRef.current));
           const next = fractionScrollTarget(
             scroller.scrollHeight,
             scroller.clientHeight,
             clamped,
           );
           if (next !== null) scroller.scrollTop = next;
-          const panX = initialScrollXRef.current;
-          if (typeof panX === 'number' && Number.isFinite(panX)) {
-            scroller.scrollLeft = panX;
-          }
           armCorrection(clamped);
         } else {
           const top = el.offsetTop - (scroller.clientTop || 0);
@@ -304,11 +427,25 @@ export const VerticalReader = forwardRef<
       // the parent's states/refs already carry them, so saves and exit
       // flushes stay correct through settle. Live reporting resumes on
       // disarm (complete/timeout/user input).
-      const settling = correctFractionRef.current !== null;
+      const settling =
+        correctFractionRef.current !== null || correctAnchorRef.current !== null;
+      // Ratio of how far the viewport center has progressed through the
+      // center page — the page-anchored continue-reading position.
+      let anchorRatio = 0;
+      {
+        const anchorEl = refs[best];
+        if (anchorEl) {
+          const rect = anchorEl.getBoundingClientRect();
+          const pageTop = rect.top - scrollerTop;
+          if (rect.height > 0) {
+            anchorRatio = Math.max(0, Math.min(1, (viewportCenter - pageTop) / rect.height));
+          }
+        }
+      }
       if (!settling) {
         onPageChangeRef.current(best);
 
-        // Overall chapter fraction + exact horizontal pan for
+        // Overall chapter fraction + exact horizontal pan + page anchor for
         // continue-reading saves. Reported every tracking update; the parent
         // keeps them in refs and debounces the server write.
         if (scroller && onScrollFractionRef.current) {
@@ -319,7 +456,7 @@ export const VerticalReader = forwardRef<
           );
           if (fraction !== null) {
             const x = scroller.scrollLeft;
-            onScrollFractionRef.current(fraction, Number.isFinite(x) ? x : 0);
+            onScrollFractionRef.current(fraction, Number.isFinite(x) ? x : 0, best, anchorRatio);
           }
         }
       }
@@ -329,18 +466,7 @@ export const VerticalReader = forwardRef<
       if (!settling) {
         const currentEl = refs[best];
         if (currentEl && onProgressRef.current) {
-          const rect = currentEl.getBoundingClientRect();
-          const pageTop = rect.top - scrollerTop;
-          const pageHeight = rect.height;
-
-          if (pageHeight > 0) {
-            // Ratio of how far the viewport center has progressed through this page
-            const progressThroughPage = Math.max(
-              0,
-              Math.min(1, (viewportCenter - pageTop) / pageHeight),
-            );
-            onProgressRef.current(best, progressThroughPage);
-          }
+          onProgressRef.current(best, anchorRatio);
         }
       }
     };
@@ -412,7 +538,13 @@ export const VerticalReader = forwardRef<
         >
           <ReaderImage
             page={page}
-            eager={eagerPages || index <= (currentIndex + 1) * preloadAhead}
+            eager={
+              eagerPages ||
+              index <= (currentIndex + 1) * preloadAhead ||
+              (eagerThroughPageRef.current !== null &&
+                typeof eagerThroughPageRef.current === 'number' &&
+                index <= eagerThroughPageRef.current)
+            }
             widthPx={imageWidthPx}
             heightPx={imageHeightPx}
             chapterTag={chapterTag}

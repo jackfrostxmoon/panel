@@ -144,6 +144,15 @@ export interface ReadingProgress {
    * of range values on restore (including RTL negative origins).
    */
   scrollX: number | null;
+  /**
+   * Intra-page anchor ratio (0–1) in vertical mode: how far the viewport
+   * center has progressed through the saved `page`. Unlike the overall
+   * chapter fraction, this survives non-uniform image growth (long-strip
+   * chapters whose boxes grow 10x on load while lazy siblings stay small)
+   * because it is relative to one page's own box, not the chapter total.
+   * Null when page-granular or saved by an older client.
+   */
+  anchorRatio: number | null;
   updatedAt: string;
 }
 

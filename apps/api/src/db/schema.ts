@@ -220,6 +220,11 @@ export const readingProgress = pgTable(
     scrollFraction: doublePrecision('scroll_fraction'),
     /** Horizontal pan in CSS px (vertical/zoomed reading). Null = unknown. */
     scrollX: doublePrecision('scroll_x'),
+    /**
+     * Intra-page anchor ratio (0–1) for `page` in vertical mode.
+     * Null = page-granular or saved by an older client.
+     */
+    anchorRatio: doublePrecision('anchor_ratio'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
