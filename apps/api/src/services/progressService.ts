@@ -73,37 +73,6 @@ export class ProgressService {
     if (!Number.isInteger(input.page) || input.page < 0) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Page must be a non-negative integer.');
     }
-    if (
-      input.scrollFraction !== undefined &&
-      input.scrollFraction !== null &&
-      (typeof input.scrollFraction !== 'number' ||
-        !Number.isFinite(input.scrollFraction) ||
-        input.scrollFraction < 0 ||
-        input.scrollFraction > 1)
-    ) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'scrollFraction must be between 0 and 1.');
-    }
-    if (
-      input.scrollX !== undefined &&
-      input.scrollX !== null &&
-      (typeof input.scrollX !== 'number' || !Number.isFinite(input.scrollX))
-    ) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'scrollX must be a finite number.');
-    }
-    if (
-      input.anchorRatio !== undefined &&
-      input.anchorRatio !== null &&
-      (typeof input.anchorRatio !== 'number' ||
-        !Number.isFinite(input.anchorRatio) ||
-        input.anchorRatio < 0 ||
-        input.anchorRatio > 1)
-    ) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'anchorRatio must be between 0 and 1.');
-    }
-    const nativeChapter = splitNativeChapterId(chapterParsed.nativeId);
-    if (!nativeChapter || nativeChapter.panelId !== panelParsed.nativeId) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Chapter id does not belong to the panel.');
-    }
 
     const source = this.registry.get(panelParsed.source);
 
@@ -120,8 +89,8 @@ export class ProgressService {
       source: chapterParsed.source,
       sourceId: chapterParsed.nativeId,
       globalId: input.chapterId,
-      title: input.chapterTitle ?? nativeChapter.chapterToken,
-      chapterNumber: (chapterNumberFromTokenBySource[panelParsed.source] ?? chapterNumberFromTokenMk)(nativeChapter.chapterToken),
+      title: input.chapterTitle ?? splitNativeChapterId(chapterParsed.nativeId)?.chapterToken ?? 'Unknown title',
+      chapterNumber: (chapterNumberFromTokenBySource[panelParsed.source] ?? chapterNumberFromTokenMk)(splitNativeChapterId(chapterParsed.nativeId)?.chapterToken ?? ''),
       sourceUrl: source.buildChapterUrl(chapterParsed.nativeId),
     });
 
