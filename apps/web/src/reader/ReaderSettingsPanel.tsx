@@ -45,9 +45,11 @@ import {
   clearLegacyLocalPresets,
   deleteStylePreset,
   downloadStyleExport,
+  findMatchingPreset,
   loadLegacyLocalPresets,
   normalizeStyleName,
   parseStyleImport,
+  readerSettingsEqual,
   replaceStylePresets,
   sanitizeStylePresets,
   saveStylePreset,
@@ -150,9 +152,9 @@ export function ReaderSettingsPanel({
       if (cancelled) return;
       setPresets(list);
       setImportError(null);
-      if (!list.some((p) => p.name === selectedPreset)) {
-        setSelectedPreset(list[0]?.name ?? '');
-      }
+      // Selection is derived by the sync effect below (match-or-empty), so
+      // don't default to list[0] here — it would stick on a preset whose
+      // settings the reader doesn't actually match.
     })();
     return () => {
       cancelled = true;
@@ -160,10 +162,29 @@ export function ReaderSettingsPanel({
     // oxlint-disable-next-line react/exhaustive-deps
   }, [open ]);
 
+  // Keep the style dropdown honest: it shows a preset name only while the
+  // live settings exactly match that preset. Any tweak (e.g. image width
+  // 36% → 100%) clears it to the empty custom state; tweaking back onto a
+  // preset re-selects it. Also repairs stale selections after delete/import.
+  useEffect(() => {
+    if (!open) return;
+    const selected = presets.find((p) => p.name === selectedPreset);
+    if (selected && readerSettingsEqual(selected.settings, settings)) return;
+    const match = findMatchingPreset(settings, presets);
+    if (match !== selectedPreset) setSelectedPreset(match);
+  }, [open, settings, presets, selectedPreset]);
+
   const refreshPresets = (list: ReaderStylePreset[], keep?: string) => {
     setPresets(list);
     const target = keep ?? selectedPreset;
-    setSelectedPreset(list.some((p) => p.name === target) ? target : (list[0]?.name ?? ''));
+    const targetPreset = list.find((p) => p.name === target);
+    // Only keep an explicit selection when it still matches the live
+    // settings; otherwise fall back to whatever (if anything) matches.
+    if (targetPreset && readerSettingsEqual(targetPreset.settings, settings)) {
+      if (target !== selectedPreset) setSelectedPreset(target);
+    } else {
+      setSelectedPreset(findMatchingPreset(settings, list));
+    }
   };
 
   /**
@@ -305,10 +326,15 @@ export function ReaderSettingsPanel({
                   // Picking a style applies it immediately — no separate
                   // Apply step. (Programmatic selection changes from
                   // save/delete/import don't fire this; only user picks.)
+                  // Picking the empty row just clears back to custom state.
+                  if (!value) return;
                   const preset = presets.find((p) => p.name === value);
                   if (preset) onUpdate({ ...preset.settings });
                 }}
-                options={presets.map((preset) => ({ value: preset.name, label: preset.name }))}
+                options={[
+                  { value: '', label: 'Custom…' },
+                  ...presets.map((preset) => ({ value: preset.name, label: preset.name })),
+                ]}
                 label="Saved styles"
                 disabled={presets.length === 0}
               />
@@ -332,6 +358,11 @@ export function ReaderSettingsPanel({
             </div>
             {presets.length === 0 && !adding && (
               <p className="reader-settings__sub-hint">No saved styles yet.</p>
+            )}
+            {presets.length > 0 && !selectedPreset && !adding && (
+              <p className="reader-settings__sub-hint">
+                Settings modified — no saved style matches (Custom).
+              </p>
             )}
             {adding && (
               <div className="reader-settings__style-form">

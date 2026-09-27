@@ -195,6 +195,32 @@ export function deleteStylePreset(name: string, existing: ReaderStylePreset[]): 
   return existing.filter((p) => p.name !== name);
 }
 
+/**
+ * True when two snapshots describe the same reader setup (name/updatedAt
+ * ignored). Both sides are sanitized first so a stored preset and live
+ * settings compare on the same normalized shape.
+ */
+export function readerSettingsEqual(a: ReaderSettings, b: ReaderSettings): boolean {
+  const left = sanitizeReaderSettings(a);
+  const right = sanitizeReaderSettings(b);
+  for (const key of Object.keys(left) as (keyof ReaderSettings)[]) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+}
+
+/**
+ * Name of the first preset whose settings match the live settings, or ''
+ * when nothing matches (caller shows the empty / custom state).
+ */
+export function findMatchingPreset(
+  settings: ReaderSettings,
+  presets: ReaderStylePreset[],
+): string {
+  const current = sanitizeReaderSettings(settings);
+  return presets.find((p) => readerSettingsEqual(current, p.settings))?.name ?? '';
+}
+
 /** Overwrite the whole list (used after import). Pure — returns sorted list. */
 export function replaceStylePresets(list: ReaderStylePreset[]): ReaderStylePreset[] {
   const valid: ReaderStylePreset[] = [];
