@@ -228,6 +228,48 @@ export function smoothProgressFraction(
 }
 
 /* ------------------------------------------------------------------ */
+/* Vertical chapter-fraction resume                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Overall chapter scroll fraction (0–1): `scrollTop` relative to the total
+ * scrollable distance. Unlike per-page offsets, a fraction stays valid when
+ * images load (all boxes grow together) or the viewport width changes, so
+ * continue-reading restores the same relative content. Null when there is
+ * nothing to scroll (or the inputs aren't laid out yet).
+ */
+export function scrollFractionAtOffset(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+): number | null {
+  if (!Number.isFinite(scrollTop) || !Number.isFinite(scrollHeight) || !Number.isFinite(clientHeight)) {
+    return null;
+  }
+  const max = scrollHeight - clientHeight;
+  if (max <= 0) return null;
+  return Math.max(0, Math.min(1, scrollTop / max));
+}
+
+/**
+ * Inverse of `scrollFractionAtOffset`: the scrollTop that places the
+ * chapter at `fraction`. Null when unmeasurable — callers should retry
+ * after layout settles instead of scrolling to a garbage offset.
+ */
+export function fractionScrollTarget(
+  scrollHeight: number,
+  clientHeight: number,
+  fraction: number,
+): number | null {
+  if (!Number.isFinite(scrollHeight) || !Number.isFinite(clientHeight) || !Number.isFinite(fraction)) {
+    return null;
+  }
+  const max = scrollHeight - clientHeight;
+  if (max <= 0) return null;
+  return Math.max(0, Math.min(1, fraction)) * max;
+}
+
+/* ------------------------------------------------------------------ */
 /* Double-page spread (T1-1)                                           */
 /* ------------------------------------------------------------------ */
 

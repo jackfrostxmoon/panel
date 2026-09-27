@@ -128,6 +128,14 @@ export interface ReadingProgress {
   chapterId: string;
   /** 0-based page index. */
   page: number;
+  /**
+   * Overall chapter scroll fraction (0–1) in vertical mode:
+   * `scrollTop / (scrollHeight - clientHeight)`. Null when the position is
+   * page-granular (paged/gallery modes or legacy rows). A fraction stays
+   * valid across image loads and screen widths where absolute page offsets
+   * shift, so continue-reading restores the same relative content.
+   */
+  scrollFraction: number | null;
   updatedAt: string;
 }
 
