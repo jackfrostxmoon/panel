@@ -15,7 +15,12 @@ import type { GlidePreset } from './settings';
  * onPageChange, and scrollToPage() jumps to a page (continue-reading).
  */
 export interface VerticalReaderHandle {
-  scrollToPage: (page: number, preset?: GlidePreset) => void;
+  /**
+   * Jump to a page. `ratio` (0–1) lands at the same viewport-center
+   * fraction through the page instead of the page top — used for precise
+   * continue-reading restores. Null/omitted = page top.
+   */
+  scrollToPage: (page: number, preset?: GlidePreset, ratio?: number | null) => void;
 }
 
 export const VerticalReader = forwardRef<
@@ -98,13 +103,31 @@ export const VerticalReader = forwardRef<
   initialRatioRef.current = initialRatio;
 
   useImperativeHandle(ref, () => ({
-    scrollToPage(page: number, preset: GlidePreset = 'quick') {
+    scrollToPage(page: number, preset: GlidePreset = 'quick', ratio?: number | null) {
       const el = pageRefs.current[page];
       if (!el) return;
       const scroller = el.closest('.reader-content') as HTMLElement | null;
       if (scroller) {
         const top = el.offsetTop - (scroller.clientTop || 0);
-        glideScrollTo(scroller, top, glideAnimRef, preset);
+        // Precise restore: invert the viewport-center tracking math (see
+        // update() below) so the center sits at the same fraction through
+        // the page instead of the page top. Same math as the mount restore.
+        if (
+          typeof ratio === 'number' &&
+          Number.isFinite(ratio) &&
+          scroller.clientHeight > 0 &&
+          el.offsetHeight > 0
+        ) {
+          const clamped = Math.max(0, Math.min(1, ratio));
+          glideScrollTo(
+            scroller,
+            Math.max(0, top + clamped * el.offsetHeight - scroller.clientHeight / 2),
+            glideAnimRef,
+            preset,
+          );
+        } else {
+          glideScrollTo(scroller, top, glideAnimRef, preset);
+        }
       } else {
         el.scrollIntoView({ behavior: 'auto', block: 'start' });
       }

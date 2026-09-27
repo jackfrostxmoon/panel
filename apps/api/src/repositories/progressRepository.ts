@@ -41,13 +41,18 @@ export class ProgressRepository {
     panelRowId: string,
     chapterRowId: string,
     page: number,
+    scrollRatio?: number | null,
   ): Promise<ReadingProgressRow> {
+    const ratio =
+      typeof scrollRatio === 'number' && Number.isFinite(scrollRatio)
+        ? Math.max(0, Math.min(1, scrollRatio))
+        : null;
     const [row] = await this.db
       .insert(readingProgress)
-      .values({ panelId: panelRowId, chapterId: chapterRowId, page, updatedAt: new Date() })
+      .values({ panelId: panelRowId, chapterId: chapterRowId, page, scrollRatio: ratio, updatedAt: new Date() })
       .onConflictDoUpdate({
         target: [readingProgress.panelId, readingProgress.chapterId],
-        set: { page, updatedAt: new Date() },
+        set: { page, scrollRatio: ratio, updatedAt: new Date() },
       })
       .returning();
     if (!row) throw new Error('Failed to save reading progress.');

@@ -57,6 +57,7 @@ export class ProgressService {
       panelId: panelGlobalId,
       chapterId: chapterGlobalId,
       page: row.page,
+      scrollRatio: row.scrollRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -69,6 +70,16 @@ export class ProgressService {
     }
     if (!Number.isInteger(input.page) || input.page < 0) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Page must be a non-negative integer.');
+    }
+    if (
+      input.scrollRatio !== undefined &&
+      input.scrollRatio !== null &&
+      (typeof input.scrollRatio !== 'number' ||
+        !Number.isFinite(input.scrollRatio) ||
+        input.scrollRatio < 0 ||
+        input.scrollRatio > 1)
+    ) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'scrollRatio must be between 0 and 1.');
     }
     const nativeChapter = splitNativeChapterId(chapterParsed.nativeId);
     if (!nativeChapter || nativeChapter.panelId !== panelParsed.nativeId) {
@@ -95,11 +106,12 @@ export class ProgressService {
       sourceUrl: source.buildChapterUrl(chapterParsed.nativeId),
     });
 
-    const row = await this.progress.upsert(panelRow.id, chapterRow.id, input.page);
+    const row = await this.progress.upsert(panelRow.id, chapterRow.id, input.page, input.scrollRatio ?? null);
     return {
       panelId: input.panelId,
       chapterId: input.chapterId,
       page: row.page,
+      scrollRatio: row.scrollRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -125,6 +137,7 @@ export class ProgressService {
       panelId: globalPanelId,
       chapterId: chapterRow.globalId,
       page: row.page,
+      scrollRatio: row.scrollRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
       panelTitle: panelRow.title,
       coverUrl: panelRow.coverUrl,
@@ -147,6 +160,7 @@ export class ProgressService {
       panelId: row.panelGlobalId,
       chapterId: row.chapterGlobalId,
       page: row.progress.page,
+      scrollRatio: row.progress.scrollRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,
@@ -161,6 +175,7 @@ export class ProgressService {
       panelId: row.panelGlobalId,
       chapterId: row.chapterGlobalId,
       page: row.progress.page,
+      scrollRatio: row.progress.scrollRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,

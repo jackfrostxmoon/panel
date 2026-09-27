@@ -213,6 +213,11 @@ export const readingProgress = pgTable(
       .references(() => chapters.id, { onDelete: 'cascade' }),
     /** 0-based page index. */
     page: integer('page').notNull().default(0),
+    /**
+     * Viewport-center fraction through `page` (0–1) for precise vertical
+     * resume. Null = page-granular (paged/gallery or legacy rows).
+     */
+    scrollRatio: doublePrecision('scroll_ratio'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
