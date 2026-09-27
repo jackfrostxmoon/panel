@@ -61,6 +61,9 @@ export function ReaderImage({
   const [retryKey, setRetryKey] = useState(0);
   const [measuredRatio, setMeasuredRatio] = useState<string | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const onLoadRef = useRef(onLoad);
+  onLoadRef.current = onLoad;
 
   const aspectRatio = page.width && page.height
     ? `${page.width} / ${page.height}`
@@ -159,6 +162,22 @@ const isLoaded = status === 'loaded';
 
   const src = eager || inRange ? targetSrc : undefined;
 
+  /* Disk-cached images load synchronously and fire `load` before React's
+     synthetic event listener is attached — the event is lost and the page
+     stays invisible. Check `img.complete` after mount and recover. */
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img || !img.complete) return;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setMeasuredRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
+    }
+    setStatus((prev) => {
+      if (prev === 'loaded') return prev;
+      onLoadRef.current?.();
+      return 'loaded';
+    });
+  }, [src]);
+
   const reload = useCallback(() => {
     window.clearTimeout(timerRef.current);
     setStatus('loading');
@@ -210,6 +229,7 @@ const isLoaded = status === 'loaded';
             referrerPolicy="no-referrer"
             style={imgStyle}
             className={`reader-image__img${isLoaded ? ' reader-image__img--loaded' : ''}`}
+            ref={(el) => { imgRef.current = el; }}
             onLoad={(e) => {
               const el = e.currentTarget;
               if (el.naturalWidth > 0 && el.naturalHeight > 0) {
