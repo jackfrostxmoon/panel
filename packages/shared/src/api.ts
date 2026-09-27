@@ -107,6 +107,8 @@ export interface SaveProgressInput {
    * Omit or null for page-granular saves (paged/gallery modes).
    */
   scrollFraction?: number | null;
+  /** Horizontal pan in CSS px (vertical mode); omit or null when unknown. */
+  scrollX?: number | null;
   /** Optional display metadata so the home screen can render without an
    *  extra source round-trip. */
   panelTitle?: string;

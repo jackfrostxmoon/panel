@@ -218,6 +218,8 @@ export const readingProgress = pgTable(
      * Null = page-granular (paged/gallery or legacy rows).
      */
     scrollFraction: doublePrecision('scroll_fraction'),
+    /** Horizontal pan in CSS px (vertical/zoomed reading). Null = unknown. */
+    scrollX: doublePrecision('scroll_x'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

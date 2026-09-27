@@ -136,6 +136,14 @@ export interface ReadingProgress {
    * shift, so continue-reading restores the same relative content.
    */
   scrollFraction: number | null;
+  /**
+   * Horizontal pan (scroller `scrollLeft` in CSS px) in vertical mode —
+   * the precision complement to the fraction: image widths never grow on
+   * load, so X is layout-stable where Y needs the fraction. Nonzero while
+   * pinch-zoomed and panned; null when page-granular. Browsers clamp out
+   * of range values on restore (including RTL negative origins).
+   */
+  scrollX: number | null;
   updatedAt: string;
 }
 

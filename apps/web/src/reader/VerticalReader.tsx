@@ -17,11 +17,14 @@ import type { GlidePreset } from './settings';
 export interface VerticalReaderHandle {
   scrollToPage: (page: number, preset?: GlidePreset) => void;
   /**
-   * Jump to an overall chapter fraction (0–1). Used for precise
-   * continue-reading restores — unlike per-page offsets, a fraction tracks
-   * the same relative content while images load and boxes grow.
+   * Jump to an overall chapter fraction (0–1) plus an exact horizontal pan.
+   * Used for precise continue-reading restores — unlike per-page offsets, a
+   * fraction tracks the same relative content while images load and boxes
+   * grow; the X pan (nonzero while pinch-zoomed) is layout-stable because
+   * image widths never grow on load. Out-of-range X is clamped by the
+   * browser, including RTL negative origins.
    */
-  scrollToFraction: (fraction: number, preset?: GlidePreset) => void;
+  scrollToFraction: (fraction: number, preset?: GlidePreset, scrollX?: number | null) => void;
 }
 
 export const VerticalReader = forwardRef<
@@ -61,6 +64,8 @@ export const VerticalReader = forwardRef<
      * to `initialPage` top when absent. Read once on mount. Vertical-only.
      */
     initialFraction?: number | null;
+    /** Exact horizontal pan (CSS px) to restore on mount. Defaults to 0. */
+    initialScrollX?: number | null;
   }
 >(function VerticalReader(
   {
@@ -81,6 +86,7 @@ export const VerticalReader = forwardRef<
     direction = 'ltr',
     initialPage = 0,
     initialFraction = null,
+    initialScrollX = null,
   },
   ref,
 ) {
@@ -105,6 +111,8 @@ export const VerticalReader = forwardRef<
   initialPageRef.current = initialPage;
   const initialFractionRef = useRef(initialFraction);
   initialFractionRef.current = initialFraction;
+  const initialScrollXRef = useRef(initialScrollX);
+  initialScrollXRef.current = initialScrollX;
   /**
    * Fraction-restore correction: `fraction × total` is computed against the
    * current layout, and every image load changes the total — mostly
@@ -119,36 +127,46 @@ export const VerticalReader = forwardRef<
   /** Page indices whose images reported loaded (drives correction disarm). */
   const loadedPagesRef = useRef<Set<number>>(new Set());
 
-  const clearCorrection = () => {
+  // TEMPORARY diagnostic instrumentation ([DBG-F]); removed after diagnosis.
+  const lastLoggedPageRef = useRef<number | null>(null);
+  const clearCorrection = (reason = 'unspecified') => {
+    if (correctFractionRef.current !== null) {
+      // eslint-disable-next-line no-console
+      console.log(`[DBG-F] disarm correction (was page/target ${JSON.stringify(correctFractionRef.current)}), reason=${reason}`);
+    }
     correctFractionRef.current = null;
     window.clearTimeout(correctTimerRef.current);
     correctTimerRef.current = 0;
   };
 
   /** Recompute the armed fraction against current layout; direct write. */
-  const reassertCorrection = (): void => {
+  const reassertCorrection = (why: string): void => {
     const fraction = correctFractionRef.current;
     const scroller = containerRef.current?.closest('.reader-content') as HTMLElement | null;
     if (fraction === null || !scroller) return;
     const next = fractionScrollTarget(scroller.scrollHeight, scroller.clientHeight, fraction);
+    // eslint-disable-next-line no-console
+    console.log(`[DBG-F] reassert why=${why} fraction=${fraction} max=${scroller.scrollHeight - scroller.clientHeight} target=${next} scrollTopBefore=${scroller.scrollTop}`);
     if (next !== null) scroller.scrollTop = next;
   };
 
-  const armCorrection = (fraction: number) => {
+  const armCorrection = (fraction: number, why: string) => {
+    // eslint-disable-next-line no-console
+    console.log(`[DBG-F] arm correction fraction=${fraction} why=${why}`);
     correctFractionRef.current = fraction;
     window.clearTimeout(correctTimerRef.current);
     // Bounded: never fight the user or loop forever.
-    correctTimerRef.current = window.setTimeout(clearCorrection, 5000);
+    correctTimerRef.current = window.setTimeout(() => clearCorrection('timeout'), 5000);
   };
 
   const handlePageLoad = (index: number) => {
     loadedPagesRef.current.add(index);
     if (correctFractionRef.current === null) return;
     // The total grew as this image resolved — re-assert the fraction.
-    reassertCorrection();
+    reassertCorrection(`load:${index}`);
     // Everything resolved: the total is final, exact from here on.
     if (loadedPagesRef.current.size >= pageRefs.current.length && pageRefs.current.length > 0) {
-      clearCorrection();
+      clearCorrection('complete');
     }
   };
 
@@ -157,7 +175,7 @@ export const VerticalReader = forwardRef<
 
   useImperativeHandle(ref, () => ({
     scrollToPage(page: number, preset: GlidePreset = 'quick') {
-      clearCorrection();
+      clearCorrection('scrollToPage');
       const el = pageRefs.current[page];
       if (!el) return;
       const scroller = el.closest('.reader-content') as HTMLElement | null;
@@ -168,17 +186,29 @@ export const VerticalReader = forwardRef<
         el.scrollIntoView({ behavior: 'auto', block: 'start' });
       }
     },
-    scrollToFraction(fraction: number, preset: GlidePreset = 'quick') {
-      clearCorrection();
+    scrollToFraction(fraction: number, preset: GlidePreset = 'quick', scrollX?: number | null) {
+      clearCorrection('new-jump');
       if (!Number.isFinite(fraction)) return;
       const clamped = Math.max(0, Math.min(1, fraction));
       const scroller = scrollerOf();
-      if (!scroller) return;
+      if (!scroller) {
+        // eslint-disable-next-line no-console
+        console.log('[DBG-F] scrollToFraction: no scroller, skip');
+        return;
+      }
+      // The X pan is layout-stable (widths never grow on load), so it lands
+      // exactly on the first try — unlike the vertical target, which the
+      // armed correction below converges as the total settles.
+      if (typeof scrollX === 'number' && Number.isFinite(scrollX)) {
+        scroller.scrollLeft = scrollX;
+      }
       // Best-effort immediate jump; the armed correction converges as the
       // total settles (see correctFractionRef docs).
       const next = fractionScrollTarget(scroller.scrollHeight, scroller.clientHeight, clamped);
+      // eslint-disable-next-line no-console
+      console.log(`[DBG-F] scrollToFraction fraction=${clamped} scrollX=${scrollX} max=${scroller.scrollHeight - scroller.clientHeight} target=${next} scrollTopBefore=${scroller.scrollTop}`);
       if (next !== null) glideScrollTo(scroller, next, glideAnimRef, preset);
-      armCorrection(clamped);
+      armCorrection(clamped, 'scrollToFraction');
     },
   }));
 
@@ -208,7 +238,7 @@ export const VerticalReader = forwardRef<
         event.key === 's' ||
         event.key === 'S'
       ) {
-        clearCorrection();
+        clearCorrection('key');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -236,9 +266,13 @@ export const VerticalReader = forwardRef<
       const el = pageRefs.current[want];
       if (el && scroller) {
         const fraction = initialFractionRef.current;
+        // eslint-disable-next-line no-console
+        console.log(`[DBG-F] mount restore initialPage=${initialPageRef.current} initialFraction=${fraction} max=${scroller.scrollHeight - scroller.clientHeight} pages=${pageRefs.current.length}`);
         if (typeof fraction === 'number' && Number.isFinite(fraction)) {
           // Overall chapter fraction: resilient to per-page box growth, and
-          // re-asserted as images load (see correctFractionRef docs).
+          // re-asserted as images load (see correctFractionRef docs). The X
+          // pan applies immediately — widths never grow, so it needs no
+          // correction loop.
           const clamped = Math.max(0, Math.min(1, fraction));
           const next = fractionScrollTarget(
             scroller.scrollHeight,
@@ -246,7 +280,11 @@ export const VerticalReader = forwardRef<
             clamped,
           );
           if (next !== null) scroller.scrollTop = next;
-          armCorrection(clamped);
+          const panX = initialScrollXRef.current;
+          if (typeof panX === 'number' && Number.isFinite(panX)) {
+            scroller.scrollLeft = panX;
+          }
+          armCorrection(clamped, 'mount');
         } else {
           const top = el.offsetTop - (scroller.clientTop || 0);
           scroller.scrollTop = top;
@@ -272,34 +310,54 @@ export const VerticalReader = forwardRef<
         if (top <= viewportCenter) best = i;
         else break;
       }
-      onPageChangeRef.current(best);
+      // Image preloading always follows the live position, even mid-settle.
       setCurrentIndex((prev) => (prev === best ? prev : best));
 
-      // Overall chapter fraction for continue-reading saves. Reported every
-      // tracking update; the parent keeps it in a ref (no re-render storm).
-      if (scroller && onScrollFractionRef.current) {
-        const fraction = scrollFractionAtOffset(
-          scroller.scrollTop,
-          scroller.scrollHeight,
-          scroller.clientHeight,
-        );
-        if (fraction !== null) onScrollFractionRef.current(fraction);
+      // While a restore correction is armed, the layout is in violent flux
+      // (fallback boxes resolving 12x) and any report would be garbage that
+      // gets persisted (observed: page 6→0→1 flaps with mid-flux fractions
+      // saved as real progress). Hold the intended restore values instead —
+      // the parent's states/refs already carry them, so saves and exit
+      // flushes stay correct through settle. Live reporting resumes on
+      // disarm (complete/timeout/user input).
+      const settling = correctFractionRef.current !== null;
+      if (!settling) {
+        onPageChangeRef.current(best);
+
+        // Overall chapter fraction for continue-reading saves. Reported every
+        // tracking update; the parent keeps it in a ref (no re-render storm).
+        if (scroller && onScrollFractionRef.current) {
+          const fraction = scrollFractionAtOffset(
+            scroller.scrollTop,
+            scroller.scrollHeight,
+            scroller.clientHeight,
+          );
+          if (fraction !== null) onScrollFractionRef.current(fraction);
+        }
+      }
+      if (best !== lastLoggedPageRef.current) {
+        lastLoggedPageRef.current = best;
+        // eslint-disable-next-line no-console
+        console.log(`[DBG-F] track page=${best} scrollTop=${scroller?.scrollTop ?? -1} max=${scroller ? scroller.scrollHeight - scroller.clientHeight : -1}${settling ? ' (gated: settling)' : ''}`);
       }
 
-      // Calculate scroll ratio within the current page for smooth progress
-      const currentEl = refs[best];
-      if (currentEl && onProgressRef.current) {
-        const rect = currentEl.getBoundingClientRect();
-        const pageTop = rect.top - scrollerTop;
-        const pageHeight = rect.height;
+      // Calculate scroll ratio within the current page for smooth progress.
+      // Gated with the rest while settling (this also calls setPage upstream).
+      if (!settling) {
+        const currentEl = refs[best];
+        if (currentEl && onProgressRef.current) {
+          const rect = currentEl.getBoundingClientRect();
+          const pageTop = rect.top - scrollerTop;
+          const pageHeight = rect.height;
 
-        if (pageHeight > 0) {
-          // Ratio of how far the viewport center has progressed through this page
-          const progressThroughPage = Math.max(
-            0,
-            Math.min(1, (viewportCenter - pageTop) / pageHeight),
-          );
-          onProgressRef.current(best, progressThroughPage);
+          if (pageHeight > 0) {
+            // Ratio of how far the viewport center has progressed through this page
+            const progressThroughPage = Math.max(
+              0,
+              Math.min(1, (viewportCenter - pageTop) / pageHeight),
+            );
+            onProgressRef.current(best, progressThroughPage);
+          }
         }
       }
     };
@@ -348,9 +406,9 @@ export const VerticalReader = forwardRef<
       onClick={handleHalfClick}
       ref={containerRef}
       /* A correction in flight must never fight the user's own scrolling. */
-      onWheel={clearCorrection}
-      onTouchStart={clearCorrection}
-      onPointerDown={clearCorrection}
+      onWheel={() => clearCorrection('wheel')}
+      onTouchStart={() => clearCorrection('touch')}
+      onPointerDown={() => clearCorrection('pointer')}
     >
       <button
         type="button"
