@@ -25,7 +25,6 @@ import { proxiedPageUrl } from '../utils/format';
 import {
   applyIntent,
   clampPage,
-  cleanRatio,
   intentForKey,
   isEditableKeyTarget,
   nextSpreadPage,
@@ -56,21 +55,14 @@ function pingReaderSettingsSync(): void {
 }
 
 /**
- * Chapter-hop handoff keys plus the live session position. Hops are full
- * document loads, so in-memory refs can't carry intent across — the
- * destination chapter's landing position (paged mode) and the abandoned
- * chapter's exact scroll position (vertical, as an overall chapter fraction)
- * are stashed in sessionStorage just before the unload. The page memory is
- * additionally rewritten on every page change, so a soft refresh (same tab)
- * restores the exact position instead of restarting at the first image.
- * Tab-scoped, so a position never leaks into another tab. No server
- * progress involved.
- *
- * Fraction memory lives under a v2 key: v1 stored a per-page intra-page
- * ratio (`{p, r}`), which the chapter-fraction scheme must never misread.
+ * Chapter-hop handoff keys. Hops are full document loads, so in-memory refs
+ * can't carry intent across — the destination chapter's landing position
+ * (paged mode) and the abandoned chapter's exact page (vertical/gallery)
+ * are stashed in sessionStorage just before the unload. Tab-scoped, so a
+ * hop never leaks position into another tab.
  */
 const CHAPTER_LANDING_SESSION_KEY = 'panel-reader:chapter-landing:v1';
-const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v2';
+const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v1';
 
 /** Read a string map from sessionStorage (tolerates blocked storage). */
 function readSessionMap(key: string): Map<string, string> {
@@ -98,12 +90,6 @@ function stashChapterLanding(destChapterId: string, landing: 'first' | 'last'): 
   writeSessionMap(CHAPTER_LANDING_SESSION_KEY, map);
 }
 
-/** Peek (read without deleting) a stashed landing for this chapter, if any. */
-function peekChapterLanding(chapterId: string): 'first' | 'last' | null {
-  const landing = readSessionMap(CHAPTER_LANDING_SESSION_KEY).get(chapterId);
-  return landing === 'first' || landing === 'last' ? landing : null;
-}
-
 /** Consume (read + delete) a stashed landing for this chapter, if any. */
 function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
   const map = readSessionMap(CHAPTER_LANDING_SESSION_KEY);
@@ -116,31 +102,10 @@ function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
   return null;
 }
 
-/** Remember the current position so a soft refresh or a later hop back
- * restores the exact scroll spot (rewritten live — session only). In
- * vertical mode the overall chapter fraction, the page anchor (viewport-
- * center page + intra-page ratio) and the exact horizontal pan are stored
- * alongside (`{p, f, x, a}` JSON); other modes store the plain page
- * index. */
-function stashPageMemory(chapterId: string, page: number, fraction?: number, scrollX?: number, anchorRatio?: number): void {
+/** Remember the current page so a later hop back restores the exact position. */
+function stashPageMemory(chapterId: string, page: number): void {
   const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
-  if (typeof fraction === 'number' && Number.isFinite(fraction)) {
-    const clamped = Math.max(0, Math.min(1, fraction));
-    const entry: { p: number; f: number; x?: number; a?: number } = {
-      p: page,
-      f: Math.round(clamped * 1000) / 1000,
-    };
-    if (typeof scrollX === 'number' && Number.isFinite(scrollX) && scrollX !== 0) {
-      entry.x = Math.round(scrollX * 10) / 10;
-    }
-    const anchor = cleanRatio(anchorRatio);
-    if (anchor !== null) {
-      entry.a = Math.round(anchor * 1000) / 1000;
-    }
-    map.set(chapterId, JSON.stringify(entry));
-  } else {
-    map.set(chapterId, String(page));
-  }
+  map.set(chapterId, String(page));
   // Bound the memory: a long hopping session must not grow storage unbounded.
   while (map.size > 100) {
     const oldest = map.keys().next();
@@ -150,43 +115,12 @@ function stashPageMemory(chapterId: string, page: number, fraction?: number, scr
   writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
 }
 
-/** Page + chapter fraction + page anchor + horizontal pan previously left on
- * this chapter in this tab session, if any. Reads both the current
- * `{p, f, x, a}` JSON entries and legacy plain-number entries. (The v1
- * `{p, r}` per-page ratios live under a different key and are never read
- * here.) */
-function readPageMemory(chapterId: string): { page: number; fraction?: number; scrollX?: number; anchorRatio?: number } | undefined {
+/** Exact page previously left on this chapter via chapter navigation, if any. */
+function readPageMemory(chapterId: string): number | undefined {
   const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
   if (raw === undefined) return undefined;
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw) as { p?: unknown; f?: unknown; x?: unknown; a?: unknown };
-      if (typeof parsed.p !== 'number' || !Number.isInteger(parsed.p) || parsed.p < 0) {
-        return undefined;
-      }
-      if (parsed.f === undefined) return { page: parsed.p };
-      if (typeof parsed.f !== 'number' || !Number.isFinite(parsed.f)) return { page: parsed.p };
-      const out: { page: number; fraction?: number; scrollX?: number; anchorRatio?: number } = {
-        page: parsed.p,
-        fraction: Math.max(0, Math.min(1, parsed.f)),
-      };
-      if (typeof parsed.x === 'number' && Number.isFinite(parsed.x)) out.scrollX = parsed.x;
-      const anchor = cleanRatio(typeof parsed.a === 'number' ? parsed.a : null);
-      if (anchor !== null) out.anchorRatio = anchor;
-      return out;
-    } catch {
-      return undefined;
-    }
-  }
   const page = Number(raw);
-  return Number.isInteger(page) && page >= 0 ? { page } : undefined;
-}
-
-/** Clamp a chapter fraction for persistence (finite 0–1, else null). */
-function cleanFraction(value: number | null | undefined): number | null {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(0, Math.min(1, value))
-    : null;
+  return Number.isInteger(page) && page >= 0 ? page : undefined;
 }
 
 /**
@@ -274,38 +208,8 @@ export function ReaderPage() {
     [],
   );
 
-  /* Session-only position: lazy-init from sessionStorage so the first render
-     already starts at the live page — a soft refresh never flashes page 1.
-     A directed hop landing wins over the memory (peeked, not consumed). */
-  const [page, setPage] = useState(() => {
-    if (peekChapterLanding(chapterId) !== null) return 0;
-    return readPageMemory(chapterId)?.page ?? 0;
-  });
-  /* Live intra-page fraction driving the footer progress bar (display only —
-     continue-reading uses the chapter fraction below). Always starts fresh. */
+  const [page, setPage] = useState(0);
   const [scrollRatio, setScrollRatio] = useState(0);
-  /* Overall chapter fraction (0–1) in vertical mode — the continue-reading
-     position. Seeded from session memory so a soft refresh remounts at the
-     same relative content. */
-  const [scrollFraction, setScrollFraction] = useState(() => {
-    if (peekChapterLanding(chapterId) !== null) return 0;
-    return readPageMemory(chapterId)?.fraction ?? 0;
-  });
-  /* Page-anchored position (0–1 ratio through `page`) in vertical mode —
-     the precise continue-reading position for long-strip chapters, where
-     the overall fraction drifts with non-uniform image growth. Seeded from
-     session memory; falls back to the fraction when absent. */
-  const [anchorRatio, setAnchorRatio] = useState(() => {
-    if (peekChapterLanding(chapterId) !== null) return 0;
-    return readPageMemory(chapterId)?.anchorRatio ?? 0;
-  });
-  /* Exact horizontal pan (CSS px) in vertical mode — the precision
-     complement to the fraction (nonzero while pinch-zoomed). Reported live
-     from the scroller every scroll frame; seeded from session memory. */
-  const [scrollX, setScrollX] = useState(() => {
-    if (peekChapterLanding(chapterId) !== null) return 0;
-    return readPageMemory(chapterId)?.scrollX ?? 0;
-  });
   /** False until the user picks "continue" / "start over" (or nothing to resume). */
   const [resumeResolved, setResumeResolved] = useState(false);
   /**
@@ -320,13 +224,6 @@ export function ReaderPage() {
       is only known once that chapter's pages arrive — hold the destination id here
       until a parallel effect can jump to the final page. */
   const lastPageChapterRef = useRef<string | null>(null);
-  /** Session page restored for this chapter mount (>0 means "don't scroll to
-      top on pages-load" — the child reader jumps via `initialPage`). */
-  const restoredMemoryRef = useRef<number | null>(null);
-  /** Session/server fraction restore in flight (non-null means "don't scroll
-      to top on pages-load" even when the restored page is 0 — the child
-      reader jumps via `initialFraction`). Consumed by the page-load effect. */
-  const restoredFractionRef = useRef<number | null>(null);
   /** The panel is heavy (shortcuts tables, dropdowns) — keep it out of the
       initial DOM so it can't drag down LCP; mount on first open and leave it
       mounted afterwards so close/reopen still animates. */
@@ -369,43 +266,18 @@ export function ReaderPage() {
   const scrollSpeedRef = useRef(scrollSpeedPx(settings.scrollSpeed));
   /** Latest page index for timers/handlers that must not re-subscribe on page change. */
   const pageRef = useRef(page);
-  /** Latest intra-page fraction for throttled session writes (updates every scroll frame). */
-  const scrollRatioRef = useRef(scrollRatio);
-  /** Latest chapter fraction for progress saves (updates every scroll frame). */
-  const scrollFractionRef = useRef(scrollFraction);
-   /** Latest horizontal pan in vertical mode (updates every scroll frame). */
-   const scrollXRef = useRef(scrollX);
-   /** Latest anchor ratio for progress saves (updates every scroll frame). */
-   const anchorRatioRef = useRef(anchorRatio);
-   /** Last fraction+page actually sent to the server (dedupes scroll saves). */
-   const lastSavedFractionRef = useRef<number | null>(null);
-   const lastSavedPageRef = useRef<number | null>(null);
-  /** Current reading mode for session-write handlers that must not re-subscribe. */
-  const readerModeRef = useRef(settings.mode);
-  /** Latest chapter payload for unload-flush handlers (see flushProgress). */
-  const chapterPagesRef = useRef(chapterPages.data);
-  /** Mirrors of resume/reset state for the stable flush callbacks. */
-  const resumeResolvedRef = useRef(resumeResolved);
-  const resetChapterRef = useRef(resetChapter);
   scrollDirRef.current = scrollDir;
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
-  scrollRatioRef.current = scrollRatio;
-  scrollFractionRef.current = scrollFraction;
-  anchorRatioRef.current = anchorRatio;
-  readerModeRef.current = settings.mode;
-  chapterPagesRef.current = chapterPages.data;
-  resumeResolvedRef.current = resumeResolved;
-  resetChapterRef.current = resetChapter;
 
-  /* Reset on mount. Hops and soft refreshes are full document loads, so this
-     runs once per chapter with the landing/page-memory stashed in
-     sessionStorage (see `hardHopToChapter` + the live write below). A
-     paged-mode directed transition chooses the landing position: the next
-     chapter opens at its first page, the previous chapter at its last page.
-     Otherwise, if we have a live session page for this chapter (previous
-     chapter navigation OR a soft refresh of this same chapter), restore it
-     instead of starting from page 0. */
+  /* Reset on mount. Hops are full document loads, so this runs once per
+     chapter with the landing/page-memory stashed in sessionStorage just
+     before the unload (see `hardHopToChapter`). A paged-mode directed
+     transition chooses the landing position: the next chapter opens at
+     its first page, the previous chapter at its last page. Otherwise, if
+     we have a saved page for this chapter from a previous chapter
+     navigation (vertical/gallery), restore it instead of starting
+     from page 0. */
   useEffect(() => {
     const landing = consumeChapterLanding(chapterId);
     if (landing) {
@@ -414,71 +286,22 @@ export function ReaderPage() {
       // payload's page count, which isn't known yet; hold the destination id in
       // lastPageChapterRef and let the page-load effect apply it below.
       lastPageChapterRef.current = landing === 'last' ? chapterId : null;
-      restoredMemoryRef.current = null;
-      restoredFractionRef.current = null;
       setResumeResolved(true);
       setPage(0);
-      setScrollRatio(0);
-      scrollFractionRef.current = 0;
-      setScrollFraction(0);
-      scrollXRef.current = 0;
-      setScrollX(0);
-      lastSavedFractionRef.current = null;
-      lastSavedPageRef.current = null;
     } else {
-      const saved = readPageMemory(chapterId);
-      restoredMemoryRef.current = saved?.page ?? null;
-      restoredFractionRef.current = saved?.fraction ?? null;
-      setPage(saved?.page ?? 0);
-      scrollFractionRef.current = saved?.fraction ?? 0;
-      setScrollFraction(saved?.fraction ?? 0);
-      scrollXRef.current = saved?.scrollX ?? 0;
-      setScrollX(saved?.scrollX ?? 0);
-      anchorRatioRef.current = saved?.anchorRatio ?? 0;
-      setAnchorRatio(saved?.anchorRatio ?? 0);
-      setResumeResolved(saved !== undefined); // Skip resume prompt if restoring a position
+      const savedPage = readPageMemory(chapterId);
+      setPage(savedPage ?? 0);
+      setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
     }
     setResetChapter(chapterId);
+    setScrollRatio(0);
     setSettingsOpen(false);
+    window.scrollTo(0, 0);
     const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
-    if (restoredMemoryRef.current == null || restoredMemoryRef.current <= 0) {
-      window.scrollTo(0, 0);
-      content?.scrollTo({ top: 0 });
-    }
-    // Focus without moving the scroll when restoring, so keyboard nav works
-    // immediately but the restored position is kept.
-    if (restoredMemoryRef.current != null && restoredMemoryRef.current > 0) {
-      content?.focus({ preventScroll: true });
-    } else {
-      content?.focus();
-    }
+    content?.scrollTo({ top: 0 });
+    content?.focus();
   }, [chapterId]);
-
-  /* Keep the live session position in sync — every page turn rewrites it
-     immediately (with the current chapter fraction in vertical mode), so
-     a soft refresh restores the exact spot (session only, no server
-     progress involved). */
-  useEffect(() => {
-    stashPageMemory(
-      chapterId,
-      page,
-      settings.mode === 'vertical' ? scrollFractionRef.current : undefined,
-      settings.mode === 'vertical' ? scrollXRef.current : undefined,
-    );
-  }, [chapterId, page, settings.mode]);
-
-  /* Throttled fraction write (vertical only): the fraction updates every
-     scroll frame, so persist it 800ms after scrolling pauses instead of per
-     frame. Page turns are already covered by the immediate write above;
-     exits are covered by the unmount/pagehide flush below. */
-  useEffect(() => {
-    if (settings.mode !== 'vertical') return;
-    const timer = window.setTimeout(() => {
-      stashPageMemory(chapterId, pageRef.current, scrollFractionRef.current, scrollXRef.current);
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [chapterId, page, scrollFraction, settings.mode]);
 
   /* Paged-mode backward transitions land on the previous chapter's last page.
      pageCount is 0 while the payload is loading, so wait for the pages to arrive
@@ -487,28 +310,10 @@ export function ReaderPage() {
   useEffect(() => {
     if (lastPageChapterRef.current === chapterId && pageCount > 0) {
       lastPageChapterRef.current = null;
-      restoredMemoryRef.current = null;
       setPage(pageCount - 1);
-      return;
     }
-    // Once the new chapter's pages load, make sure the scroller is at the top
-    // — unless we just restored a live session position (soft refresh), which
-    // the child reader already jumped to via `initialPage`/`initialFraction`.
-    // The fraction half matters: fraction restores typically sit on page 0,
-    // where the page-only guard below would clobber the mount jump back to
-    // top (and a warm cache fires no later image loads to recover it).
+    // Once the new chapter's pages load, make sure the scroller is at the top.
     if (pages.length > 0 && pageCount > 0) {
-      if (restoredMemoryRef.current != null && restoredMemoryRef.current > 0) {
-        restoredMemoryRef.current = null;
-        restoredFractionRef.current = null;
-        return;
-      }
-      if (restoredFractionRef.current != null) {
-        restoredMemoryRef.current = null;
-        restoredFractionRef.current = null;
-        return;
-      }
-      restoredMemoryRef.current = null;
       const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
       content?.scrollTo({ top: 0 });
       window.scrollTo(0, 0);
@@ -558,30 +363,13 @@ export function ReaderPage() {
      disappears after a restart. */
   useEffect(() => {
     if (!progress.isSuccess || !chapterPages.data) return;
-    if (progress.data && (progress.data.page > 0 || progress.data.scrollFraction != null)) return;
+    if (progress.data && progress.data.page > 0) return;
     const data = chapterPages.data;
-    // Saved mid-first-page in vertical mode (page 0 + fraction): restore the
-    // exact relative spot silently. The ref is synced too so a persist that
-    // fires before tracking catches up keeps the restored fraction.
-    if (progress.data && progress.data.page === 0 && progress.data.scrollFraction != null) {
-      const fraction = cleanFraction(progress.data.scrollFraction) ?? 0;
-      const panX = progress.data.scrollX ?? 0;
-      scrollFractionRef.current = fraction;
-      setScrollFraction(fraction);
-      scrollXRef.current = panX;
-      setScrollX(panX);
-      restoredFractionRef.current = fraction;
-      verticalRef.current?.scrollToFraction(fraction, 'instant', panX);
-      setResumeResolved(true);
-      return;
-    }
     if (!pendingSaveRef.current || pendingSaveRef.current.chapterId !== data.chapterId) {
       pendingSaveRef.current = {
         panelId: data.panelId,
         chapterId: data.chapterId,
         page: 0,
-        scrollFraction: null,
-        scrollX: null,
         panelTitle: data.panelTitle ?? undefined,
         coverUrl: data.coverUrl,
         chapterTitle: data.chapterTitle ?? undefined,
@@ -590,12 +378,11 @@ export function ReaderPage() {
     setResumeResolved(true);
   }, [progress.isSuccess, progress.data, chapterPages.data]);
 
-  /* Resume decision: the user scrolled past the saved position on their own —
+  /* Resume decision: the user scrolled past the saved page on their own —
      the prompt is moot, so dismiss it (and start persisting progress). */
   useEffect(() => {
     const savedPage = progress.data?.page ?? 0;
-    const hasSavedPosition = savedPage > 0 || progress.data?.scrollFraction != null;
-    if (!resumeResolved && hasSavedPosition && page >= savedPage) {
+    if (!resumeResolved && savedPage > 0 && page >= savedPage) {
       setResumeResolved(true);
     }
   }, [page, resumeResolved, progress.data]);
@@ -644,54 +431,14 @@ export function ReaderPage() {
   const pendingSaveRef = useRef<SaveProgressInput | null>(null);
 
   /**
-   * Session-only flush: persist the freshest page + chapter fraction refs so
-   * a later remount in this tab restores the exact spot. SPA navigation away
-   * fires no `pagehide`, so the unmount cleanup below must call this — the
-   * throttled session write alone can lag the close spot (it starves under
-   * continuous scrolling and is cancelled on unmount).
-   */
-  const flushSessionPage = useCallback(() => {
-    stashPageMemory(
-      chapterId,
-      pageRef.current,
-      readerModeRef.current === 'vertical' ? scrollFractionRef.current : undefined,
-      readerModeRef.current === 'vertical' ? scrollXRef.current : undefined,
-    );
-  }, [chapterId]);
-
-  /**
-   * Best-effort flush of the progress save. Refreshes the payload from the
-   * live position first, so an exit without a recent page turn (the norm on
-   * ultra-tall single-page chapters) still persists the exact fraction — the
-   * instant save below only fires on page changes. Guarded like the instant
-   * save: never persist before the resume decision, and never against a
-   * stale chapter id. Idempotent (nulls the ref after sending) so the save
-   * effect, `pagehide`, unmount, and chapter hops can all call it without
-   * double-sending. Beacon survives the document unload of a hard hop.
+   * Best-effort flush of the pending progress save. Idempotent (nulls the
+   * ref after sending) so the save effect, `pagehide`, unmount, and chapter
+   * hops can all call it without double-sending. Beacon survives the
+   * document unload of a hard hop.
    */
   const flushProgress = useCallback(() => {
-    const data = chapterPagesRef.current;
-    if (data && resumeResolvedRef.current && resetChapterRef.current === data.chapterId) {
-      const vertical = readerModeRef.current === 'vertical';
-      const fraction = vertical ? cleanFraction(scrollFractionRef.current) : null;
-      const x = vertical ? scrollXRef.current : null;
-      pendingSaveRef.current = {
-        panelId: data.panelId,
-        chapterId: data.chapterId,
-        page: pageRef.current,
-        scrollFraction: fraction,
-        scrollX: typeof x === 'number' && Number.isFinite(x) ? x : null,
-        panelTitle: data.panelTitle ?? undefined,
-        coverUrl: data.coverUrl,
-        chapterTitle: data.chapterTitle ?? undefined,
-      };
-      if (fraction !== null) lastSavedFractionRef.current = fraction;
-      lastSavedPageRef.current = pageRef.current;
-    }
     const payload = pendingSaveRef.current;
-    if (!payload) {
-      return;
-    }
+    if (!payload) return;
     pendingSaveRef.current = null;
     void api.saveProgressBeacon(payload);
   }, []);
@@ -730,8 +477,8 @@ export function ReaderPage() {
 
   /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
       page — the next chapter opens at its first page, the previous chapter at
-      its last page. In vertical/gallery the exact position the user left off
-      on is restored when they return (vertical keeps the intra-page spot). */
+      its last page. In vertical/gallery the exact page the user left off on is
+      restored when they return. */
   const navigateToChapter = useCallback(
     (dir: 'next' | 'prev') => {
       const id =
@@ -746,13 +493,8 @@ export function ReaderPage() {
       if (settings.mode === 'paged') {
         hardHopToChapter(id, dir === 'next' ? 'first' : 'last');
       } else {
-        // Remember the current position for this chapter so a later hop back restores it.
-        stashPageMemory(
-          chapterId,
-          page,
-          settings.mode === 'vertical' ? scrollFractionRef.current : undefined,
-          settings.mode === 'vertical' ? scrollXRef.current : undefined,
-        );
+        // Remember the current page for this chapter so a later hop back restores it.
+        stashPageMemory(chapterId, page);
         hardHopToChapter(id);
       }
     },
@@ -802,72 +544,20 @@ export function ReaderPage() {
     // re-renders with the correct values right after, and the save fires then.
     if (resetChapter !== chapterPages.data.chapterId) return;
     const data = chapterPages.data;
-    // Vertical mode persists the overall chapter fraction alongside the page
-    // so Continue restores the same relative content; other modes stay
-    // page-granular. Read via ref (mirrored every render) so fraction updates
-    // don't retrigger this effect — page turns carry the latest fraction,
-    // intra-page scrolls are covered by the debounced save below, and exits
-    // are covered by the flush above.
-    const vertical = readerModeRef.current === 'vertical';
-    const fraction = vertical ? cleanFraction(scrollFractionRef.current) : null;
     pendingSaveRef.current = {
       panelId: data.panelId,
       chapterId: data.chapterId,
       page,
-      scrollFraction: fraction,
-      scrollX: vertical ? scrollXRef.current : null,
       panelTitle: data.panelTitle ?? undefined,
       coverUrl: data.coverUrl,
       chapterTitle: data.chapterTitle ?? undefined,
     };
-    if (fraction !== null) lastSavedFractionRef.current = fraction;
-    lastSavedPageRef.current = page;
     // Instant save — no debounce.
     const payload = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (payload) saveProgress.mutate(payload);
     // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on page
   }, [page, resumeResolved, pageCount, chapterPages.data, resetChapter]);
-
-  /* Precise scroll-position save (vertical only): the fraction updates every
-     scroll frame, so persist the latest position 800ms after scrolling
-     pauses instead of only on page-boundary changes. Deduped by epsilon so
-     tiny jitters don't spam the API; the exit flush covers closes
-     mid-debounce. */
-  useEffect(() => {
-    if (settings.mode !== 'vertical') return;
-    if (!resumeResolved || pageCount === 0 || !chapterPages.data) return;
-    if (resetChapter !== chapterPages.data.chapterId) return;
-    const data = chapterPages.data;
-    const timer = window.setTimeout(() => {
-      const fraction = cleanFraction(scrollFractionRef.current);
-      if (fraction === null) return;
-      const lastFraction = lastSavedFractionRef.current;
-      const lastPage = lastSavedPageRef.current;
-      const moved =
-        lastFraction === null ||
-        Math.abs(fraction - lastFraction) > 0.001 ||
-        lastPage !== pageRef.current;
-      if (!moved) return;
-      const x = scrollXRef.current;
-      const payload: SaveProgressInput = {
-        panelId: data.panelId,
-        chapterId: data.chapterId,
-        page: pageRef.current,
-        scrollFraction: fraction,
-        scrollX: typeof x === 'number' && Number.isFinite(x) ? x : null,
-        panelTitle: data.panelTitle ?? undefined,
-        coverUrl: data.coverUrl,
-        chapterTitle: data.chapterTitle ?? undefined,
-      };
-      lastSavedFractionRef.current = fraction;
-      lastSavedPageRef.current = pageRef.current;
-      setScrollX(payload.scrollX ?? 0);
-      saveProgress.mutate(payload);
-    }, 800);
-    return () => window.clearTimeout(timer);
-    // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on scrollFraction
-  }, [scrollFraction, settings.mode, resumeResolved, pageCount, chapterPages.data, resetChapter]);
 
   /* Flush on the way out. React cleanups don't run when the tab itself
      closes, and `beforeunload` is unreliable on mobile — `pagehide`
@@ -877,21 +567,12 @@ export function ReaderPage() {
      a restart. The unmount cleanup below covers in-app navigation away
      from the reader. */
   useEffect(() => {
-    // A refresh can land before React's write effects run, so persist the
-    // freshest refs on unload too (in addition to the unmount flush below).
     window.addEventListener('pagehide', flushProgress);
-    window.addEventListener('pagehide', flushSessionPage);
-    return () => {
-      window.removeEventListener('pagehide', flushProgress);
-      window.removeEventListener('pagehide', flushSessionPage);
-    };
-  }, [flushProgress, flushSessionPage]);
+    return () => window.removeEventListener('pagehide', flushProgress);
+  }, [flushProgress]);
   useEffect(() => () => {
-    // SPA navigation away fires no pagehide — flush both stores from the
-    // same live refs so session and server can't diverge.
-    flushSessionPage();
     flushProgress();
-  }, [flushProgress, flushSessionPage]);
+  }, [flushProgress]);
 
   /* Keyboard navigation. */
   useEffect(() => {
@@ -1500,15 +1181,11 @@ export function ReaderPage() {
   } else if (chapterPages.data) {
     const data = chapterPages.data;
     const savedPage = progress.data?.page ?? 0;
-    const savedFraction = progress.data?.scrollFraction ?? null;
     // No banner if the user already finished the chapter (saved page is the
     // last one) — resuming there is pointless, and a 0/1-page chapter has
     // nothing to resume from either.
     const showResumeBanner =
-      !resumeResolved &&
-      (savedPage > 0 || savedFraction != null) &&
-      pageCount > 1 &&
-      savedPage < pageCount - 1;
+      !resumeResolved && savedPage > 0 && pageCount > 1 && savedPage < pageCount - 1;
 
     const currentChapter = chapters.data?.find((c) => c.id === data.chapterId);
     const sourceTitle = data.chapterTitle?.trim() ?? '';
@@ -1576,21 +1253,7 @@ export function ReaderPage() {
                 className="btn btn--primary btn--sm"
                 onClick={() => {
                   setResumeResolved(true);
-                  // In vertical mode the saved chapter fraction restores the
-                  // same relative content; other modes jump to the page top.
-                  const fraction = cleanFraction(progress.data?.scrollFraction);
-                  const panX = progress.data?.scrollX ?? 0;
-                  if (settings.mode === 'vertical' && fraction !== null) {
-                    setPage(savedPage);
-                    scrollFractionRef.current = fraction;
-                    setScrollFraction(fraction);
-                    scrollXRef.current = panX;
-                    setScrollX(panX);
-                    restoredFractionRef.current = fraction;
-                    verticalRef.current?.scrollToFraction(fraction, 'instant', panX);
-                  } else {
-                    goToPage(savedPage, 'instant');
-                  }
+                  goToPage(savedPage, 'instant');
                 }}
               >
                 Continue
@@ -1632,24 +1295,12 @@ export function ReaderPage() {
                 setPage(p);
                 setScrollRatio(ratio);
               }}
-              onScrollFraction={(fraction, x) => {
-                scrollFractionRef.current = fraction;
-                setScrollFraction(fraction);
-                if (typeof x === 'number' && Number.isFinite(x)) {
-                  scrollXRef.current = x;
-                }
-              }}
               onChapterNavigate={goToChapter}
               chapterTag={chapterId}
               /* Preserve the reading position across mode switches: the
                  parent keeps `page` while the newly mounted reader starts
-                 at scrollTop 0 — it jumps back here before tracking.
-                 `initialFraction` restores the same relative content (soft
-                 refresh or mode switch) instead of the chapter top, and
-                 `initialScrollX` restores the exact horizontal pan. */
+                 at scrollTop 0 — it jumps back here before tracking. */
               initialPage={page}
-              initialFraction={scrollFraction}
-              initialScrollX={scrollX}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
