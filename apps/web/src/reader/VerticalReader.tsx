@@ -48,6 +48,13 @@ export const VerticalReader = forwardRef<
      * this the first tracking update reports page 0 and the position is lost.
      */
     initialPage?: number;
+    /**
+     * Viewport-center fraction through `initialPage` (0–1) to restore on
+     * mount. Without this a refresh always lands at the top of the restored
+     * page instead of the exact spot the user was reading. Read once on
+     * mount; falls back to page-top when absent. Vertical-only.
+     */
+    initialRatio?: number | null;
   }
 >(function VerticalReader(
   {
@@ -66,6 +73,7 @@ export const VerticalReader = forwardRef<
     chapterTag = null,
     direction = 'ltr',
     initialPage = 0,
+    initialRatio = null,
   },
   ref,
 ) {
@@ -86,6 +94,8 @@ export const VerticalReader = forwardRef<
   const restoredRef = useRef(false);
   const initialPageRef = useRef(initialPage);
   initialPageRef.current = initialPage;
+  const initialRatioRef = useRef(initialRatio);
+  initialRatioRef.current = initialRatio;
 
   useImperativeHandle(ref, () => ({
     scrollToPage(page: number, preset: GlidePreset = 'quick') {
@@ -121,7 +131,25 @@ export const VerticalReader = forwardRef<
       );
       const el = pageRefs.current[want];
       if (el && scroller) {
-        scroller.scrollTop = el.offsetTop - (scroller.clientTop || 0);
+        const top = el.offsetTop - (scroller.clientTop || 0);
+        const ratio = initialRatioRef.current;
+        if (
+          typeof ratio === 'number' &&
+          Number.isFinite(ratio) &&
+          scroller.clientHeight > 0 &&
+          el.offsetHeight > 0
+        ) {
+          // Invert the viewport-center tracking math (see update() below) so
+          // the center sits at the same fraction through the page instead of
+          // the page top.
+          const clamped = Math.max(0, Math.min(1, ratio));
+          scroller.scrollTop = Math.max(
+            0,
+            top + clamped * el.offsetHeight - scroller.clientHeight / 2,
+          );
+        } else {
+          scroller.scrollTop = top;
+        }
         restoredRef.current = true;
       } else if (pageRefs.current.length > 0) {
         restoredRef.current = true;

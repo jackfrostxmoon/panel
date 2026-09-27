@@ -58,8 +58,8 @@ function pingReaderSettingsSync(): void {
  * Chapter-hop handoff keys plus the live session position. Hops are full
  * document loads, so in-memory refs can't carry intent across — the
  * destination chapter's landing position (paged mode) and the abandoned
- * chapter's exact page (vertical/gallery) are stashed in sessionStorage
- * just before the unload. The page memory is additionally rewritten on
+ * chapter's exact scroll position (vertical, incl. the intra-page spot) are
+ * stashed in sessionStorage just before the unload. The page memory is additionally rewritten on
  * every page change, so a soft refresh (same tab) restores the exact page
  * instead of restarting at the first image. Tab-scoped, so a position
  * never leaks into another tab. No server progress involved.
@@ -112,10 +112,17 @@ function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
 }
 
 /** Remember the current page so a soft refresh or a later hop back restores
- * the exact position (rewritten live on every page change — session only). */
-function stashPageMemory(chapterId: string, page: number): void {
+ * the exact scroll position (rewritten live — session only). In vertical
+ * mode the viewport-center fraction through the page is stored alongside
+ * (`{p, r}` JSON); other modes store the plain page index. */
+function stashPageMemory(chapterId: string, page: number, ratio?: number): void {
   const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
-  map.set(chapterId, String(page));
+  if (typeof ratio === 'number' && Number.isFinite(ratio)) {
+    const clamped = Math.max(0, Math.min(1, ratio));
+    map.set(chapterId, JSON.stringify({ p: page, r: Math.round(clamped * 1000) / 1000 }));
+  } else {
+    map.set(chapterId, String(page));
+  }
   // Bound the memory: a long hopping session must not grow storage unbounded.
   while (map.size > 100) {
     const oldest = map.keys().next();
@@ -125,12 +132,27 @@ function stashPageMemory(chapterId: string, page: number): void {
   writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
 }
 
-/** Exact page previously left on this chapter in this tab session, if any. */
-function readPageMemory(chapterId: string): number | undefined {
+/** Page + intra-page fraction previously left on this chapter in this tab
+ * session, if any. Reads both the current `{p, r}` JSON entries and legacy
+ * plain-number entries. */
+function readPageMemory(chapterId: string): { page: number; ratio?: number } | undefined {
   const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
   if (raw === undefined) return undefined;
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { p?: unknown; r?: unknown };
+      if (typeof parsed.p !== 'number' || !Number.isInteger(parsed.p) || parsed.p < 0) {
+        return undefined;
+      }
+      if (parsed.r === undefined) return { page: parsed.p };
+      if (typeof parsed.r !== 'number' || !Number.isFinite(parsed.r)) return { page: parsed.p };
+      return { page: parsed.p, ratio: Math.max(0, Math.min(1, parsed.r)) };
+    } catch {
+      return undefined;
+    }
+  }
   const page = Number(raw);
-  return Number.isInteger(page) && page >= 0 ? page : undefined;
+  return Number.isInteger(page) && page >= 0 ? { page } : undefined;
 }
 
 /**
@@ -223,9 +245,14 @@ export function ReaderPage() {
      A directed hop landing wins over the memory (peeked, not consumed). */
   const [page, setPage] = useState(() => {
     if (peekChapterLanding(chapterId) !== null) return 0;
-    return readPageMemory(chapterId) ?? 0;
+    return readPageMemory(chapterId)?.page ?? 0;
   });
-  const [scrollRatio, setScrollRatio] = useState(0);
+  /* Seed the intra-page fraction from the same memory so the vertical reader
+     mounts at the exact scroll spot, not the top of the restored page. */
+  const [scrollRatio, setScrollRatio] = useState(() => {
+    if (peekChapterLanding(chapterId) !== null) return 0;
+    return readPageMemory(chapterId)?.ratio ?? 0;
+  });
   /** False until the user picks "continue" / "start over" (or nothing to resume). */
   const [resumeResolved, setResumeResolved] = useState(false);
   /**
@@ -285,9 +312,15 @@ export function ReaderPage() {
   const scrollSpeedRef = useRef(scrollSpeedPx(settings.scrollSpeed));
   /** Latest page index for timers/handlers that must not re-subscribe on page change. */
   const pageRef = useRef(page);
+  /** Latest intra-page fraction for throttled session writes (updates every scroll frame). */
+  const scrollRatioRef = useRef(scrollRatio);
+  /** Current reading mode for session-write handlers that must not re-subscribe. */
+  const readerModeRef = useRef(settings.mode);
   scrollDirRef.current = scrollDir;
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
+  scrollRatioRef.current = scrollRatio;
+  readerModeRef.current = settings.mode;
 
   /* Reset on mount. Hops and soft refreshes are full document loads, so this
      runs once per chapter with the landing/page-memory stashed in
@@ -308,15 +341,16 @@ export function ReaderPage() {
       restoredMemoryRef.current = null;
       setResumeResolved(true);
       setPage(0);
+      setScrollRatio(0);
     } else {
-      const savedPage = readPageMemory(chapterId);
-      restoredMemoryRef.current = savedPage ?? null;
-      setPage(savedPage ?? 0);
-      setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
+      const saved = readPageMemory(chapterId);
+      restoredMemoryRef.current = saved?.page ?? null;
+      setPage(saved?.page ?? 0);
+      setScrollRatio(saved?.ratio ?? 0);
+      setResumeResolved(saved !== undefined); // Skip resume prompt if restoring a position
       lastPageChapterRef.current = null;
     }
     setResetChapter(chapterId);
-    setScrollRatio(0);
     setSettingsOpen(false);
     const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
     if (restoredMemoryRef.current == null || restoredMemoryRef.current <= 0) {
@@ -332,12 +366,29 @@ export function ReaderPage() {
     }
   }, [chapterId]);
 
-  /* Keep the live session position in sync — every page turn/scroll update
-     rewrites it, so a soft refresh restores the exact page (session only,
-     no server progress involved). */
+  /* Keep the live session position in sync — every page turn rewrites it
+     immediately (with the current intra-page fraction in vertical mode), so
+     a soft refresh restores the exact page (session only, no server
+     progress involved). */
   useEffect(() => {
-    stashPageMemory(chapterId, page);
-  }, [chapterId, page]);
+    stashPageMemory(
+      chapterId,
+      page,
+      settings.mode === 'vertical' ? scrollRatioRef.current : undefined,
+    );
+  }, [chapterId, page, settings.mode]);
+
+  /* Throttled intra-page write (vertical only): scrollRatio updates every
+     scroll frame, so persist it 800ms after scrolling pauses instead of per
+     frame. Page turns are already covered by the immediate write above and
+     refreshes mid-scroll by the pagehide flush below. */
+  useEffect(() => {
+    if (settings.mode !== 'vertical') return;
+    const timer = window.setTimeout(() => {
+      stashPageMemory(chapterId, pageRef.current, scrollRatioRef.current);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [chapterId, page, scrollRatio, settings.mode]);
 
   /* Paged-mode backward transitions land on the previous chapter's last page.
      pageCount is 0 while the payload is loading, so wait for the pages to arrive
@@ -522,8 +573,8 @@ export function ReaderPage() {
 
   /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
       page — the next chapter opens at its first page, the previous chapter at
-      its last page. In vertical/gallery the exact page the user left off on is
-      restored when they return. */
+      its last page. In vertical/gallery the exact position the user left off
+      on is restored when they return (vertical keeps the intra-page spot). */
   const navigateToChapter = useCallback(
     (dir: 'next' | 'prev') => {
       const id =
@@ -538,12 +589,12 @@ export function ReaderPage() {
       if (settings.mode === 'paged') {
         hardHopToChapter(id, dir === 'next' ? 'first' : 'last');
       } else {
-        // Remember the current page for this chapter so a later hop back restores it.
-        stashPageMemory(chapterId, page);
+        // Remember the current position for this chapter so a later hop back restores it.
+        stashPageMemory(chapterId, page, settings.mode === 'vertical' ? scrollRatio : undefined);
         hardHopToChapter(id);
       }
     },
-    [chapterPages.data, chapterId, hardHopToChapter, page, toast, settings.mode],
+    [chapterPages.data, chapterId, hardHopToChapter, page, scrollRatio, toast, settings.mode],
   );
 
   const handleIntent = useCallback(
@@ -612,10 +663,14 @@ export function ReaderPage() {
      a restart. The unmount cleanup below covers in-app navigation away
      from the reader. */
   useEffect(() => {
-    // Session-only flush: a refresh can land before React's write effect runs,
-    // so persist the freshest page ref on unload too.
+    // Session-only flush: a refresh can land before React's write effects run,
+    // so persist the freshest page + intra-page fraction refs on unload too.
     const flushSessionPage = () => {
-      stashPageMemory(chapterId, pageRef.current);
+      stashPageMemory(
+        chapterId,
+        pageRef.current,
+        readerModeRef.current === 'vertical' ? scrollRatioRef.current : undefined,
+      );
     };
     window.addEventListener('pagehide', flushProgress);
     window.addEventListener('pagehide', flushSessionPage);
@@ -1353,8 +1408,11 @@ export function ReaderPage() {
               chapterTag={chapterId}
               /* Preserve the reading position across mode switches: the
                  parent keeps `page` while the newly mounted reader starts
-                 at scrollTop 0 — it jumps back here before tracking. */
+                 at scrollTop 0 — it jumps back here before tracking.
+                 `initialRatio` restores the exact intra-page spot (soft
+                 refresh or mode switch) instead of the page top. */
               initialPage={page}
+              initialRatio={scrollRatio}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
