@@ -723,26 +723,39 @@ export function ReaderPage() {
      reads, the ONLY position), so "Continue Reading" goes missing after
      a restart. The unmount cleanup below covers in-app navigation away
      from the reader. */
+  /**
+   * Session-only flush: persist the freshest page + intra-page fraction refs
+   * so a later remount in this tab restores the exact spot. Without this,
+   * the only intra-page session writer is the 800ms-throttled effect above —
+   * which starves under continuous scrolling and is cancelled on unmount —
+   * so Back-to-details within the throttle window restores a stale ratio
+   * while the server (flushed from live refs below) holds the true one.
+   * Ultra-tall single-page chapters make this the common case, not a corner.
+   */
+  const flushSessionPage = useCallback(() => {
+    stashPageMemory(
+      chapterId,
+      pageRef.current,
+      readerModeRef.current === 'vertical' ? scrollRatioRef.current : undefined,
+    );
+  }, [chapterId]);
+
   useEffect(() => {
-    // Session-only flush: a refresh can land before React's write effects run,
-    // so persist the freshest page + intra-page fraction refs on unload too.
-    const flushSessionPage = () => {
-      stashPageMemory(
-        chapterId,
-        pageRef.current,
-        readerModeRef.current === 'vertical' ? scrollRatioRef.current : undefined,
-      );
-    };
+    // A refresh can land before React's write effects run, so persist the
+    // freshest refs on unload too (in addition to the unmount flush below).
     window.addEventListener('pagehide', flushProgress);
     window.addEventListener('pagehide', flushSessionPage);
     return () => {
       window.removeEventListener('pagehide', flushProgress);
       window.removeEventListener('pagehide', flushSessionPage);
     };
-  }, [flushProgress, chapterId]);
+  }, [flushProgress, flushSessionPage]);
   useEffect(() => () => {
+    // SPA navigation away (Back to details) fires no pagehide — flush both
+    // stores from the same live refs so session and server can't diverge.
+    flushSessionPage();
     flushProgress();
-  }, [flushProgress]);
+  }, [flushProgress, flushSessionPage]);
 
   /* Keyboard navigation. */
   useEffect(() => {
