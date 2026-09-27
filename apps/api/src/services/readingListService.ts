@@ -95,7 +95,7 @@ export class ReadingListService {
 function toEntry(entry: {
   row: { id: string; status: string; createdAt: Date; updatedAt: Date };
   panel: { globalId: string; title: string; coverUrl: string | null; source: string; sourceUrl: string };
-  progress: { chapterId: string; chapterGlobalId: string; chapterTitle: string; page: number; scrollRatio: number | null; updatedAt: Date } | null;
+  progress: { chapterId: string; chapterGlobalId: string; chapterTitle: string; page: number; updatedAt: Date } | null;
 }): ReadingListEntry {
   return {
     id: entry.row.id,
@@ -112,7 +112,6 @@ function toEntry(entry: {
           panelId: entry.panel.globalId,
           chapterId: entry.progress.chapterGlobalId,
           page: entry.progress.page,
-          scrollRatio: entry.progress.scrollRatio,
           updatedAt: entry.progress.updatedAt.toISOString(),
         }
       : null,

@@ -128,11 +128,6 @@ export interface ReadingProgress {
   chapterId: string;
   /** 0-based page index. */
   page: number;
-  /**
-   * Viewport-center fraction through `page` (0–1) in vertical mode, or null
-   * when the position is page-granular (paged/gallery or legacy rows).
-   */
-  scrollRatio: number | null;
   updatedAt: string;
 }
 

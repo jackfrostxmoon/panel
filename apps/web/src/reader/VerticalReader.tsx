@@ -2,7 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 're
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import { verticalReaderWidthPercent, type ReadingDirection } from './settings';
-import { halfSideFromClientX, ratioScrollTarget } from './navigation';
+import { halfSideFromClientX } from './navigation';
 import { useZoomGesture } from './useZoomGesture';
 import { glideScrollTo } from './glideScroll';
 import type { GlidePreset } from './settings';
@@ -15,12 +15,7 @@ import type { GlidePreset } from './settings';
  * onPageChange, and scrollToPage() jumps to a page (continue-reading).
  */
 export interface VerticalReaderHandle {
-  /**
-   * Jump to a page. `ratio` (0–1) lands at the same viewport-center
-   * fraction through the page instead of the page top — used for precise
-   * continue-reading restores. Null/omitted = page top.
-   */
-  scrollToPage: (page: number, preset?: GlidePreset, ratio?: number | null) => void;
+  scrollToPage: (page: number, preset?: GlidePreset) => void;
 }
 
 export const VerticalReader = forwardRef<
@@ -101,127 +96,20 @@ export const VerticalReader = forwardRef<
   initialPageRef.current = initialPage;
   const initialRatioRef = useRef(initialRatio);
   initialRatioRef.current = initialRatio;
-  /**
-   * Precise-restore correction: a ratio jump computed against unloaded
-   * (fallback-box) layout lands wrong — sources like `mr` serve ultra-tall
-   * strips (~12x the 2/3 placeholder) with no dimensions, so every image
-   * load above the target shifts it. While armed, each image load at or
-   * above the target re-asserts the position against the fresh layout until
-   * everything above it resolves (exact from then on), the user takes over,
-   * or a timeout fires. Corrections write scrollTop directly (no glide) so
-   * rapid successive loads converge without animation fighting.
-   */
-  const correctTargetRef = useRef<{ page: number; ratio: number } | null>(null);
-  const correctTimerRef = useRef<number>(0);
-  /** Page indices whose images reported loaded (drives correction disarm). */
-  const loadedPagesRef = useRef<Set<number>>(new Set());
-
-  const clearCorrection = () => {
-    correctTargetRef.current = null;
-    window.clearTimeout(correctTimerRef.current);
-    correctTimerRef.current = 0;
-  };
-
-  /** Recompute the armed target against current layout; direct write. */
-  const reassertCorrection = (): void => {
-    const target = correctTargetRef.current;
-    if (!target) return;
-    const el = pageRefs.current[target.page];
-    const scroller = el?.closest('.reader-content') as HTMLElement | null;
-    if (!el || !scroller) return;
-    const next = ratioScrollTarget(
-      el.offsetTop - (scroller.clientTop || 0),
-      el.offsetHeight,
-      scroller.clientHeight,
-      target.ratio,
-    );
-    if (next !== null) scroller.scrollTop = next;
-  };
-
-  const armCorrection = (page: number, ratio: number) => {
-    correctTargetRef.current = { page, ratio };
-    window.clearTimeout(correctTimerRef.current);
-    // Bounded: never fight the user or loop forever.
-    correctTimerRef.current = window.setTimeout(clearCorrection, 5000);
-  };
-
-  const handlePageLoad = (index: number) => {
-    loadedPagesRef.current.add(index);
-    const target = correctTargetRef.current;
-    if (!target || index > target.page) return;
-    // Layout grew as this image resolved — re-assert against fresh offsets.
-    reassertCorrection();
-    // Everything up to and including the target resolved: layout above the
-    // target is final, so the position is exact from here on.
-    let complete = true;
-    for (let i = 0; i <= target.page; i++) {
-      if (!loadedPagesRef.current.has(i)) {
-        complete = false;
-        break;
-      }
-    }
-    if (complete) clearCorrection();
-  };
 
   useImperativeHandle(ref, () => ({
-    scrollToPage(page: number, preset: GlidePreset = 'quick', ratio?: number | null) {
-      clearCorrection();
+    scrollToPage(page: number, preset: GlidePreset = 'quick') {
       const el = pageRefs.current[page];
       if (!el) return;
       const scroller = el.closest('.reader-content') as HTMLElement | null;
       if (scroller) {
         const top = el.offsetTop - (scroller.clientTop || 0);
-        // Precise restore: invert the viewport-center tracking math (see
-        // update() below) so the center sits at the same fraction through
-        // the page instead of the page top. Same math as the mount restore.
-        if (typeof ratio === 'number' && Number.isFinite(ratio)) {
-          const clamped = Math.max(0, Math.min(1, ratio));
-          // Best-effort immediate jump (layout may still be fallback
-          // boxes); the armed correction converges as images load.
-          const next = ratioScrollTarget(top, el.offsetHeight, scroller.clientHeight, clamped);
-          if (next !== null) glideScrollTo(scroller, next, glideAnimRef, preset);
-          armCorrection(page, clamped);
-        } else {
-          glideScrollTo(scroller, top, glideAnimRef, preset);
-        }
+        glideScrollTo(scroller, top, glideAnimRef, preset);
       } else {
         el.scrollIntoView({ behavior: 'auto', block: 'start' });
       }
     },
   }));
-
-  /* Fresh image set (chapter change): forget loaded state + disarm. Runs
-     before the tracking effect below, which re-arms for the new chapter. */
-  useEffect(() => {
-    loadedPagesRef.current = new Set();
-    correctTargetRef.current = null;
-    return () => window.clearTimeout(correctTimerRef.current);
-  }, [pages.length]);
-
-  /* Keyboard scrolling bypasses scrollToPage (which disarms) — yield the
-     armed correction as soon as the user drives with keys. */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!correctTargetRef.current) return;
-      if (
-        event.key === 'ArrowUp' ||
-        event.key === 'ArrowDown' ||
-        event.key === 'PageUp' ||
-        event.key === 'PageDown' ||
-        event.key === 'Home' ||
-        event.key === 'End' ||
-        event.key === ' ' ||
-        event.key === 'w' ||
-        event.key === 'W' ||
-        event.key === 's' ||
-        event.key === 'S'
-      ) {
-        clearCorrection();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   // Track the page at the viewport center. Uses scroll-position math rather
   // than intersection-ratio thresholds: very tall pages (e.g. a fixed px
@@ -245,15 +133,20 @@ export const VerticalReader = forwardRef<
       if (el && scroller) {
         const top = el.offsetTop - (scroller.clientTop || 0);
         const ratio = initialRatioRef.current;
-        if (typeof ratio === 'number' && Number.isFinite(ratio)) {
+        if (
+          typeof ratio === 'number' &&
+          Number.isFinite(ratio) &&
+          scroller.clientHeight > 0 &&
+          el.offsetHeight > 0
+        ) {
           // Invert the viewport-center tracking math (see update() below) so
           // the center sits at the same fraction through the page instead of
-          // the page top. Layout is usually still fallback boxes here, so
-          // arm the same settle correction as scrollToPage.
+          // the page top.
           const clamped = Math.max(0, Math.min(1, ratio));
-          const next = ratioScrollTarget(top, el.offsetHeight, scroller.clientHeight, clamped);
-          if (next !== null) scroller.scrollTop = next;
-          armCorrection(want, clamped);
+          scroller.scrollTop = Math.max(
+            0,
+            top + clamped * el.offsetHeight - scroller.clientHeight / 2,
+          );
         } else {
           scroller.scrollTop = top;
         }
@@ -342,10 +235,6 @@ export const VerticalReader = forwardRef<
       }}
       onClick={handleHalfClick}
       ref={containerRef}
-      /* A correction in flight must never fight the user's own scrolling. */
-      onWheel={clearCorrection}
-      onTouchStart={clearCorrection}
-      onPointerDown={clearCorrection}
     >
       <button
         type="button"
@@ -370,7 +259,6 @@ export const VerticalReader = forwardRef<
             widthPx={imageWidthPx}
             heightPx={imageHeightPx}
             chapterTag={chapterTag}
-            onLoad={() => handlePageLoad(index)}
           />
         </div>
       ))}

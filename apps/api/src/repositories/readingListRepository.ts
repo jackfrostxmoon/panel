@@ -18,7 +18,6 @@ export interface ReadingListEntry {
     chapterGlobalId: string;
     chapterTitle: string;
     page: number;
-    scrollRatio: number | null;
     updatedAt: Date;
   } | null;
 }
@@ -39,7 +38,6 @@ export class ReadingListRepository {
           panelId: readingProgress.panelId,
           chapterId: readingProgress.chapterId,
           page: readingProgress.page,
-          scrollRatio: readingProgress.scrollRatio,
           updatedAt: readingProgress.updatedAt,
         })
         .from(readingProgress)
@@ -58,7 +56,6 @@ export class ReadingListRepository {
         panel: panel,
         progressChapterRowId: latest.chapterId,
         progressPage: latest.page,
-        progressScrollRatio: latest.scrollRatio,
         progressUpdatedAt: latest.updatedAt,
         chapterGlobalId: chapters.globalId,
         chapterTitle: chapters.title,
@@ -80,7 +77,6 @@ export class ReadingListRepository {
               chapterGlobalId: row.chapterGlobalId,
               chapterTitle: row.chapterTitle,
               page: row.progressPage ?? 0,
-              scrollRatio: row.progressScrollRatio ?? null,
               updatedAt: row.progressUpdatedAt ?? new Date(0),
             }
           : null,

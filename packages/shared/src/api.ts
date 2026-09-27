@@ -102,11 +102,6 @@ export interface SaveProgressInput {
   chapterId: string;
   /** 0-based page index. */
   page: number;
-  /**
-   * Viewport-center fraction through `page` (0–1) in vertical mode.
-   * Omit or null for page-granular saves (paged/gallery modes).
-   */
-  scrollRatio?: number | null;
   /** Optional display metadata so the home screen can render without an
    *  extra source round-trip. */
   panelTitle?: string;

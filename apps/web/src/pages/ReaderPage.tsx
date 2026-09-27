@@ -316,19 +316,11 @@ export function ReaderPage() {
   const scrollRatioRef = useRef(scrollRatio);
   /** Current reading mode for session-write handlers that must not re-subscribe. */
   const readerModeRef = useRef(settings.mode);
-  /** Latest chapter payload for unload-flush handlers (see flushProgress). */
-  const chapterPagesRef = useRef(chapterPages.data);
-  /** Mirrors of resume/reset state for the stable flushProgress callback. */
-  const resumeResolvedRef = useRef(resumeResolved);
-  const resetChapterRef = useRef(resetChapter);
   scrollDirRef.current = scrollDir;
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
   scrollRatioRef.current = scrollRatio;
   readerModeRef.current = settings.mode;
-  chapterPagesRef.current = chapterPages.data;
-  resumeResolvedRef.current = resumeResolved;
-  resetChapterRef.current = resetChapter;
 
   /* Reset on mount. Hops and soft refreshes are full document loads, so this
      runs once per chapter with the landing/page-memory stashed in
@@ -469,23 +461,11 @@ export function ReaderPage() {
     if (!progress.isSuccess || !chapterPages.data) return;
     if (progress.data && progress.data.page > 0) return;
     const data = chapterPages.data;
-    // Saved mid-first-page in vertical mode (page 0 + ratio): restore the
-    // exact intra-page spot silently instead of the page top. The ref is
-    // synced here too so the persist effect below saves the restored ratio
-    // rather than clobbering it with the initial 0.
-    if (progress.data && progress.data.page === 0 && progress.data.scrollRatio != null) {
-      const ratio = Math.max(0, Math.min(1, progress.data.scrollRatio));
-      scrollRatioRef.current = ratio;
-      setScrollRatio(ratio);
-      setResumeResolved(true);
-      return;
-    }
     if (!pendingSaveRef.current || pendingSaveRef.current.chapterId !== data.chapterId) {
       pendingSaveRef.current = {
         panelId: data.panelId,
         chapterId: data.chapterId,
         page: 0,
-        scrollRatio: null,
         panelTitle: data.panelTitle ?? undefined,
         coverUrl: data.coverUrl,
         chapterTitle: data.chapterTitle ?? undefined,
@@ -498,8 +478,7 @@ export function ReaderPage() {
      the prompt is moot, so dismiss it (and start persisting progress). */
   useEffect(() => {
     const savedPage = progress.data?.page ?? 0;
-    const hasSavedPosition = savedPage > 0 || progress.data?.scrollRatio != null;
-    if (!resumeResolved && hasSavedPosition && page >= savedPage) {
+    if (!resumeResolved && savedPage > 0 && page >= savedPage) {
       setResumeResolved(true);
     }
   }, [page, resumeResolved, progress.data]);
@@ -548,33 +527,12 @@ export function ReaderPage() {
   const pendingSaveRef = useRef<SaveProgressInput | null>(null);
 
   /**
-   * Best-effort flush of the pending progress save. Refreshes the payload
-   * from the live position first, so an exit without a recent page turn
-   * (e.g. resting mid-page in vertical mode) still persists the exact spot
-   * — the instant save below only fires on page changes. Guarded like the
-   * instant save: never persist before the resume decision, and never
-   * against a stale chapter id. Idempotent (nulls the ref after sending) so
-   * the save effect, `pagehide`, unmount, and chapter hops can all call it
-   * without double-sending. Beacon survives the document unload of a hard hop.
+   * Best-effort flush of the pending progress save. Idempotent (nulls the
+   * ref after sending) so the save effect, `pagehide`, unmount, and chapter
+   * hops can all call it without double-sending. Beacon survives the
+   * document unload of a hard hop.
    */
   const flushProgress = useCallback(() => {
-    const data = chapterPagesRef.current;
-    if (data && resumeResolvedRef.current && resetChapterRef.current === data.chapterId) {
-      const raw = readerModeRef.current === 'vertical' ? scrollRatioRef.current : null;
-      const ratio =
-        typeof raw === 'number' && Number.isFinite(raw)
-          ? Math.max(0, Math.min(1, raw))
-          : null;
-      pendingSaveRef.current = {
-        panelId: data.panelId,
-        chapterId: data.chapterId,
-        page: pageRef.current,
-        scrollRatio: ratio,
-        panelTitle: data.panelTitle ?? undefined,
-        coverUrl: data.coverUrl,
-        chapterTitle: data.chapterTitle ?? undefined,
-      };
-    }
     const payload = pendingSaveRef.current;
     if (!payload) return;
     pendingSaveRef.current = null;
@@ -582,18 +540,10 @@ export function ReaderPage() {
   }, []);
 
   const goToPage = useCallback(
-    (target: number, preset?: GlidePreset, ratio?: number | null) => {
+    (target: number, preset?: GlidePreset) => {
       const clamped = clampPage(target, pageCount);
-      // Sync the ref alongside the state so the persist effect below saves
-      // the jump target (not the stale pre-jump fraction) when it fires
-      // from the setPage below before scroll tracking catches up.
-      if (typeof ratio === 'number' && Number.isFinite(ratio)) {
-        const clampedRatio = Math.max(0, Math.min(1, ratio));
-        scrollRatioRef.current = clampedRatio;
-        setScrollRatio(clampedRatio);
-      }
       if (settings.mode === 'vertical') {
-        verticalRef.current?.scrollToPage(clamped, preset ?? settings.glidePreset, ratio);
+        verticalRef.current?.scrollToPage(clamped, preset ?? settings.glidePreset);
       } else if (settings.mode === 'gallery') {
         galleryRef.current?.scrollToPage(clamped, preset ?? settings.glidePreset);
       }
@@ -690,21 +640,10 @@ export function ReaderPage() {
     // re-renders with the correct values right after, and the save fires then.
     if (resetChapter !== chapterPages.data.chapterId) return;
     const data = chapterPages.data;
-    // Vertical mode persists the intra-page fraction alongside the page so
-    // Continue restores the exact scroll spot; other modes stay
-    // page-granular. Read via ref (mirrored every render) so scroll-ratio
-    // updates don't retrigger this effect — page turns carry the latest
-    // spot, and exits are covered by the flush above.
-    const raw = readerModeRef.current === 'vertical' ? scrollRatioRef.current : null;
-    const ratio =
-      typeof raw === 'number' && Number.isFinite(raw)
-        ? Math.max(0, Math.min(1, raw))
-        : null;
     pendingSaveRef.current = {
       panelId: data.panelId,
       chapterId: data.chapterId,
       page,
-      scrollRatio: ratio,
       panelTitle: data.panelTitle ?? undefined,
       coverUrl: data.coverUrl,
       chapterTitle: data.chapterTitle ?? undefined,
@@ -723,39 +662,26 @@ export function ReaderPage() {
      reads, the ONLY position), so "Continue Reading" goes missing after
      a restart. The unmount cleanup below covers in-app navigation away
      from the reader. */
-  /**
-   * Session-only flush: persist the freshest page + intra-page fraction refs
-   * so a later remount in this tab restores the exact spot. Without this,
-   * the only intra-page session writer is the 800ms-throttled effect above —
-   * which starves under continuous scrolling and is cancelled on unmount —
-   * so Back-to-details within the throttle window restores a stale ratio
-   * while the server (flushed from live refs below) holds the true one.
-   * Ultra-tall single-page chapters make this the common case, not a corner.
-   */
-  const flushSessionPage = useCallback(() => {
-    stashPageMemory(
-      chapterId,
-      pageRef.current,
-      readerModeRef.current === 'vertical' ? scrollRatioRef.current : undefined,
-    );
-  }, [chapterId]);
-
   useEffect(() => {
-    // A refresh can land before React's write effects run, so persist the
-    // freshest refs on unload too (in addition to the unmount flush below).
+    // Session-only flush: a refresh can land before React's write effects run,
+    // so persist the freshest page + intra-page fraction refs on unload too.
+    const flushSessionPage = () => {
+      stashPageMemory(
+        chapterId,
+        pageRef.current,
+        readerModeRef.current === 'vertical' ? scrollRatioRef.current : undefined,
+      );
+    };
     window.addEventListener('pagehide', flushProgress);
     window.addEventListener('pagehide', flushSessionPage);
     return () => {
       window.removeEventListener('pagehide', flushProgress);
       window.removeEventListener('pagehide', flushSessionPage);
     };
-  }, [flushProgress, flushSessionPage]);
+  }, [flushProgress, chapterId]);
   useEffect(() => () => {
-    // SPA navigation away (Back to details) fires no pagehide — flush both
-    // stores from the same live refs so session and server can't diverge.
-    flushSessionPage();
     flushProgress();
-  }, [flushProgress, flushSessionPage]);
+  }, [flushProgress]);
 
   /* Keyboard navigation. */
   useEffect(() => {
@@ -1364,15 +1290,11 @@ export function ReaderPage() {
   } else if (chapterPages.data) {
     const data = chapterPages.data;
     const savedPage = progress.data?.page ?? 0;
-    const savedRatio = progress.data?.scrollRatio ?? null;
     // No banner if the user already finished the chapter (saved page is the
     // last one) — resuming there is pointless, and a 0/1-page chapter has
     // nothing to resume from either.
     const showResumeBanner =
-      !resumeResolved &&
-      (savedPage > 0 || savedRatio != null) &&
-      pageCount > 1 &&
-      savedPage < pageCount - 1;
+      !resumeResolved && savedPage > 0 && pageCount > 1 && savedPage < pageCount - 1;
 
     const currentChapter = chapters.data?.find((c) => c.id === data.chapterId);
     const sourceTitle = data.chapterTitle?.trim() ?? '';
@@ -1440,9 +1362,7 @@ export function ReaderPage() {
                 className="btn btn--primary btn--sm"
                 onClick={() => {
                   setResumeResolved(true);
-                  // In vertical mode the saved intra-page fraction lands
-                  // mid-image at the exact reading spot, not the page top.
-                  goToPage(savedPage, 'instant', savedRatio);
+                  goToPage(savedPage, 'instant');
                 }}
               >
                 Continue

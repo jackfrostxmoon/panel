@@ -228,60 +228,6 @@ export function smoothProgressFraction(
 }
 
 /* ------------------------------------------------------------------ */
-/* Precise vertical restore (intra-page ratio <-> scroll offset)         */
-/* ------------------------------------------------------------------ */
-
-/**
- * Scroll offset that puts the viewport center at `ratio` (0–1) through a
- * page box: `pageTop` is the page's offset within the scroller,
- * `pageHeight` its current height, `viewportHeight` the scroller's visible
- * height. Returns null when the inputs can't place a position (nothing
- * laid out yet) — callers should retry after layout settles instead of
- * scrolling to a garbage offset.
- */
-export function ratioScrollTarget(
-  pageTop: number,
-  pageHeight: number,
-  viewportHeight: number,
-  ratio: number,
-): number | null {
-  if (
-    !Number.isFinite(pageTop) ||
-    !Number.isFinite(pageHeight) ||
-    !Number.isFinite(viewportHeight) ||
-    !Number.isFinite(ratio) ||
-    pageHeight <= 0 ||
-    viewportHeight <= 0
-  ) {
-    return null;
-  }
-  const clamped = Math.max(0, Math.min(1, ratio));
-  return Math.max(0, pageTop + clamped * pageHeight - viewportHeight / 2);
-}
-
-/**
- * Inverse of `ratioScrollTarget`: viewport-center fraction through the page
- * for the current scroll offset. Null when unmeasurable. This is the
- * tracking-side math; the jump side must invert exactly this, or
- * save-then-restore drifts even with a stable layout.
- */
-export function scrollRatioAtOffset(
-  pageTop: number,
-  pageHeight: number,
-  viewportCenter: number,
-): number | null {
-  if (
-    !Number.isFinite(pageTop) ||
-    !Number.isFinite(pageHeight) ||
-    !Number.isFinite(viewportCenter) ||
-    pageHeight <= 0
-  ) {
-    return null;
-  }
-  return Math.max(0, Math.min(1, (viewportCenter - pageTop) / pageHeight));
-}
-
-/* ------------------------------------------------------------------ */
 /* Double-page spread (T1-1)                                           */
 /* ------------------------------------------------------------------ */
 
