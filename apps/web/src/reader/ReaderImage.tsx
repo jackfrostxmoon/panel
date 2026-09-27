@@ -203,7 +203,7 @@ const isLoaded = status === 'loaded';
       ) : (
         <>
           <img
-            key={retryKey}
+            key={`${chapterTag ?? ''}:${page.index}:${retryKey}`}
             src={src}
             alt={`Page ${page.index + 1}`}
             decoding="async"
