@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { mkdir, rename } from 'node:fs/promises';
+import { cp, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { gunzipSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -22,7 +23,9 @@ import { logger } from '../lib/logger.js';
  *   bun run db:recover           # reset only if the database fails to open
  *   bun run db:recover --force   # reset even if the database opens fine
  *   bun run db:recover [dump]    # reset, then import this pg_dump export
- *                                # (defaults to DUMP_PATH when the file exists)
+ *                                # (without it: DUMP_PATH when the file exists,
+ *                                # otherwise the newest non-empty backup in
+ *                                # the backup dir — empty test-boot dumps skipped)
  *
  * What it does:
  *   1. Refuses while the API is reachable (stop `bun run dev` first — the
@@ -32,7 +35,8 @@ import { logger } from '../lib/logger.js';
  *   3. Renames the wedged directory to `data/pglite-corrupt-YYYYMMDD-HHMMSS`
  *      (a backup — your data is never deleted outright).
  *   4. Recreates the directory, applies migrations (`database/migrations`).
- *   5. Imports the dump when one exists (skipped otherwise — fresh library).
+ *   5. Restores data: CLI dump, else DUMP_PATH, else the newest backup in
+ *      the backup dir that actually holds rows (fresh library if none).
  *   6. Re-opens the database and runs `select 1` to prove it works.
  */
 
@@ -74,6 +78,58 @@ async function probeOpen(dataDir: string): Promise<boolean> {
     // client — never leave a second opener behind.
     await client?.close().catch(() => undefined);
   }
+}
+
+/** Timestamped backups this tooling writes: `backup[-minimal]-YYYY-MM-DD-HH-MM.sql.gz`. */
+const BACKUP_FILE_RE = /^backup(?:-minimal)?-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.sql\.gz$/;
+
+/**
+ * Newest backup in `backupDir` that actually holds rows, or null.
+ *
+ * Newest-first by filename (timestamps sort chronologically). Files whose
+ * COPY blocks hold zero data rows — e.g. dumps written while booting an
+ * empty database during testing — are skipped, so recovery never
+ * "restores" an empty library over real bookmark data.
+ */
+async function latestBackupWithData(backupDir: string): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await readdir(backupDir);
+  } catch {
+    return null;
+  }
+  const candidates = entries.filter((e) => BACKUP_FILE_RE.test(e)).sort().reverse();
+  for (const name of candidates) {
+    const full = join(backupDir, name);
+    try {
+      const raw = await Bun.file(full).arrayBuffer();
+      const bytes = new Uint8Array(raw);
+      const text =
+        bytes[0] === 0x1f && bytes[1] === 0x8b
+          ? gunzipSync(Buffer.from(bytes)).toString('utf8')
+          : Buffer.from(bytes).toString('utf8');
+      let inCopy = false;
+      let rows = 0;
+      for (const line of text.split('\n')) {
+        const clean = line.endsWith('\r') ? line.slice(0, -1) : line;
+        if (inCopy) {
+          if (clean === '\\.') inCopy = false;
+          else rows++;
+        } else if (/^COPY (?:public\.)?\w+ \(.+\) FROM stdin;$/.test(clean)) {
+          inCopy = true;
+        }
+        if (rows > 0) break;
+      }
+      if (rows > 0) return full;
+      logger.info('Skipping empty backup', { dumpPath: full });
+    } catch (error) {
+      logger.info('Skipping unreadable backup', {
+        dumpPath: full,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return null;
 }
 
 async function main(): Promise<void> {
@@ -133,6 +189,23 @@ async function main(): Promise<void> {
       }
     }
     if (!renamed) {
+      // Node's rename can EPERM while a plain move succeeds (transient
+      // antivirus/indexer lock on the just-written postmaster.pid). Fall
+      // back to copy + delete before giving up.
+      logger.info('Rename blocked — falling back to copy + delete', {
+        from: dataDir,
+        to: backupDir,
+      });
+      try {
+        await cp(dataDir, backupDir, { recursive: true });
+        await rm(dataDir, { recursive: true, force: true });
+        if (existsSync(dataDir)) throw new Error('directory still present after delete');
+        renamed = true;
+      } catch (copyError) {
+        lastError = copyError;
+      }
+    }
+    if (!renamed) {
       logger.error('Could not move the wedged database aside', {
         from: dataDir,
         to: backupDir,
@@ -157,13 +230,27 @@ async function main(): Promise<void> {
     await client.close();
   }
 
-  // Import: only when a dump file actually exists (fresh library otherwise).
-  const dumpPath = cliDumpPath ?? config.dumpPath;
-  if (existsSync(dumpPath)) {
+  // Restore: CLI dump wins, then DUMP_PATH, then the newest backup that
+  // actually holds rows (never an empty dump — that would wipe the library
+  // by "restoring" nothing).
+  let dumpPath = cliDumpPath ?? null;
+  if (!dumpPath && existsSync(config.dumpPath)) dumpPath = config.dumpPath;
+  if (!dumpPath) {
+    logger.info('No dump configured — looking for the latest backup', {
+      backupDir: config.backupDir,
+    });
+    const latest = await latestBackupWithData(config.backupDir);
+    if (latest) {
+      logger.info('Restoring latest backup', { dumpPath: latest });
+      dumpPath = latest;
+    }
+  }
+  if (dumpPath) {
     logger.info('Importing dump', { dumpPath });
-    const importArgs = ['run', 'src/db/import.ts'];
-    if (cliDumpPath) importArgs.push(cliDumpPath);
-    const result = spawnSync('bun', importArgs, { cwd: apiDir, stdio: 'inherit' });
+    const result = spawnSync('bun', ['run', 'src/db/import.ts', dumpPath], {
+      cwd: apiDir,
+      stdio: 'inherit',
+    });
     if (result.status !== 0) {
       logger.error('Import failed — database is migrated but empty', {
         dumpPath,
@@ -172,7 +259,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } else {
-    logger.info('No dump file found — skipping import (empty library)', { dumpPath });
+    logger.info('No dump or backup found — starting with an empty library');
   }
 
   // Verify: the exact operation that was failing must now succeed.
