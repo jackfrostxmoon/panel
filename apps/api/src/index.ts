@@ -7,6 +7,7 @@ import { loadConfig } from './config.js';
 import { createApp } from './app.js';
 import { createDb } from './db/client.js';
 import { writeBackup } from './db/backup.js';
+import { acquireInstanceLock } from './lib/instanceLock.js';
 import { logger } from './lib/logger.js';
 import { migrateImageCacheToFolders } from './lib/imageCacheFolders.js';
 import { createSourceRegistry } from './sources/registry.js';
@@ -26,6 +27,12 @@ import { PanelCacheRepository } from './repositories/panelCacheRepository.js';
  */
 
 const config = loadConfig();
+
+// Single-instance guard: refuse to boot while another API process holds
+// the embedded database (PGlite allows one opener — a second one risks
+// torn reads and WASM aborts instead of a clean refusal). Exits here when
+// taken; stale locks (dead owner) are adopted automatically.
+const releaseInstanceLock = await acquireInstanceLock(config.databaseUrl, config.port);
 
 // Fail fast when the local database can't be opened (locked by another
 // process, missing permissions, or a corrupted data directory — e.g. an
@@ -195,6 +202,7 @@ async function shutdown(signal: string): Promise<void> {
     }
   }
   await db.$client.close();
+  await releaseInstanceLock();
   server.stop();
   process.exit(0);
 }
