@@ -310,6 +310,7 @@ export function usePanel(id: string, opts?: QueryOpts<Panel>) {
     queryKey: queryKeys.panel(id),
     queryFn: () => api.getPanel(id),
     staleTime: 5 * 60_000,
+    refetchOnMount: 'always',
     ...opts,
   });
 }
@@ -319,6 +320,7 @@ export function useChapters(id: string, opts?: QueryOpts<Chapter[]>) {
     queryKey: queryKeys.chapters(id),
     queryFn: () => api.getChapters(id),
     staleTime: 5 * 60_000,
+    refetchOnMount: 'always',
     ...opts,
   });
 }
