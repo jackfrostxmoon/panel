@@ -330,6 +330,7 @@ export function useChapterPages(id: string, opts?: QueryOpts<ChapterPages>) {
     queryKey: queryKeys.chapterPages(id),
     queryFn: () => api.getChapterPages(id),
     staleTime: 30 * 60_000,
+    refetchOnMount: 'always',
     ...opts,
   });
 }
