@@ -93,6 +93,34 @@ const prefetchTimer = setInterval(() => {
   });
 }, 500);
 
+// Periodic auto-backup: snapshot the embedded database every
+// BACKUP_INTERVAL_MS while the server runs, so recent bookmarks/progress
+// survive a crash or power cut (the on-exit backup only fires on a clean
+// shutdown). A failed backup is logged, never fatal; ticks never overlap.
+let backupInFlight = false;
+const backupTimer =
+  config.backupDir && config.backupIntervalMs > 0
+    ? setInterval(() => {
+        if (backupInFlight) return;
+        backupInFlight = true;
+        void writeBackup(db, config.backupDir, config.backupScope)
+          .catch((error) => {
+            logger.error('Periodic backup failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          })
+          .finally(() => {
+            backupInFlight = false;
+          });
+      }, config.backupIntervalMs)
+    : undefined;
+if (backupTimer !== undefined) {
+  logger.info('Periodic backup enabled', {
+    intervalMs: config.backupIntervalMs,
+    scope: config.backupScope,
+  });
+}
+
 // Optional: serve the built web app (production / all-in-one Docker image).
 const here = dirname(fileURLToPath(import.meta.url));
 const webDist = resolve(here, '../../web/dist');
@@ -153,6 +181,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   logger.info(`Received ${signal} — shutting down`);
   clearInterval(prefetchTimer);
+  if (backupTimer !== undefined) clearInterval(backupTimer);
   await prefetchWorker.stop();
   if (config.backupDir) {
     try {

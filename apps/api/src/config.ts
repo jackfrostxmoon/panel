@@ -143,6 +143,17 @@ const envSchema = z.object({
    */
   BACKUP_SCOPE: z.enum(['full', 'minimal']).default('full'),
 
+  /**
+   * Interval (ms) between automatic database backups while the API is
+   * running (`bun run dev`, `bun run lan`, prod). Each run writes a new
+   * timestamped `.sql.gz` through the same path as the on-exit backup, so
+   * an hour of bookmarks/progress is never lost to a crash or power cut
+   * (the on-exit backup only fires on a clean shutdown). Failures are
+   * logged, never fatal. `0` disables the periodic backup (the on-exit
+   * backup still runs).
+   */
+  BACKUP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
+
 });
 
 export interface CacheConfig {
@@ -190,6 +201,11 @@ export interface AppConfig {
    * every table including caches, `minimal` dumps bookmark data only.
    */
   readonly backupScope: BackupExportScope;
+  /**
+   * Interval (ms) between automatic database backups while the API is
+   * running (from BACKUP_INTERVAL_MS, default 1h; `0` disables).
+   */
+  readonly backupIntervalMs: number;
   /**
    * CORS origin matcher passed to Hono's `cors` middleware.
    *
@@ -289,6 +305,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dumpPath: resolveRepoDir(e.DUMP_PATH),
     backupDir: resolveRepoDir(e.BACKUP_DIR),
     backupScope: e.BACKUP_SCOPE,
+    backupIntervalMs: e.BACKUP_INTERVAL_MS,
     port: e.PORT,
     /**
      * In dev/test we allow every origin so `bun run dev` works on any LAN
