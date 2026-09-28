@@ -55,11 +55,13 @@ function pingReaderSettingsSync(): void {
 }
 
 /**
- * Chapter-hop handoff keys. Hops are full document loads, so in-memory refs
- * can't carry intent across — the destination chapter's landing position
+ * Chapter-hop handoff keys. The destination chapter's landing position
  * (paged mode) and the abandoned chapter's exact page (vertical/gallery)
- * are stashed in sessionStorage just before the unload. Tab-scoped, so a
- * hop never leaks position into another tab.
+ * are stashed in sessionStorage just before the hop — in-memory refs are
+ * reset for the new chapter, and the render below reads the stash back to
+ * mount the fresh reader at the right position even when the payload is
+ * served instantly from cache. Tab-scoped, so a hop never leaks position
+ * into another tab.
  */
 const CHAPTER_LANDING_SESSION_KEY = 'panel-reader:chapter-landing:v1';
 const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v1';
@@ -426,15 +428,15 @@ export function ReaderPage() {
    * Latest unsent progress payload. The save below fires instantly on page
    * change — this ref lets the unload flush send the freshest position even
    * when it never fired. Declared above the navigation callbacks so hops
-   * can flush via beacon before the full reload.
+   * can flush first thing.
    */
   const pendingSaveRef = useRef<SaveProgressInput | null>(null);
 
   /**
    * Best-effort flush of the pending progress save. Idempotent (nulls the
    * ref after sending) so the save effect, `pagehide`, unmount, and chapter
-   * hops can all call it without double-sending. Beacon survives the
-   * document unload of a hard hop.
+   * hops can all call it without double-sending. The beacon also survives
+   * a tab close mid-read.
    */
   const flushProgress = useCallback(() => {
     const payload = pendingSaveRef.current;
@@ -457,22 +459,24 @@ export function ReaderPage() {
   );
 
   /**
-   * Hop to another chapter via a full document load — always refreshes,
-   * whether the destination is cached or not. Unloading the document aborts
-   * every in-flight image and payload request, so the abandoned chapter
-   * stops caching immediately: hopping from a half-cached chapter back to a
-   * cached one kills the half-cached chapter's pending downloads on the
-   * spot. Progress is flushed via beacon first so the position survives the
-   * unload. Paged-mode directed landings are stashed in sessionStorage
-   * because in-memory refs don't survive the reload.
+   * Hop to another chapter via in-app navigation — the document (and the
+   * fullscreen container) stays mounted, so fullscreen survives chapter
+   * changes. The inner reader is keyed by chapter (see the render below)
+   * and remounts per chapter, and the `chapterTag`-keyed preloaders drop
+   * the abandoned chapter's pending downloads while unmounted `<img>`s
+   * abort natively — so hopping away from a half-cached chapter still
+   * stops its downloads on the spot, without a document unload. Progress
+   * is flushed first so the position survives even if the tab closes
+   * mid-transition. Paged-mode directed landings are stashed in
+   * sessionStorage because in-memory refs are reset for the new chapter.
    */
   const hardHopToChapter = useCallback(
     (id: string, landing?: 'first' | 'last') => {
       if (landing) stashChapterLanding(id, landing);
       flushProgress();
-      window.location.assign(`/read/${encodeURIComponent(id)}`);
+      navigate(`/read/${encodeURIComponent(id)}`);
     },
-    [flushProgress],
+    [flushProgress, navigate],
   );
 
   /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
@@ -527,7 +531,7 @@ export function ReaderPage() {
     [navigateToChapter],
   );
 
-  /* Jump to an arbitrary chapter picked from the settings dropdown (full refresh, like all hops). */
+  /* Jump to an arbitrary chapter picked from the settings dropdown. */
   const goToChapterById = useCallback(
     (id: string) => {
       if (id && id !== chapterId) hardHopToChapter(id);
@@ -1180,6 +1184,16 @@ export function ReaderPage() {
     body = null;
   } else if (chapterPages.data) {
     const data = chapterPages.data;
+    /**
+     * Mount position for a fresh chapter hop. Right after navigation the
+     * reset effect below hasn't run yet, so `page` still holds the old
+     * chapter's position — mounting the new reader at it would jump to the
+     * wrong spot when the payload is served instantly from cache (the
+     * restore gate only fires once per mount). Read the stashed position
+     * instead; once the reset effect runs, `page` agrees with the stash
+     * and this is a no-op. Pure sessionStorage read — safe during render.
+     */
+    const hopInitialPage = chapterId !== resetChapter ? (readPageMemory(chapterId) ?? 0) : page;
     const savedPage = progress.data?.page ?? 0;
     // No banner if the user already finished the chapter (saved page is the
     // last one) — resuming there is pointless, and a 0/1-page chapter has
@@ -1279,6 +1293,9 @@ export function ReaderPage() {
         >
           {settings.mode === 'vertical' ? (
             <VerticalReader
+              /* Fresh mount per chapter (same semantics as the old full-load
+                 hop, minus the document unload that killed fullscreen). */
+              key={chapterId}
               ref={verticalRef}
               pages={pages}
               imageWidth={settings.imageWidth}
@@ -1299,11 +1316,15 @@ export function ReaderPage() {
               chapterTag={chapterId}
               /* Preserve the reading position across mode switches: the
                  parent keeps `page` while the newly mounted reader starts
-                 at scrollTop 0 — it jumps back here before tracking. */
-              initialPage={page}
+                 at scrollTop 0 — it jumps back here before tracking.
+                 On a fresh chapter hop this is the stashed position (see
+                 hopInitialPage above) so cached payloads restore correctly. */
+              initialPage={hopInitialPage}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
+              /* Fresh mount per chapter (see above). */
+              key={chapterId}
               ref={galleryRef}
               pages={pages}
               imageWidth={settings.imageWidth}
@@ -1321,10 +1342,14 @@ export function ReaderPage() {
               onChapterNavigate={goToChapter}
               chapterTag={chapterId}
               /* Preserve the reading position across mode switches (see above). */
-              initialPage={page}
+              initialPage={hopInitialPage}
             />
           ) : (
             <PagedReader
+              /* Fresh mount per chapter (see above). Paged mode is fully
+                 controlled by the parent `page` state, so directed landings
+                 keep working through the page-load effect. */
+              key={chapterId}
               pages={pages}
               page={page}
               direction={settings.direction}
