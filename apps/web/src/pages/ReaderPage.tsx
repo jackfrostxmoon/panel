@@ -1393,7 +1393,7 @@ export function ReaderPage() {
           {settings.mode === 'paged' && (
             <button
               type="button"
-              className="reader-toolbar__btn"
+              className="reader-toolbar__btn reader-footer__nav reader-footer__nav--prev"
               onClick={() => handleIntent('backward')}
               aria-label="Previous page"
             >
@@ -1422,7 +1422,7 @@ export function ReaderPage() {
           {settings.mode === 'paged' && (
             <button
               type="button"
-              className="reader-toolbar__btn"
+              className="reader-toolbar__btn reader-footer__nav reader-footer__nav--next"
               onClick={() => handleIntent('forward')}
               aria-label="Next page"
             >
