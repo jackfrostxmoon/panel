@@ -1390,16 +1390,6 @@ export function ReaderPage() {
         <footer
           className={`reader-footer${settings.showProgressBar ? '' : ' reader-footer--hidden'}`}
         >
-          {settings.mode === 'paged' && (
-            <button
-              type="button"
-              className="reader-toolbar__btn reader-footer__nav reader-footer__nav--prev"
-              onClick={() => handleIntent('backward')}
-              aria-label="Previous page"
-            >
-              ‹
-            </button>
-          )}
           <div
             className="reader-progress"
             role="progressbar"
@@ -1419,16 +1409,6 @@ export function ReaderPage() {
               }}
             />
           </div>
-          {settings.mode === 'paged' && (
-            <button
-              type="button"
-              className="reader-toolbar__btn reader-footer__nav reader-footer__nav--next"
-              onClick={() => handleIntent('forward')}
-              aria-label="Next page"
-            >
-              ›
-            </button>
-          )}
         </footer>
       </>
     );

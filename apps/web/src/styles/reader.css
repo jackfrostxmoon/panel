@@ -1485,42 +1485,6 @@
   transform: translateY(100%);
 }
 
-/* Paged-mode page-turn buttons float just above the bar instead of sitting
-   in the footer row: in-flow 38px buttons inflated the footer to ~55px while
-   every other mode is a slim ~21px progress strip. Floating keeps the footer
-   identical in all modes. They stay inside <footer> so they share its
-   show/hide lifecycle (fading out with it — translateY alone would leave
-   them on screen since they sit above the bar). */
-.reader-footer__nav {
-  position: absolute;
-  bottom: calc(100% + var(--space-2));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, #0a0b0e 78%, transparent);
-  backdrop-filter: blur(14px);
-  transition:
-    background var(--duration-fast),
-    opacity var(--duration-med) var(--ease-out);
-}
-
-.reader-footer__nav--prev {
-  left: var(--space-3);
-}
-
-.reader-footer__nav--next {
-  right: var(--space-3);
-}
-
-.reader--light .reader-footer__nav {
-  background: color-mix(in srgb, #f4f1ea 82%, transparent);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-.reader-footer--hidden .reader-footer__nav {
-  opacity: 0;
-  pointer-events: none;
-}
-
 .reader-progress {
   flex: 1;
   height: 4px;
