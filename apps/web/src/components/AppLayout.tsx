@@ -22,7 +22,7 @@ const SCROLL_STOP_MS = 400;
  * The header auto-hides when scrolling down and returns on scroll up
  * (mobile only — the hiding is purely visual via a media-gated class).
  * On the long grid pages (Latest, Bookmarks) it behaves like the reader
- * chrome instead: hide on scroll down, reveal on scroll up / scroll stop /
+ * chrome instead: hide on scroll down, reveal on scroll up /
  * mouse movement, hide again once idle — on all viewports.
  */
 export function AppLayout() {
@@ -64,6 +64,8 @@ export function AppLayout() {
     let idleTimer: number | undefined;
     let stopTimer: number | undefined;
     let lastPointerShow = 0;
+    /** Last scroll direction past the dead-zone — gates the scroll-stop reveal. */
+    let lastDir: 'up' | 'down' | null = null;
 
     const clearIdleTimer = () => {
       window.clearTimeout(idleTimer);
@@ -93,6 +95,7 @@ export function AppLayout() {
         // Always visible near the top.
         if (y <= HIDE_THRESHOLD) {
           lastY = y;
+          lastDir = null;
           clearIdleTimer();
           setHeaderHidden(false);
           return;
@@ -102,25 +105,31 @@ export function AppLayout() {
         // just as rarely, so tiny jitters can't flip the header back and forth.
         if (y - lastY > TOGGLE_DELTA) {
           lastY = y;
+          lastDir = 'down';
           clearIdleTimer();
           window.clearTimeout(stopTimer);
           stopTimer = undefined;
           setHeaderHidden(true);
         } else if (lastY - y > TOGGLE_DELTA) {
           lastY = y;
+          lastDir = 'up';
           setHeaderHidden(false);
           armIdleHide();
         }
       });
     };
 
-    // Scroll stop → reveal (then hide again once idle). Auto-hide routes only.
+    // Scroll stop → reveal only if the last motion was upward (an upward
+    // fling already reveals via direction, so this is a no-op safety net).
+    // After scrolling DOWN the header stays hidden — revealing here caused
+    // the hide → show → (idle) hide flicker on every scroll stop.
+    // Auto-hide routes only.
     const onScrollRaw = () => {
       onScroll();
       if (!autoHideHeader) return;
       window.clearTimeout(stopTimer);
       stopTimer = window.setTimeout(() => {
-        if (!headerPinnedRef.current && Math.max(0, window.scrollY) > HIDE_THRESHOLD) {
+        if (lastDir === 'up' && !headerPinnedRef.current) {
           setHeaderHidden(false);
         }
         armIdleHide();
@@ -128,9 +137,12 @@ export function AppLayout() {
     };
 
     // Any mouse movement reveals (then idle-hides). Throttled so constant
-    // motion doesn't re-render every frame. Auto-hide routes only.
-    const onPointerMove = () => {
+    // motion doesn't re-render every frame. Mouse only — touch drags fire
+    // pointermove while scrolling and would fight the scroll-down hide.
+    // Auto-hide routes only.
+    const onPointerMove = (e: PointerEvent) => {
       if (!autoHideHeader || headerPinnedRef.current) return;
+      if (e.pointerType && e.pointerType !== 'mouse') return;
       const now = performance.now();
       if (now - lastPointerShow < 150) return;
       lastPointerShow = now;
