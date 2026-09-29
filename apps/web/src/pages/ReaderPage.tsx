@@ -834,6 +834,9 @@ export function ReaderPage() {
     // the bar on EVERY nav key, so spamming scroll-down (S / ArrowDown /
     // Space) in vertical mode — or turning pages forward in fullscreen —
     // pinned the toolbar on screen even though the user never scrolled up.
+    // Exception: paged-mode page turns (A/D, arrows) reveal in BOTH
+    // directions — turning a page is a discrete action like tapping, and
+    // hiding on forward while revealing on backward was asymmetric.
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (isEditableKeyTarget(target)) return;
@@ -853,6 +856,12 @@ export function ReaderPage() {
         intent === 'forward' ||
         intent === 'chapterForward'
       ) {
+        // Paged mode has no scroll direction — a forward page turn should
+        // reveal just like a backward one (symmetric with tap-to-turn).
+        if (settings.mode === 'paged' && intent === 'forward') {
+          showTemporarily();
+          return;
+        }
         hideNow();
         return;
       }
