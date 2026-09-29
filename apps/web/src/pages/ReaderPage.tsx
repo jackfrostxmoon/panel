@@ -322,12 +322,16 @@ export function ReaderPage() {
     }
   }, [pages, pageCount, chapterId]);
 
-  /** Toggle fullscreen on the reader container. */
+  /**
+   * Toggle fullscreen on the document element (not the reader container):
+   * the toast viewport renders at the app root, outside `.reader` — going
+   * fullscreen on the container would hide every toast while fullscreen.
+   */
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen();
     } else {
-      void containerRef.current?.requestFullscreen();
+      void document.documentElement.requestFullscreen();
     }
   }, []);
 
