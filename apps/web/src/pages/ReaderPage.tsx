@@ -1213,9 +1213,10 @@ export function ReaderPage() {
       !resumeResolved && savedPage > 0 && pageCount > 1 && savedPage < pageCount - 1;
 
     const currentChapter = chapters.data?.find((c) => c.id === data.chapterId);
-    const sourceTitle = data.chapterTitle?.trim() ?? '';
-    const isGeneric = /^chapter\s+\d+(\.\d+)?\s*$/i.test(sourceTitle);
-    const enhancedChapterTitle = currentChapter?.title ?? (isGeneric ? '' : data.chapterTitle);
+    // Prefer the chapter-list title, but never blank the header: while the
+    // list is loading (or holds a stale partial cache) the source label
+    // ("Chapter 3") is the only current-chapter signal we have.
+    const enhancedChapterTitle = currentChapter?.title ?? data.chapterTitle;
 
     body = (
       <>
