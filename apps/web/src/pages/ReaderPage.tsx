@@ -231,6 +231,47 @@ export function ReaderPage() {
       mounted afterwards so close/reopen still animates. */
   const [settingsEverOpened, setSettingsEverOpened] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  /**
+   * Pages of the current chapter that gave up loading, keyed by their
+   * chapter-local index. Reported by `ReaderImage` only after its auto-retry
+   * budget is exhausted, so a page that recovers clears itself.
+   *
+   * Used for one thing: when EVERY page in the chapter has failed, the reader
+   * is showing nothing but error boxes, so the toolbar stops auto-hiding.
+   * Without that, a touch user could not summon the toolbar at all — the error
+   * box swallows click propagation, and the mouse-only top-edge hover reveal
+   * never fires — leaving reader settings unreachable. See the capture-phase
+   * reveal listener in the controls effect below.
+   */
+  const [failedPages, setFailedPages] = useState<ReadonlySet<number>>(() => new Set());
+  /** Chapter the failed-page set was last reset for (see prop docs on resetChapter). */
+  const [failedChapter, setFailedChapter] = useState(chapterId);
+  /** Records a terminal page failure, ignoring repeats of the same page. */
+  const handlePageError = useCallback((failed: PanelPage) => {
+    setFailedPages((prev) => {
+      if (prev.has(failed.index)) return prev;
+      const next = new Set(prev);
+      next.add(failed.index);
+      return next;
+    });
+  }, []);
+  /** A page recovered after a manual Reload — stop counting it as failed. */
+  const handlePageLoad = useCallback((loaded: PanelPage) => {
+    setFailedPages((prev) => {
+      if (!prev.has(loaded.index)) return prev;
+      const next = new Set(prev);
+      next.delete(loaded.index);
+      return next;
+    });
+  }, []);
+  /**
+   * True when the current chapter has pages, a payload has landed, and every
+   * one of them reported a terminal failure. `failedChapter` guards against a
+   * stale set from the previous chapter being read against the new page count
+   * in the render before the reset effect runs.
+   */
+  const everyPageFailed =
+    pageCount > 0 && failedChapter === chapterId && failedPages.size >= pageCount;
   const [isFullscreen, setIsFullscreen] = useState(false);
   /** Active smooth-scroll direction (Shift+W / Shift+S, or plain W/S with smooth-scroll keys); null = stopped. */
   const [scrollDir, setScrollDir] = useState<'up' | 'down' | null>(null);
@@ -299,6 +340,9 @@ export function ReaderPage() {
     setResetChapter(chapterId);
     setScrollRatio(0);
     setSettingsOpen(false);
+    // Failure bookkeeping is per chapter — a fresh chapter starts clean.
+    setFailedPages(new Set());
+    setFailedChapter(chapterId);
     window.scrollTo(0, 0);
     const content = containerRef.current?.querySelector('.reader-content') as HTMLElement | null;
     content?.scrollTo({ top: 0 });
@@ -768,6 +812,15 @@ export function ReaderPage() {
       clearHideTimer();
       return;
     }
+    /* Every page in the chapter failed to load. The reader is nothing but
+       error boxes, so there is no reading to get out of the way of: pin the
+       toolbar permanently. This is what keeps the settings button reachable
+       on a fully-broken chapter (see `failedPages`). */
+    if (everyPageFailed) {
+      setControlsVisible(true);
+      clearHideTimer();
+      return;
+    }
     if (!content) return;
 
     const showTemporarily = () => {
@@ -813,6 +866,23 @@ export function ReaderPage() {
     const onContainerMove = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
       if (event.clientY <= TOP_REVEAL_PX) showTemporarily();
+    };
+    /**
+     * Reveal-on-tap, registered in the CAPTURE phase so it still runs when a
+     * child swallows the click. A failed page renders an error box that calls
+     * `stopPropagation()` (deliberately — a tap on a broken page must not turn
+     * pages), which would otherwise suppress the bubble-phase
+     * `onContentClick` below and leave the toolbar unsummonable on a chapter
+     * where nothing loads. Capture on an ancestor runs before the target's own
+     * handler, so the reveal happens regardless.
+     *
+     * Deliberately separate from `onContentClick` rather than flipping that one
+     * to capture: it calls `event.stopPropagation()` itself when auto-scroll is
+     * running, and in the capture phase that would cancel the click before it
+     * reached the Reload button inside the error box.
+     */
+    const onCaptureClick = () => {
+      showTemporarily();
     };
     const onContentClick = (event: MouseEvent) => {
       // Clicking anywhere on the image/content stops both smooth scroll
@@ -874,6 +944,7 @@ export function ReaderPage() {
 
     content.addEventListener('scroll', onScroll, { passive: true });
     content.addEventListener('click', onContentClick);
+    content.addEventListener('click', onCaptureClick, true);
     toolbar?.addEventListener('pointermove', onToolbarMove);
     reader?.addEventListener('pointermove', onContainerMove);
     window.addEventListener('keydown', onKeyDown);
@@ -892,11 +963,21 @@ export function ReaderPage() {
       clearHideTimer();
       content.removeEventListener('scroll', onScroll);
       content.removeEventListener('click', onContentClick);
+      content.removeEventListener('click', onCaptureClick, true);
       toolbar?.removeEventListener('pointermove', onToolbarMove);
       reader?.removeEventListener('pointermove', onContainerMove);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [settingsOpen, chapterPages.data, showPagesLoading, settings.direction, settings.mode, settings.smoothScrollKeys, autoScrollActive]);
+  }, [
+    settingsOpen,
+    chapterPages.data,
+    showPagesLoading,
+    settings.direction,
+    settings.mode,
+    settings.smoothScrollKeys,
+    autoScrollActive,
+    everyPageFailed,
+  ]);
 
   /* Fullscreen state tracking. */
   useEffect(() => {
@@ -1332,6 +1413,8 @@ export function ReaderPage() {
                  On a fresh chapter hop this is the stashed position (see
                  hopInitialPage above) so cached payloads restore correctly. */
               initialPage={hopInitialPage}
+              onPageError={handlePageError}
+              onPageLoad={handlePageLoad}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
@@ -1355,6 +1438,8 @@ export function ReaderPage() {
               chapterTag={chapterId}
               /* Preserve the reading position across mode switches (see above). */
               initialPage={hopInitialPage}
+              onPageError={handlePageError}
+              onPageLoad={handlePageLoad}
             />
           ) : (
             <PagedReader
@@ -1387,6 +1472,8 @@ export function ReaderPage() {
                  while fit-to-height is on. */
               imageWidth={settings.imageWidth}
               fitToHeight={settings.fitToHeight}
+              onPageError={handlePageError}
+              onPageLoad={handlePageLoad}
             />
           )}
         </main>

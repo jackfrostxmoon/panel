@@ -44,6 +44,11 @@ export const GalleryReader = forwardRef<
      * this the first tracking update reports page 0 and the position is lost.
      */
     initialPage?: number;
+    /** A page gave up loading (see `ReaderImage`). Lets the parent pin the
+     *  toolbar when every page in the chapter failed. */
+    onPageError?: (page: PanelPage) => void;
+    /** A page displayed, including one that recovered after a manual Reload. */
+    onPageLoad?: (page: PanelPage) => void;
   }
 >(function GalleryReader(
   {
@@ -60,6 +65,8 @@ export const GalleryReader = forwardRef<
     chapterTag = null,
     direction = 'ltr',
     initialPage = 0,
+onPageError,
+    onPageLoad,
   },
   ref,
 ) {
@@ -69,7 +76,7 @@ export const GalleryReader = forwardRef<
     onZoomChange,
   });
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const glideAnimRef = useRef<number>(0);
+  const glideAnimRef = useRef(0);
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
   const onProgressRef = useRef(onProgress);
@@ -246,6 +253,8 @@ export const GalleryReader = forwardRef<
             widthPx={imageWidthPx}
             heightPx={imageHeightPx}
             chapterTag={chapterTag}
+            onError={onPageError}
+            onLoad={onPageLoad}
           />
         </div>
       ))}

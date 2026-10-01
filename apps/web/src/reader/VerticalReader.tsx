@@ -41,13 +41,18 @@ export const VerticalReader = forwardRef<
     /** Chapter global id used as the cache provenance tag. */
     chapterTag?: string | null;
     /** Reading direction; swaps the left/right chapter-hop zones. */
-    direction?: ReadingDirection;
+direction?: ReadingDirection;
     /**
-     * Page to show on mount. Switching reading modes mounts a fresh reader
-     * at scrollTop 0 while the parent still holds the current page — without
+     * Page to show on mount. Switching reading modes mounts this reader at
+     * scrollTop 0 while the parent still holds the current page — without
      * this the first tracking update reports page 0 and the position is lost.
      */
     initialPage?: number;
+/** A page gave up loading (see `ReaderImage`). Lets the parent pin the
+     *  toolbar when every page in the chapter failed. */
+    onPageError?: (page: PanelPage) => void;
+    /** A page displayed, including one that recovered after a manual Reload. */
+    onPageLoad?: (page: PanelPage) => void;
   }
 >(function VerticalReader(
   {
@@ -66,6 +71,8 @@ export const VerticalReader = forwardRef<
     chapterTag = null,
     direction = 'ltr',
     initialPage = 0,
+onPageError,
+    onPageLoad,
   },
   ref,
 ) {
@@ -74,8 +81,8 @@ export const VerticalReader = forwardRef<
     initialZoom: zoom ?? 1,
     onZoomChange,
   });
-  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const glideAnimRef = useRef<number>(0);
+const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const glideAnimRef = useRef(0);
   /** 0-based index of the page at the viewport center (drives preloading). */
   const [currentIndex, setCurrentIndex] = useState(0);
   const onPageChangeRef = useRef(onPageChange);
@@ -231,6 +238,8 @@ export const VerticalReader = forwardRef<
             widthPx={imageWidthPx}
             heightPx={imageHeightPx}
             chapterTag={chapterTag}
+            onError={onPageError}
+            onLoad={onPageLoad}
           />
         </div>
       ))}

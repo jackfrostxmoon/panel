@@ -60,6 +60,8 @@ export function PagedReader({
    */
   imageWidth = 100,
   fitToHeight = false,
+  onPageError,
+  onPageLoad,
 }: {
   pages: PanelPage[];
   page: number;
@@ -99,6 +101,15 @@ export function PagedReader({
    * the whole image is visible without scrolling.
    */
   fitToHeight?: boolean;
+  /**
+   * A page gave up loading (see `ReaderImage`). Lets the parent pin the
+   * toolbar when a chapter is failing page after page. Paged mode only
+   * mounts the current spread, so this fires for the sheets actually
+   * visited rather than the whole chapter.
+   */
+  onPageError?: (page: PanelPage) => void;
+  /** A page displayed, including one that recovered after a manual Reload. */
+  onPageLoad?: (page: PanelPage) => void;
 }) {
   const touchStartX = useRef<number | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -341,6 +352,8 @@ export function PagedReader({
                       zoom={currentZoom}
                       transformOrigin={origin}
                       chapterTag={chapterTag}
+                      onError={onPageError}
+                      onLoad={onPageLoad}
                     />
                   ) : odd && spreadOddPolicy !== 'duplicate' ? (
                     <SpreadPlaceholder policy={spreadOddPolicy} />
@@ -355,6 +368,8 @@ export function PagedReader({
                     zoom={currentZoom}
                     transformOrigin={origin}
                     chapterTag={chapterTag}
+                    onError={onPageError}
+                    onLoad={onPageLoad}
                   />
                 </div>
               </>
@@ -368,6 +383,8 @@ export function PagedReader({
                     zoom={currentZoom}
                     transformOrigin={origin}
                     chapterTag={chapterTag}
+                    onError={onPageError}
+                    onLoad={onPageLoad}
                   />
                 </div>
                 <div className="paged-reader__seam" aria-hidden="true" />
@@ -380,6 +397,8 @@ export function PagedReader({
                       zoom={currentZoom}
                       transformOrigin={origin}
                       chapterTag={chapterTag}
+                      onError={onPageError}
+                      onLoad={onPageLoad}
                     />
                   ) : odd && spreadOddPolicy !== 'duplicate' ? (
                     <SpreadPlaceholder policy={spreadOddPolicy} />
@@ -396,6 +415,8 @@ export function PagedReader({
             zoom={currentZoom}
             transformOrigin={origin}
             chapterTag={chapterTag}
+            onError={onPageError}
+            onLoad={onPageLoad}
           />
         )}
         </div>

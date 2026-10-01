@@ -41,6 +41,7 @@ export function ReaderImage({
    *  cache provenance tag so chapter pages can be cleared selectively. */
   chapterTag = null,
   onLoad,
+  onError,
 }: {
   page: PanelPage;
   eager?: boolean;
@@ -54,7 +55,18 @@ export function ReaderImage({
   transformOrigin?: string;
   /** Chapter global id used as the cache provenance tag. */
   chapterTag?: string | null;
-  onLoad?: () => void;
+  /**
+   * Called when the image is displayed. Carries the page so a consumer can
+   * pair it with `onError` (a page that recovers after a manual Reload stops
+   * counting as failed).
+   */
+  onLoad?: (page: PanelPage) => void;
+  /**
+   * Called once per page when the image gives up: the auto-retry budget is
+   * exhausted and the error box is about to render. NOT called per retry
+   * attempt — consumers use it to count terminally-failed pages.
+   */
+  onError?: (page: PanelPage) => void;
 }) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
@@ -64,6 +76,8 @@ export function ReaderImage({
   const imgRef = useRef<HTMLImageElement>(null);
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   const aspectRatio = page.width && page.height
     ? `${page.width} / ${page.height}`
@@ -171,11 +185,17 @@ const isLoaded = status === 'loaded';
     if (img.naturalWidth > 0 && img.naturalHeight > 0) {
       setMeasuredRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
     }
-    setStatus((prev) => {
-      if (prev === 'loaded') return prev;
-      onLoadRef.current?.();
-      return 'loaded';
-    });
+    // Report outside the state updater: updaters must stay pure (StrictMode
+    // invokes them twice, which would fire the load report twice).
+    if (status !== 'loaded') {
+      setStatus('loaded');
+      onLoadRef.current?.(page);
+    }
+    // `src` is the trigger (a new URL may have resolved from cache without
+    // firing `load`); `status`/`page` are read, not triggers — the
+    // `status !== 'loaded'` guard makes a re-run a no-op, and the img is
+    // unmounted while status is 'error' so the null check bails first.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
   const reload = useCallback(() => {
@@ -193,6 +213,16 @@ const isLoaded = status === 'loaded';
       setStatus('error');
     }
   }, [attempt, reload]);
+
+  /* Report the terminal failure upward. Driven by `status` rather than by
+     `handleError` so it fires exactly once per give-up, including a manual
+     Reload that fails again (status cycles error -> loading -> error). The
+     reader counts these to detect a fully-unreadable chapter; a page that
+     later recovers is dropped from that count by its own load report. */
+  useEffect(() => {
+    if (status !== 'error') return;
+    onErrorRef.current?.(page);
+  }, [status, page]);
 
   return (
     <div ref={wrapRef} className="reader-image" style={style}>
@@ -236,7 +266,7 @@ const isLoaded = status === 'loaded';
                 setMeasuredRatio(`${el.naturalWidth} / ${el.naturalHeight}`);
               }
               setStatus('loaded');
-              onLoad?.();
+              onLoadRef.current?.(page);
             }}
             onError={handleError}
           />
