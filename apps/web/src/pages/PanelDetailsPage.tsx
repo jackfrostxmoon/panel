@@ -680,6 +680,59 @@ const filteredAndSortedChapters = useMemo(() => {
     [navigate],
   );
 
+  /**
+   * Auto-refresh until fresh. The API serves the cached DB row instantly on
+   * open, then revalidates live in the background — so the first paint is
+   * stale (e.g. "1 chapters" while Chapter 206 exists) and only a manual
+   * refresh showed new chapters. Poll panel + chapters every 2s until the
+   * chapter count moves past the first-paint snapshot, or ~40s passes.
+   * Polls are cheap server-memory hits; the single live source fetch is
+   * the background refresh the server already fires on the first request.
+   */
+  const autoFreshSettledRef = useRef(false);
+  const initialChapterCountRef = useRef<number | null>(null);
+  const panelRefetchRef = useRef(panel.refetch);
+  panelRefetchRef.current = panel.refetch;
+  const chaptersRefetchRef = useRef(chapters.refetch);
+  chaptersRefetchRef.current = chapters.refetch;
+  const chaptersDataRef = useRef(chapters.data);
+  chaptersDataRef.current = chapters.data;
+  useEffect(() => {
+    autoFreshSettledRef.current = false;
+    initialChapterCountRef.current = null;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (autoFreshSettledRef.current) {
+        clearInterval(timer);
+        return;
+      }
+      attempts += 1;
+      void Promise.all([panelRefetchRef.current(), chaptersRefetchRef.current()])
+        .then(([, c]) => {
+          const data = c.data ?? chaptersDataRef.current;
+          if (data === undefined) return;
+          if (initialChapterCountRef.current === null) {
+            // First loaded list is the snapshot; the countdown starts here.
+            initialChapterCountRef.current = data.length;
+            attempts = 0;
+            return;
+          }
+          if (data.length !== initialChapterCountRef.current || attempts >= 20) {
+            autoFreshSettledRef.current = true;
+            clearInterval(timer);
+          }
+        })
+        .catch(() => {
+          if (attempts >= 20) {
+            autoFreshSettledRef.current = true;
+            clearInterval(timer);
+          }
+        });
+    }, 2000);
+    return () => clearInterval(timer);
+    // oxlint-disable-next-line react/exhaustive-deps -- once-per-panel poller; live query values via refs.
+  }, [id]);
+
   // Handle keyboard navigation for chapter list
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, chapterId: string) => {
