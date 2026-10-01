@@ -20,6 +20,13 @@ import type { SourceRegistry } from '../sources/registry.js';
 
 /** Genre catalogs change rarely — one fetch per source per day is plenty. */
 const GENRE_LIST_TTL_MS = 24 * 60 * 60_000;
+/**
+ * Empty genre catalogs are almost always an outage (origin 5xx, challenge
+ * page, changed markup) — not a source with no genres. Caching [] for a
+ * full day poisons the filter dropdown long after the source recovers, so
+ * empties get a short TTL and the next request revalidates live.
+ */
+const GENRE_LIST_EMPTY_TTL_MS = 60_000;
 
 /**
  * Central exclude enforcement for listing results. Adapters that cannot
@@ -285,6 +292,20 @@ export class PanelService {
             x,
           ),
         };
+        // An empty live parse on a latest feed is almost always an outage
+        // (challenge page, origin 5xx served as 200, changed markup) — never
+        // overwrite a good cached row with it. Serve the last good row
+        // instead; when nothing good exists return the empty without
+        // persisting it so the next request revalidates live.
+        if (cleanedResult.results.length === 0) {
+          const fallback = await this.panelCache
+            .findList('latest', key, filter, page)
+            .catch(() => undefined);
+          if (fallback && fallback.results.length > 0) {
+            return { results: fallback.results, page: fallback.page, hasMore: fallback.hasMore };
+          }
+          return cleanedResult;
+        }
         // Persist so a later offline visit shows the same list.
         await this.panelCache
           .upsertList('latest', key, filter, page, cleanedResult.results, cleanedResult.hasMore)
@@ -554,7 +575,8 @@ export class PanelService {
    * error so the filters keep working with page-derived genres.
    */
   getGenreList(sourceName: string): Promise<string[]> {
-    return this.cached(`genres:${sourceName}`, GENRE_LIST_TTL_MS, async () => {
+    const key = `genres:${sourceName}`;
+    return this.cached(key, GENRE_LIST_TTL_MS, async () => {
       const source = this.registry.get(sourceName);
       if (!source.getGenreList) return [];
       try {
@@ -565,6 +587,11 @@ export class PanelService {
       } catch {
         return [];
       }
+    }).then((result) => {
+      // See GENRE_LIST_EMPTY_TTL_MS: revalidate empties quickly so a
+      // transient outage doesn't blank the dropdown for a full day.
+      if (result.length === 0) this.cache.set(key, result, GENRE_LIST_EMPTY_TTL_MS);
+      return result;
     });
   }
 

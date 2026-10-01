@@ -181,6 +181,13 @@ export class RawkumaSource implements PanelSource {
     const { body } = await this.http.fetchText(url);
 
     const items = parseListPage(body, this.baseUrl);
+    if (items.length === 0) {
+      // An empty latest feed is almost always an outage (Cloudflare
+      // challenge, origin 5xx served as 200, changed markup) — never a
+      // source with no updates. Warn so it shows in logs instead of a
+      // silent empty 200; PanelService serves the last good cached row.
+      logger.warn('Rawkuma latest page parsed to 0 items', { page, url });
+    }
     await this.enrichListGenres(items);
     return {
       results: items.map((item) => this.toPanelSummary(item)),
