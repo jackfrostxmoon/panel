@@ -41,6 +41,7 @@ import type {
   SearchPageSettings,
   BookmarksPageSettings,
   CachePageSettings,
+  SourceOrderSettings,
 } from '@panel/shared';
 
 /**
@@ -763,6 +764,17 @@ export const api = {
   getCacheSettings: () => request<CachePageSettings>('/api/cache-settings'),
   saveCacheSettings: (settings: CachePageSettings) =>
     request<CachePageSettings>('/api/cache-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  /**
+   * Source display order, persisted server-side as a JSON file
+   * (`data/display/sources.json`) — survives cache clears and follows
+   * the user across browsers/devices like the other display settings.
+   */
+  getSourceOrder: () => request<SourceOrderSettings>('/api/source-order'),
+  saveSourceOrder: (settings: SourceOrderSettings) =>
+    request<SourceOrderSettings>('/api/source-order', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),

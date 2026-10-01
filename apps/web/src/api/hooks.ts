@@ -18,6 +18,7 @@ import type {
   SearchPageSettings,
   BookmarksPageSettings,
   CachePageSettings,
+  SourceOrderSettings,
   Panel,
   PanelRating,
   PrefetchJob,
@@ -114,6 +115,8 @@ export const queryKeys = {
   bookmarksSettings: () => ['bookmarks-settings'] as const,
   /** Cache-page preferences persisted to `data/display/cache.json`. */
   cacheSettings: () => ['cache-settings'] as const,
+  /** Source display order persisted to `data/display/sources.json`. */
+  sourceOrder: () => ['source-order'] as const,
   /** A source's full genre catalog for the filter dropdowns. */
   genreCatalog: (source: string) => ['genres', 'catalog', source] as const,
   healthDetailed: () => ['health', 'detailed'] as const,
@@ -278,6 +281,30 @@ export function useSaveCacheSettings() {
     mutationFn: (settings) => api.saveCacheSettings(settings),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.cacheSettings(), data);
+    },
+  });
+}
+
+/**
+ * Source display order (`data/display/sources.json` on the server).
+ * Canonical order by default — the Sources page editor writes here.
+ */
+export function useSourceOrder(opts?: QueryOpts<SourceOrderSettings>) {
+  return useQuery<SourceOrderSettings, ApiClientError>({
+    queryKey: queryKeys.sourceOrder(),
+    queryFn: () => api.getSourceOrder(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the source order; refreshes the settings query on success. */
+export function useSaveSourceOrder() {
+  const queryClient = useQueryClient();
+  return useMutation<SourceOrderSettings, ApiClientError, SourceOrderSettings>({
+    mutationFn: (settings) => api.saveSourceOrder(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.sourceOrder(), data);
     },
   });
 }

@@ -10,6 +10,7 @@ import {
   useSearch,
   useSearchSettings,
   useSaveSearchSettings,
+  useSourceOrder,
 } from '../api/hooks';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid, type PanelCardProgress } from '../components/PanelCard';
@@ -26,7 +27,7 @@ import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
-import { DEFAULT_SOURCE, sourceLabel } from '../utils/format';
+import { defaultSourceFor, sourceLabel } from '../utils/format';
 
 /** Search results screen with loading / empty / error states. */
 export function SearchPage() {
@@ -37,7 +38,9 @@ export function SearchPage() {
   const pageParam = Number.parseInt(params.get('page') ?? '1', 10);
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
   // Always query exactly one source — no fan-out "all sources" mode.
-  const source = params.get('source') ?? DEFAULT_SOURCE;
+  // The default is the user's top-ordered source (Sources page).
+  const sourceOrder = useSourceOrder();
+  const source = params.get('source') ?? defaultSourceFor(sourceOrder.data?.order);
 
   /** Combined filters: status is client-side only, while the genre pair is
       ALSO sent to the API — combo-capable sources filter server-side

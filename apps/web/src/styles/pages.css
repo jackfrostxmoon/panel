@@ -5173,3 +5173,32 @@ details[open] > .cache-settings__tags-summary::before {
   background: rgba(229, 72, 77, 0.12);
   border-color: rgba(229, 72, 77, 0.25);
 }
+
+/* Drag-and-drop reorder affordances for the Sources rows. */
+.sources-row--drop {
+  border-style: dashed;
+  border-color: var(--accent, #e5484d);
+}
+
+.sources-row__head .sources-row__title {
+  flex: 1;
+}
+
+.sources-row__grip {
+  cursor: grab;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  letter-spacing: -2px;
+  padding: 0 var(--space-1);
+  user-select: none;
+  touch-action: none;
+}
+
+.sources-row__grip:active {
+  cursor: grabbing;
+}
+
+.sources-row__order-btns {
+  display: inline-flex;
+  gap: var(--space-1);
+}

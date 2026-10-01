@@ -125,6 +125,25 @@ export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
 };
 
 /**
+ * Source display order. Persisted server-side as a JSON file
+ * (`data/display/sources.json`) via the source-order endpoints.
+ *
+ * `order` holds source codes (e.g. "mk") in the user's preferred order.
+ * Empty (the default) means the canonical built-in order. Codes the client
+ * doesn't know are ignored; known codes missing from the list are appended
+ * in canonical order — so a newly added source never vanishes.
+ */
+export interface SourceOrderSettings {
+  /** Source codes in user order; [] = canonical order. */
+  order: string[];
+}
+
+/** Default: canonical built-in source order. */
+export const DEFAULT_SOURCE_ORDER_SETTINGS: SourceOrderSettings = {
+  order: [],
+};
+
+/**
  * A named reader-settings snapshot. Persisted server-side as a JSON file
  * (`data/reader/styles.json`) via the reader-styles endpoints; the web
  * client keeps an in-memory copy while the settings panel is open.

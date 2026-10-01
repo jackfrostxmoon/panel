@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SourceBenchmarkResult } from '../api/client';
-import { useBenchmarkSources, useSourceImageHealth } from '../api/hooks';
+import { useBenchmarkSources, useSaveSourceOrder, useSourceImageHealth, useSourceOrder } from '../api/hooks';
 import { ErrorState } from '../components/StateView';
 import { IconArrowLeft } from '../components/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -92,6 +92,81 @@ export function SourcesPage() {
   const sources = health.data?.sources ?? [];
   const hasResults = Object.keys(results).length > 0;
 
+  /**
+   * Display order editor. The saved order (pending mutation wins so rows
+   * jump instantly) ranks the health rows; unsaved/unknown codes keep
+   * their server relative order at the end. Persisted server-side to
+   * `data/display/sources.json` — the source pills and the Latest/Search
+   * default follow it.
+   */
+  const sourceOrderQuery = useSourceOrder();
+  const saveSourceOrder = useSaveSourceOrder();
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [dragOverName, setDragOverName] = useState<string | null>(null);
+  const dragName = useRef<string | null>(null);
+  const savedOrder = sourceOrderQuery.data?.order ?? [];
+  const effectiveOrder =
+    saveSourceOrder.isPending && saveSourceOrder.variables
+      ? saveSourceOrder.variables.order
+      : savedOrder;
+  const rank = useMemo(
+    () => new Map(effectiveOrder.map((code, i) => [code, i] as const)),
+    [effectiveOrder],
+  );
+  const orderedSources = useMemo(
+    () =>
+      [...(health.data?.sources ?? [])].sort(
+        (a, b) =>
+          (rank.get(a.name) ?? Number.MAX_SAFE_INTEGER) -
+          (rank.get(b.name) ?? Number.MAX_SAFE_INTEGER),
+      ),
+    // health.data?.sources is the stable query reference; `sources` above
+    // re-mints `?? []` every render.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [health.data?.sources, rank],
+  );
+
+  function persistOrder(next: string[]) {
+    setOrderError(null);
+    saveSourceOrder.mutate(
+      { order: next },
+      {
+        onError: (error) => {
+          setOrderError(error instanceof Error ? error.message : 'Could not save source order.');
+        },
+      },
+    );
+  }
+
+  /** Move one source by delta in the displayed order, then auto-save. */
+  function moveSource(name: string, delta: -1 | 1) {
+    if (saveSourceOrder.isPending) return;
+    const codes = orderedSources.map((s) => s.name);
+    const from = codes.indexOf(name);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= codes.length) return;
+    const next = [...codes];
+    const [moved] = next.splice(from, 1);
+    if (moved !== undefined) next.splice(to, 0, moved);
+    persistOrder(next);
+  }
+
+  /** Drop the dragged source before the drop target, then auto-save. */
+  function dropOn(name: string) {
+    const from = dragName.current;
+    dragName.current = null;
+    setDragOverName(null);
+    if (!from || from === name || saveSourceOrder.isPending) return;
+    const codes = orderedSources.map((s) => s.name);
+    const fromIdx = codes.indexOf(from);
+    const targetIdx = codes.indexOf(name);
+    if (fromIdx < 0 || targetIdx < 0) return;
+    const next = codes.filter((c) => c !== from);
+    // Post-removal coordinates: a downward move shifts the target up one.
+    next.splice(fromIdx < targetIdx ? targetIdx - 1 : targetIdx, 0, from);
+    persistOrder(next);
+  }
+
   if (health.isError && !hasResults) {
     return (
       <div className="page sources-page" aria-labelledby="sources-title">
@@ -115,10 +190,21 @@ export function SourcesPage() {
           <h1 id="sources-title" className="cache-settings__title">Sources</h1>
           <p className="cache-settings__subtitle">
             Live status of every configured source. The table below is passive telemetry —
-            run the benchmark to probe each source&apos;s live listing right now.
+            run the benchmark to probe each source&apos;s live listing right now. Drag a
+            row by its grip (or use ↑ ↓) to reorder sources: the order sets the source
+            pills and the Latest/Search default.
           </p>
         </div>
         <div className="cache-settings__actions">
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => persistOrder([])}
+            disabled={saveSourceOrder.isPending || savedOrder.length === 0}
+            title="Reset the source order to the built-in default"
+          >
+            Reset order
+          </button>
           <button
             type="button"
             className="btn btn--primary btn--sm"
@@ -147,15 +233,78 @@ export function SourcesPage() {
       ) : sources.length === 0 && !hasResults ? (
         <p className="cache-settings__empty">No sources are configured.</p>
       ) : (
-        <ul className="sources-list" role="list">
-          {sources.map((source) => {
+        <>
+          {orderError && (
+            <p className="sources-page__error" role="alert">
+              Could not save source order: {orderError}
+            </p>
+          )}
+          <ul className="sources-list" role="list">
+            {orderedSources.map((source, i) => {
             const probe = results[source.name] ?? null;
             return (
-              <li key={source.name} className="sources-row">
+              <li
+                key={source.name}
+                className={`sources-row${dragOverName === source.name ? ' sources-row--drop' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverName !== source.name) setDragOverName(source.name);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dropOn(source.name);
+                }}
+                onDragLeave={() => {
+                  if (dragOverName === source.name) setDragOverName(null);
+                }}
+              >
                 <div className="sources-row__head">
+                  <span
+                    className="sources-row__grip"
+                    draggable
+                    onDragStart={(e) => {
+                      dragName.current = source.name;
+                      e.dataTransfer.effectAllowed = 'move';
+                      try {
+                        e.dataTransfer.setData('text/plain', source.name);
+                      } catch {
+                        // setData is best-effort (dragover/drop use the ref).
+                      }
+                    }}
+                    onDragEnd={() => {
+                      dragName.current = null;
+                      setDragOverName(null);
+                    }}
+                    title={`Drag to reorder ${source.label}`}
+                    aria-hidden="true"
+                  >
+                    ⋮⋮
+                  </span>
                   <span className="sources-row__title">
                     <strong>{source.label}</strong>
                     <span className="sources-row__code">{source.name}</span>
+                  </span>
+                  <span className="sources-row__order-btns">
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => moveSource(source.name, -1)}
+                      disabled={i === 0 || saveSourceOrder.isPending}
+                      aria-label={`Move ${source.label} up`}
+                      title={`Move ${source.label} up`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => moveSource(source.name, 1)}
+                      disabled={i === orderedSources.length - 1 || saveSourceOrder.isPending}
+                      aria-label={`Move ${source.label} down`}
+                      title={`Move ${source.label} down`}
+                    >
+                      ↓
+                    </button>
                   </span>
                   <SourcePill
                     enabled={source.enabled}
@@ -190,7 +339,8 @@ export function SourcesPage() {
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </>
       )}
     </div>
   );

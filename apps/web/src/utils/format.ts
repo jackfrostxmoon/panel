@@ -175,3 +175,35 @@ export const SOURCE_OPTIONS: SourceOption[] = Object.entries(SOURCE_LABELS).map(
  * site at once looks like bot traffic and gets rate-limited/blocked.
  */
 export const DEFAULT_SOURCE: string = SOURCE_OPTIONS[0]!.code;
+
+/**
+ * Sources in the user's preferred order (the Sources page editor writes it
+ * to `data/display/sources.json`). Unknown codes are ignored; known codes
+ * missing from the list keep their canonical relative order at the end —
+ * so a newly added source never vanishes from the filter.
+ */
+export function orderedSourceOptions(order?: readonly string[]): SourceOption[] {
+  if (!order || order.length === 0) return SOURCE_OPTIONS;
+  const byCode = new Map(SOURCE_OPTIONS.map((option) => [option.code, option]));
+  const seen = new Set<string>();
+  const out: SourceOption[] = [];
+  for (const code of order) {
+    const option = byCode.get(code);
+    if (option && !seen.has(code)) {
+      seen.add(code);
+      out.push(option);
+    }
+  }
+  for (const option of SOURCE_OPTIONS) {
+    if (!seen.has(option.code)) out.push(option);
+  }
+  return out;
+}
+
+/**
+ * Default source honoring the user's order: the first source in the merged
+ * order (their top pick, or MangaKatana when no order is saved yet).
+ */
+export function defaultSourceFor(order?: readonly string[]): string {
+  return orderedSourceOptions(order)[0]!.code;
+}
