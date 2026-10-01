@@ -5202,3 +5202,228 @@ details[open] > .cache-settings__tags-summary::before {
   display: inline-flex;
   gap: var(--space-1);
 }
+
+/*
+ * Activity log panel (Sources page).
+ *
+ * Fixed to the viewport corner rather than inlined in the page flow: the
+ * panel exists to sit on top of the table while you read a stack trace
+ * against live rows underneath it.
+ */
+.log-panel__toggle {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface-2, var(--surface));
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.log-panel__toggle:hover {
+  border-color: var(--accent, #e5484d);
+}
+
+.log-panel__badge {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: rgba(229, 72, 77, 0.18);
+  color: var(--danger);
+  font-size: var(--font-size-xs, 11px);
+}
+
+.log-panel {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 60;
+  width: min(760px, calc(100vw - var(--space-8)));
+  max-height: min(70vh, 640px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface-2, var(--surface));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs, 11px);
+}
+
+.log-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-panel__title {
+  margin-right: auto;
+}
+
+.log-panel__counts {
+  display: inline-flex;
+  gap: var(--space-2);
+  color: var(--text-dim);
+}
+
+.log-panel__count--warn {
+  color: var(--warning);
+}
+
+.log-panel__count--error {
+  color: var(--danger);
+}
+
+.log-panel__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-panel__field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.log-panel__field--grow {
+  flex: 1;
+  min-width: 160px;
+}
+
+.log-panel__field-label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.log-panel__select,
+.log-panel__input {
+  min-width: 0;
+  padding: 2px var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.log-panel__input {
+  flex: 1;
+}
+
+.log-panel__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-dim);
+}
+
+.log-panel__list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.log-panel__empty {
+  padding: var(--space-3);
+  color: var(--text-dim);
+}
+
+.log-panel__row {
+  border-bottom: 1px solid var(--border);
+}
+
+.log-panel__row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 3px var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.log-panel__row-head:not(:disabled) {
+  cursor: pointer;
+}
+
+.log-panel__row-head:not(:disabled):hover {
+  background: var(--surface);
+}
+
+.log-panel__row--warn .log-panel__level {
+  color: var(--warning);
+}
+
+.log-panel__row--error .log-panel__level {
+  color: var(--danger);
+}
+
+.log-panel__row--debug .log-panel__msg {
+  color: var(--text-dim);
+}
+
+.log-panel__time {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.log-panel__level {
+  min-width: 4ch;
+  text-transform: uppercase;
+}
+
+.log-panel__scope {
+  color: var(--accent, #e5484d);
+  white-space: nowrap;
+}
+
+.log-panel__msg {
+  flex: 1;
+  word-break: break-word;
+}
+
+.log-panel__chev {
+  color: var(--text-dim);
+}
+
+.log-panel__context {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-3) + 12ch);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--surface);
+}
+
+.log-panel__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.log-panel__foot-hint {
+  white-space: nowrap;
+}

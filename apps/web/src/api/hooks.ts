@@ -36,9 +36,10 @@ import type {
   UpdateBookmarkFolderInput,
   UpsertReadingListInput,
 } from '@panel/shared';
+import { log as rootLog } from '../lib/logger';
+import { ApiClientError } from './client';
 import {
   api,
-  type ApiClientError,
   type ChapterDiskState,
   type DetailedSourceHealth,
   type SourceBenchmarkResult,
@@ -128,6 +129,15 @@ export const queryKeys = {
 
 type QueryOpts<T> = Omit<UseQueryOptions<T, ApiClientError>, 'queryKey' | 'queryFn'>;
 
+/**
+ * Scoped loggers for the queries and mutations the Sources page leans on.
+ * Each lifecycle step (fetch start/ok/fail, mutation save/fail) is traced so a
+ * stalled poll or a lost order write is visible without opening devtools.
+ */
+const healthLog = rootLog.child('query.health');
+const benchmarkLog = rootLog.child('query.benchmark');
+const orderLog = rootLog.child('query.sourceOrder');
+
 export function useSearch(
   query: string,
   page = 1,
@@ -168,7 +178,31 @@ export function useLatest(
 export function useSourceImageHealth(opts?: QueryOpts<{ status: string; sources: DetailedSourceHealth[] }>) {
   return useQuery<{ status: string; sources: DetailedSourceHealth[] }, ApiClientError>({
     queryKey: queryKeys.healthDetailed(),
-    queryFn: () => api.getDetailedHealth(),
+    // This query polls every 60s and drives the Sources page, so each fetch is
+    // traced: which pass it was (initial vs background refetch) and what the
+    // payload looked like. A failed poll is expected when the API is down, so
+    // it logs at warn rather than error — the UI already tolerates it.
+    queryFn: async ({ meta }) => {
+      const phase = meta?.['phase'] === 'background' ? 'refetch' : 'initial';
+      healthLog.debug('fetch start', { phase });
+      try {
+        const data = await api.getDetailedHealth();
+        healthLog.debug('fetch ok', {
+          phase,
+          status: data.status,
+          sourceCount: data.sources.length,
+          enabledCount: data.sources.filter((s) => s.enabled).length,
+        });
+        return data;
+      } catch (error) {
+        healthLog.warn('fetch failed', {
+          phase,
+          code: error instanceof ApiClientError ? error.code : 'UNKNOWN',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: false,
@@ -183,7 +217,37 @@ export function useSourceImageHealth(opts?: QueryOpts<{ status: string; sources:
  */
 export function useBenchmarkSources() {
   return useMutation<{ checkedAt: string; results: SourceBenchmarkResult[] }, ApiClientError, string | undefined>({
-    mutationFn: (source) => api.benchmarkSources(source),
+    // One probe per mutation (the Sources page runs them sequentially). The
+    // per-row outcome is logged here so the trace survives even if the page
+    // unmounts mid-run.
+    mutationFn: async (source) => {
+      const startedAt = performance.now();
+      benchmarkLog.debug('probe start', { source: source ?? '(all)' });
+      try {
+        const data = await api.benchmarkSources(source);
+        for (const row of data.results) {
+          const summary = {
+            source: row.name,
+            enabled: row.enabled,
+            ok: row.ok,
+            latencyMs: row.latencyMs,
+            items: row.items,
+            errorCode: row.errorCode,
+          };
+          if (row.ok) benchmarkLog.info('probe ok', summary);
+          else benchmarkLog.warn('probe down', { ...summary, errorMessage: row.errorMessage });
+        }
+        return data;
+      } catch (error) {
+        benchmarkLog.error('probe request failed', {
+          source: source ?? '(all)',
+          durationMs: Math.round(performance.now() - startedAt),
+          code: error instanceof ApiClientError ? error.code : 'UNKNOWN',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
     retry: false,
   });
 }
@@ -292,7 +356,23 @@ export function useSaveCacheSettings() {
 export function useSourceOrder(opts?: QueryOpts<SourceOrderSettings>) {
   return useQuery<SourceOrderSettings, ApiClientError>({
     queryKey: queryKeys.sourceOrder(),
-    queryFn: () => api.getSourceOrder(),
+    queryFn: async () => {
+      orderLog.debug('load saved order');
+      try {
+        const data = await api.getSourceOrder();
+        orderLog.debug('loaded saved order', {
+          order: data.order,
+          custom: data.order.length > 0,
+        });
+        return data;
+      } catch (error) {
+        orderLog.warn('could not load saved order — falling back to built-in order', {
+          code: error instanceof ApiClientError ? error.code : 'UNKNOWN',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
     staleTime: 60_000,
     ...opts,
   });
@@ -302,9 +382,28 @@ export function useSourceOrder(opts?: QueryOpts<SourceOrderSettings>) {
 export function useSaveSourceOrder() {
   const queryClient = useQueryClient();
   return useMutation<SourceOrderSettings, ApiClientError, SourceOrderSettings>({
-    mutationFn: (settings) => api.saveSourceOrder(settings),
+    mutationFn: async (settings) => {
+      orderLog.info('saving order', {
+        order: settings.order,
+        count: settings.order.length,
+        reset: settings.order.length === 0,
+      });
+      try {
+        const saved = await api.saveSourceOrder(settings);
+        orderLog.info('order saved', { order: saved.order });
+        return saved;
+      } catch (error) {
+        orderLog.error('order save failed', {
+          requested: settings.order,
+          code: error instanceof ApiClientError ? error.code : 'UNKNOWN',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.sourceOrder(), data);
+      orderLog.debug('source-order query cache updated', { order: data.order });
     },
   });
 }

@@ -1,3 +1,4 @@
+import { isDebugEnabled, log as rootLog } from '../lib/logger';
 import { splitDumpIntoChunks } from '../utils/bookmarkExport';
 import type {
   AddBookmarkToFolderInput,
@@ -66,21 +67,117 @@ export class ApiClientError extends Error {
 
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
+/** Root of the API request log; every path group is a child of this scope. */
+const apiLog = rootLog.child('api');
+
+rootLog.info('api client ready', {
+  baseUrl: BASE_URL || '(same origin)',
+  apiBaseUrlOverride: BASE_URL !== '',
+});
+
+/**
+ * Every API call funnels through here, so this is the single best place to
+ * observe webapp traffic: one log line per request covering method, path,
+ * status, wall time, payload size and outcome. Logs are tagged with a
+ * per-path group (e.g. `api.health`) so the Sources page panel can filter
+ * down to health/source-order traffic when that is all you care about.
+ *
+ * Payloads are summarised, not dumped — a latest-grid response is thousands
+ * of lines. `info` carries shape metadata; the full body only rides along at
+ * `debug`, which the level gate keeps off by default in production.
+ */
+
+/** Group a path into a short scope: `/health/benchmark` -> `api.health`. */
+function scopeFor(method: string, path: string): string {
+  const [raw] = path.split('?');
+  const segments = (raw ?? '').split('/').filter(Boolean);
+  const head = segments.find((s) => !s.startsWith(':'));
+  return head ? `api.${head}` : `api.${method.toLowerCase()}`;
+}
+
+/** Top-level shape of a decoded payload — enough to spot a schema drift. */
+function describePayload(data: unknown): Record<string, unknown> {
+  if (data === null || data === undefined) return { type: String(data) };
+  if (Array.isArray(data)) return { type: 'array', length: data.length };
+  if (typeof data !== 'object') return { type: typeof data, value: data };
+  const keys = Object.keys(data as Record<string, unknown>);
+  const described: Record<string, unknown> = { type: 'object', keys };
+  // Lengths for the list-bearing endpoints, which is the number you actually
+  // want when comparing two polls of the same query.
+  for (const key of keys) {
+    const value = (data as Record<string, unknown>)[key];
+    if (Array.isArray(value)) described[`${key}Count`] = value.length;
+  }
+  return described;
+}
+
+/** Byte size of the raw response text, before JSON.parse. */
+function byteLength(text: string): number {
+  // Blob is available in every browser and measures UTF-8 bytes, not UTF-16
+  // code units, so one multi-byte character is not double-counted.
+  return new Blob([text]).size;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const scope = scopeFor(method, path);
+  const log = apiLog.child(scope);
+  const startedAt = performance.now();
+  const requestId = ++requestCounter;
+  log.debug('request', { requestId, method, path, bodyBytes: init?.body ? byteLength(String(init.body)) : 0 });
+
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
       ...init,
     });
-  } catch {
+  } catch (error) {
+    log.error('network failure — could not reach the server', {
+      requestId,
+      method,
+      path,
+      durationMs: Math.round(performance.now() - startedAt),
+      cause: error instanceof Error ? error.message : String(error),
+    });
     throw new ApiClientError('NETWORK_ERROR', 'Could not reach the server.', 0);
   }
 
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    log.error('response body could not be read', {
+      requestId,
+      method,
+      path,
+      status: response.status,
+      durationMs: Math.round(performance.now() - startedAt),
+      cause: error instanceof Error ? error.message : String(error),
+    });
+    throw new ApiClientError(
+      'NETWORK_ERROR',
+      'The server returned an invalid response.',
+      response.status,
+    );
+  }
+
+  const durationMs = Math.round(performance.now() - startedAt);
+  const responseBytes = byteLength(text);
+
   let body: ApiResponse<T>;
   try {
-    body = (await response.json()) as ApiResponse<T>;
+    body = JSON.parse(text) as ApiResponse<T>;
   } catch {
+    log.error('response was not valid JSON', {
+      requestId,
+      method,
+      path,
+      status: response.status,
+      durationMs,
+      responseBytes,
+      bodyPreview: text.slice(0, 200),
+    });
     throw new ApiClientError(
       'NETWORK_ERROR',
       'The server returned an invalid response.',
@@ -89,10 +186,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!body.success) {
+    const errorCtx = {
+      requestId,
+      method,
+      path,
+      status: response.status,
+      durationMs,
+      code: body.error.code,
+    };
+    // A 5xx or a rejected request is a genuine fault; a 4xx validation reply
+    // is the app working as designed, so it stays at warn.
+    if (response.status >= 500) log.error('request failed', errorCtx);
+    else log.warn('request rejected', errorCtx);
+    log.debug('error details', { ...errorCtx, message: body.error.message, details: body.error.details });
     throw new ApiClientError(body.error.code, body.error.message, response.status);
   }
+
+  const payload = describePayload(body.data);
+  const summary = { requestId, method, path, status: response.status, durationMs, responseBytes, ...payload };
+  // Slow calls get their own line so a latency regression is visible even when
+  // the level is raised above `info`.
+  if (durationMs >= SLOW_REQUEST_MS) log.warn('slow request', summary);
+  else log.info('request ok', summary);
+  if (isDebugEnabled()) log.debug('response payload', { requestId, path, data: body.data });
+
   return body.data;
 }
+
+/** Requests at or above this wall time get a `warn` line. */
+const SLOW_REQUEST_MS = 2_000;
+
+/** Distinguishes concurrent requests in the log when several are in flight. */
+let requestCounter = 0;
 
 /**
  * Max provenance tags per `/cache/tags-size` request. Must stay in sync with

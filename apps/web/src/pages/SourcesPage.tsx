@@ -1,11 +1,16 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SourceBenchmarkResult } from '../api/client';
 import { useBenchmarkSources, useSaveSourceOrder, useSourceImageHealth, useSourceOrder } from '../api/hooks';
+import { LogPanel } from '../components/LogPanel';
 import { ErrorState } from '../components/StateView';
 import { IconArrowLeft } from '../components/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { log as rootLog } from '../lib/logger';
 import { formatRelativeTime } from '../utils/format';
+
+/** Page-scoped log. Every trace line on this page carries this scope. */
+const pageLog = rootLog.child('sources');
 
 /**
  * Minimum recent image errors before the passive stats call a source
@@ -26,6 +31,8 @@ export function SourcesPage() {
   useDocumentTitle('Sources');
   const health = useSourceImageHealth();
   const benchmark = useBenchmarkSources();
+  const [logPanelOpen, setLogPanelOpen] = useState(false);
+  const [mountedAt] = useState(() => Date.now());
   const [results, setResults] = useState<Record<string, SourceBenchmarkResult>>({});
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   /**
@@ -73,6 +80,14 @@ export function SourcesPage() {
 
   /** Merge one benchmark response into the per-source result map. */
   function absorb(data: { checkedAt: string; results: SourceBenchmarkResult[] }) {
+    const merged = data.results.map((row) => row.name);
+    pageLog.debug('absorb', {
+      checkedAt: data.checkedAt,
+      returned: data.results.length,
+      sources: merged,
+      ok: data.results.filter((r) => r.ok).length,
+      down: data.results.filter((r) => !r.ok).map((r) => r.name),
+    });
     setCheckedAt(data.checkedAt);
     setResults((prev) => {
       const next = { ...prev };
@@ -82,7 +97,26 @@ export function SourcesPage() {
   }
 
   async function runAll() {
-    if (probing || orderedSources.length === 0) return;
+    if (probing || orderedSources.length === 0) {
+      // Both guards are silent no-ops for the user, so they get a trace line —
+      // this is the first thing to check when "Run benchmark" appears dead.
+      pageLog.warn('run rejected', {
+        reason: probing ? 'a run is already in progress' : 'no sources to probe',
+        probing,
+        sourceCount: orderedSources.length,
+      });
+      return;
+    }
+    const plan = orderedSources.map((s) => s.name);
+    const runStartedAt = performance.now();
+    pageLog.info('benchmark run start', {
+      total: plan.length,
+      // The order the probes fire in — this is the arrangement the user set.
+      plan,
+      enabled: orderedSources.filter((s) => s.enabled).map((s) => s.name),
+      disabled: orderedSources.filter((s) => !s.enabled).map((s) => s.name),
+      reRun: hasResults,
+    });
     setRunning(true);
     try {
       // One source at a time: a single fan-out request puts the slowest
@@ -93,10 +127,30 @@ export function SourcesPage() {
       //
       // Probed in the displayed order, so the run follows the arrangement
       // the user set with the grip/↑↓ (rows paint top-down in probe order).
-      for (const source of orderedSources) {
+      for (const [index, source] of orderedSources.entries()) {
+        const probeStartedAt = performance.now();
+        pageLog.debug('probe start', {
+          index: index + 1,
+          total: plan.length,
+          source: source.name,
+          enabled: source.enabled,
+        });
         try {
           absorb(await benchmark.mutateAsync(source.name));
+          pageLog.debug('probe done', {
+            index: index + 1,
+            total: plan.length,
+            source: source.name,
+            durationMs: Math.round(performance.now() - probeStartedAt),
+          });
         } catch (error) {
+          pageLog.warn('probe request threw — recording a synthetic Down row', {
+            index: index + 1,
+            total: plan.length,
+            source: source.name,
+            durationMs: Math.round(performance.now() - probeStartedAt),
+            message: error instanceof Error ? error.message : String(error),
+          });
           const at = new Date().toISOString();
           absorb({
             checkedAt: at,
@@ -117,23 +171,63 @@ export function SourcesPage() {
           });
         }
       }
+      const latencies = orderedSources
+        .map((s) => results[s.name]?.latencyMs)
+        .filter((ms): ms is number => ms !== null && ms !== undefined);
+      pageLog.info('benchmark run finished', {
+        total: plan.length,
+        durationMs: Math.round(performance.now() - runStartedAt),
+        ok: plan.filter((name) => results[name]?.ok).length,
+        down: plan.filter((name) => results[name] && !results[name]?.ok),
+        slowest: latencies.length > 0 ? Math.max(...latencies) : null,
+      });
     } finally {
       setRunning(false);
+      pageLog.debug('running flag cleared');
     }
   }
 
   async function retryOne(name: string) {
-    if (probing) return;
-    absorb(await benchmark.mutateAsync(name));
+    if (probing) {
+      pageLog.warn('retry ignored — a probe is already in flight', { source: name });
+      return;
+    }
+    const startedAt = performance.now();
+    pageLog.info('single-source probe', { source: name });
+    try {
+      absorb(await benchmark.mutateAsync(name));
+      pageLog.info('single-source probe finished', {
+        source: name,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    } catch (error) {
+      // Deliberately not swallowed: the row's Retry button has no error
+      // surface, so the throw lands in the console and the log panel.
+      pageLog.error('single-source probe failed', {
+        source: name,
+        durationMs: Math.round(performance.now() - startedAt),
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   function persistOrder(next: string[]) {
     setOrderError(null);
+    pageLog.debug('persist order', {
+      next,
+      changed: next.join(',') !== effectiveOrder.join(','),
+    });
     saveSourceOrder.mutate(
       { order: next },
       {
         onError: (error) => {
-          setOrderError(error instanceof Error ? error.message : 'Could not save source order.');
+          const message = error instanceof Error ? error.message : 'Could not save source order.';
+          pageLog.error('persist order failed', { next, message });
+          setOrderError(message);
+        },
+        onSuccess: (saved) => {
+          pageLog.debug('persist order settled', { requested: next, saved: saved.order });
         },
       },
     );
@@ -141,14 +235,21 @@ export function SourcesPage() {
 
   /** Move one source by delta in the displayed order, then auto-save. */
   function moveSource(name: string, delta: -1 | 1) {
-    if (saveSourceOrder.isPending) return;
+    if (saveSourceOrder.isPending) {
+      pageLog.warn('move ignored — an order save is still in flight', { source: name, delta });
+      return;
+    }
     const codes = orderedSources.map((s) => s.name);
     const from = codes.indexOf(name);
     const to = from + delta;
-    if (from < 0 || to < 0 || to >= codes.length) return;
+    if (from < 0 || to < 0 || to >= codes.length) {
+      pageLog.debug('move out of range', { source: name, delta, from, to, count: codes.length });
+      return;
+    }
     const next = [...codes];
     const [moved] = next.splice(from, 1);
     if (moved !== undefined) next.splice(to, 0, moved);
+    pageLog.debug('move', { source: name, delta, from, to, next });
     persistOrder(next);
   }
 
@@ -157,16 +258,108 @@ export function SourcesPage() {
     const from = dragName.current;
     dragName.current = null;
     setDragOverName(null);
-    if (!from || from === name || saveSourceOrder.isPending) return;
+    if (!from || from === name || saveSourceOrder.isPending) {
+      pageLog.debug('drop ignored', { dragged: from, target: name, saving: saveSourceOrder.isPending });
+      return;
+    }
     const codes = orderedSources.map((s) => s.name);
     const fromIdx = codes.indexOf(from);
     const targetIdx = codes.indexOf(name);
-    if (fromIdx < 0 || targetIdx < 0) return;
+    if (fromIdx < 0 || targetIdx < 0) {
+      pageLog.warn('drop could not resolve indices', { dragged: from, target: name, fromIdx, targetIdx });
+      return;
+    }
     const next = codes.filter((c) => c !== from);
     // Post-removal coordinates: a downward move shifts the target up one.
     next.splice(fromIdx < targetIdx ? targetIdx - 1 : targetIdx, 0, from);
+    pageLog.debug('drop', { dragged: from, target: name, fromIdx, targetIdx, next });
     persistOrder(next);
   }
+
+  /**
+   * Lifecycle trace for the page: mount, the incoming health payload, the
+   * effective rank map, and re-sorts. Effects keyed on the data references
+   * fire when that data actually changes, not on every render, so the count
+   * of these lines is a genuine count of state transitions.
+   */
+  // Mount/unmount only, so the values it reads are captured once through a ref
+  // rather than tracked as dependencies (which would re-fire on every poll).
+  const mountSnapshot = useRef({
+    healthLoading: health.isLoading,
+    healthError: health.error?.message ?? null,
+    orderLoading: sourceOrderQuery.isLoading,
+    savedOrder,
+  });
+  useEffect(() => {
+    pageLog.info('sources page mounted', mountSnapshot.current);
+    return () => pageLog.info('sources page unmounted');
+  }, []);
+
+  useEffect(() => {
+    const data = health.data;
+    if (!data) return;
+    pageLog.debug('health payload changed', {
+      status: data.status,
+      count: data.sources.length,
+      sources: data.sources.map((s) => ({
+        name: s.name,
+        enabled: s.enabled,
+        requests: s.requests,
+        errors: s.errors,
+        avgLatencyMs: s.avgLatencyMs,
+        imageErrors: s.imageErrors,
+        imageBlocked: s.imageBlocked,
+      })),
+    });
+  }, [health.data]);
+
+  useEffect(() => {
+    // rank changes => orderedSources was re-sorted, i.e. the saved order
+    // landed (or was reset).
+    pageLog.debug('rank map changed', {
+      order: effectiveOrder,
+      ranks: Object.fromEntries(rank),
+    });
+  }, [rank, effectiveOrder]);
+
+  useEffect(() => {
+    pageLog.debug('display order computed', {
+      order: orderedSources.map((s) => s.name),
+      movedByUser: effectiveOrder.length > 0,
+    });
+  }, [orderedSources, effectiveOrder]);
+
+  useEffect(() => {
+    pageLog.debug('benchmark results changed', {
+      checkedAt,
+      count: Object.keys(results).length,
+      ok: Object.values(results).filter((r) => r.ok).length,
+      down: Object.values(results).filter((r) => !r.ok).map((r) => r.name),
+    });
+  }, [results, checkedAt]);
+
+  /**
+   * While the panel is open the page stays mounted for long stretches with no
+   * visible activity, so a periodic heartbeat makes it obvious the app is
+   * alive and the health poll is still landing.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!logPanelOpen) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [logPanelOpen]);
+
+  useEffect(() => {
+    if (!logPanelOpen) return;
+    pageLog.debug('heartbeat', {
+      sinceMs: Date.now() - mountedAt,
+      healthFetching: health.isFetching,
+      benchmarking: probing,
+      savingOrder: saveSourceOrder.isPending,
+      resultCount: Object.keys(results).length,
+    });
+  }, [now, logPanelOpen, mountedAt, health.isFetching, probing, saveSourceOrder.isPending, results]);
 
   if (health.isError && !hasResults) {
     return (
@@ -176,6 +369,9 @@ export function SourcesPage() {
           message={health.error.message}
           onRetry={() => void health.refetch()}
         />
+        {/* The panel stays available on the error state: "the API is down" is
+            exactly when you want the log that proves it. */}
+        <LogPanel open={logPanelOpen} onOpenChange={setLogPanelOpen} />
       </div>
     );
   }
@@ -343,6 +539,8 @@ export function SourcesPage() {
           </ul>
         </>
       )}
+
+      <LogPanel open={logPanelOpen} onOpenChange={setLogPanelOpen} />
     </div>
   );
 }
