@@ -36,6 +36,41 @@ export function SourcesPage() {
   const [running, setRunning] = useState(false);
   const probing = benchmark.isPending || running;
 
+  /**
+   * Display order editor. The saved order (pending mutation wins so rows
+   * jump instantly) ranks the health rows; unsaved/unknown codes keep
+   * their server relative order at the end. Persisted server-side to
+   * `data/display/sources.json` — the source pills and the Latest/Search
+   * default follow it.
+   */
+  const sourceOrderQuery = useSourceOrder();
+  const saveSourceOrder = useSaveSourceOrder();
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [dragOverName, setDragOverName] = useState<string | null>(null);
+  const dragName = useRef<string | null>(null);
+  const savedOrder = sourceOrderQuery.data?.order ?? [];
+  const effectiveOrder =
+    saveSourceOrder.isPending && saveSourceOrder.variables
+      ? saveSourceOrder.variables.order
+      : savedOrder;
+  const rank = useMemo(
+    () => new Map(effectiveOrder.map((code, i) => [code, i] as const)),
+    [effectiveOrder],
+  );
+  const orderedSources = useMemo(
+    () =>
+      [...(health.data?.sources ?? [])].sort(
+        (a, b) =>
+          (rank.get(a.name) ?? Number.MAX_SAFE_INTEGER) -
+          (rank.get(b.name) ?? Number.MAX_SAFE_INTEGER),
+      ),
+    // health.data?.sources is the only stable reference here; an inline
+    // `?? []` fallback would re-mint on every render and re-sort each time.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [health.data?.sources, rank],
+  );
+  const hasResults = Object.keys(results).length > 0;
+
   /** Merge one benchmark response into the per-source result map. */
   function absorb(data: { checkedAt: string; results: SourceBenchmarkResult[] }) {
     setCheckedAt(data.checkedAt);
@@ -47,7 +82,7 @@ export function SourcesPage() {
   }
 
   async function runAll() {
-    if (probing || sources.length === 0) return;
+    if (probing || orderedSources.length === 0) return;
     setRunning(true);
     try {
       // One source at a time: a single fan-out request puts the slowest
@@ -55,7 +90,10 @@ export function SourcesPage() {
       // response, which the server/proxy can hang up on. Sequential probes
       // stay small, paint rows progressively, and isolate failures — a sick
       // source records a Down row instead of sinking the whole run.
-      for (const source of sources) {
+      //
+      // Probed in the displayed order, so the run follows the arrangement
+      // the user set with the grip/↑↓ (rows paint top-down in probe order).
+      for (const source of orderedSources) {
         try {
           absorb(await benchmark.mutateAsync(source.name));
         } catch (error) {
@@ -88,43 +126,6 @@ export function SourcesPage() {
     if (probing) return;
     absorb(await benchmark.mutateAsync(name));
   }
-
-  const sources = health.data?.sources ?? [];
-  const hasResults = Object.keys(results).length > 0;
-
-  /**
-   * Display order editor. The saved order (pending mutation wins so rows
-   * jump instantly) ranks the health rows; unsaved/unknown codes keep
-   * their server relative order at the end. Persisted server-side to
-   * `data/display/sources.json` — the source pills and the Latest/Search
-   * default follow it.
-   */
-  const sourceOrderQuery = useSourceOrder();
-  const saveSourceOrder = useSaveSourceOrder();
-  const [orderError, setOrderError] = useState<string | null>(null);
-  const [dragOverName, setDragOverName] = useState<string | null>(null);
-  const dragName = useRef<string | null>(null);
-  const savedOrder = sourceOrderQuery.data?.order ?? [];
-  const effectiveOrder =
-    saveSourceOrder.isPending && saveSourceOrder.variables
-      ? saveSourceOrder.variables.order
-      : savedOrder;
-  const rank = useMemo(
-    () => new Map(effectiveOrder.map((code, i) => [code, i] as const)),
-    [effectiveOrder],
-  );
-  const orderedSources = useMemo(
-    () =>
-      [...(health.data?.sources ?? [])].sort(
-        (a, b) =>
-          (rank.get(a.name) ?? Number.MAX_SAFE_INTEGER) -
-          (rank.get(b.name) ?? Number.MAX_SAFE_INTEGER),
-      ),
-    // health.data?.sources is the stable query reference; `sources` above
-    // re-mints `?? []` every render.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [health.data?.sources, rank],
-  );
 
   function persistOrder(next: string[]) {
     setOrderError(null);
@@ -192,7 +193,7 @@ export function SourcesPage() {
             Live status of every configured source. The table below is passive telemetry —
             run the benchmark to probe each source&apos;s live listing right now. Drag a
             row by its grip (or use ↑ ↓) to reorder sources: the order sets the source
-            pills and the Latest/Search default.
+            pills, the Latest/Search default, and the sequence the benchmark probes.
           </p>
         </div>
         <div className="cache-settings__actions">
@@ -230,7 +231,7 @@ export function SourcesPage() {
 
       {health.isLoading && !hasResults ? (
         <p className="cache-settings__empty">Loading source status…</p>
-      ) : sources.length === 0 && !hasResults ? (
+      ) : orderedSources.length === 0 && !hasResults ? (
         <p className="cache-settings__empty">No sources are configured.</p>
       ) : (
         <>
