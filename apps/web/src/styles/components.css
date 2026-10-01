@@ -193,17 +193,18 @@ input::placeholder {
   transition: transform var(--duration-med) var(--ease-out);
 }
 
-/* Auto-hide on scroll down — mobile only. Desktop keeps the header pinned. */
+/* Auto-hide on scroll down — phones only. Above this the header is already
+   `position: sticky; top: 0` and simply stays pinned, matching the non-grid
+   pages (Sources, Cache, …). Keep the width in sync with
+   `AUTO_HIDE_MAX_WIDTH` in `components/AppLayout.tsx`. */
 @media (max-width: 560px) {
+  /* Reader-style auto-hide on the long grid pages (Latest, Bookmarks) uses
+     this same transform; AppLayout only adds .app-shell--auto-hide-header
+     (and the scroll listeners) for those routes while the viewport is
+     narrow, so no extra rule is needed here. */
   .app-header--hidden {
     transform: translateY(-100%);
   }
-}
-
-/* Reader-style auto-hide header on Latest + Bookmarks (all viewports —
-   the shell carries .app-shell--auto-hide-header only on those routes). */
-.app-shell--auto-hide-header .app-header--hidden {
-  transform: translateY(-100%);
 }
 
 .app-header__inner {

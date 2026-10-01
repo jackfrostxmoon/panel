@@ -15,15 +15,27 @@ const TOGGLE_DELTA = 12;
 const IDLE_HIDE_MS = 1500;
 /** No scroll events for this long → the user stopped scrolling → reveal. */
 const SCROLL_STOP_MS = 400;
+/**
+ * Viewport width at or below which the reader-style auto-hide applies. Must
+ * stay in sync with the two media gates in `styles/components.css`
+ * (`.app-header--hidden` and `.app-shell--auto-hide-header`). Above this the
+ * header stays pinned, matching the non-grid pages (Sources, Cache, …).
+ */
+const AUTO_HIDE_MAX_WIDTH = 560;
+
+/** True while the viewport is narrow enough for the auto-hide behaviour. */
+function isAutoHideViewport(): boolean {
+  return window.matchMedia(`(max-width: ${AUTO_HIDE_MAX_WIDTH}px)`).matches;
+}
 
 /**
  * App shell: compact header with brand + primary nav. On mobile the nav
  * collapses into the header row (icon-first, labels stay for accessibility).
- * The header auto-hides when scrolling down and returns on scroll up
- * (mobile only — the hiding is purely visual via a media-gated class).
+ * The header auto-hides when scrolling down and returns on scroll up.
  * On the long grid pages (Latest, Bookmarks) it behaves like the reader
  * chrome instead: hide on scroll down, reveal on scroll up /
- * mouse movement, hide again once idle — on all viewports.
+ * mouse movement, hide again once idle. Both are phone-only — above
+ * `AUTO_HIDE_MAX_WIDTH` the header stays pinned on every route.
  */
 export function AppLayout() {
   const [headerHidden, setHeaderHidden] = useState(false);
@@ -32,12 +44,31 @@ export function AppLayout() {
 
   /** Reader-style auto-hide header is active on the long grid pages. */
   const autoHideHeader = pathname === '/latest' || pathname === '/bookmarks';
+  /**
+   * Whether the viewport is currently narrow enough for the auto-hide.
+   * Tracked as state (not read once inside the scroll effect) so crossing the
+   * breakpoint re-runs that effect and the behaviour follows a resize or a
+   * device rotation without a reload.
+   */
+  const [autoHideViewport, setAutoHideViewport] = useState(isAutoHideViewport);
   /** True while the pointer hovers the header — pins it visible. */
   const headerPinnedRef = useRef(false);
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Watch the breakpoint so `autoHideViewport` tracks window resizes. A hide
+  // left over from the phone side is cleared when it stops applying.
+  useEffect(() => {
+    const query = window.matchMedia(`(max-width: ${AUTO_HIDE_MAX_WIDTH}px)`);
+    const onChange = (e: MediaQueryListEvent) => {
+      setAutoHideViewport(e.matches);
+      if (!e.matches) setHeaderHidden(false);
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
 
   // The list-mode cover preview is an imperative DOM node outside React.
   // SPA navigation unmounts the hovered row without a mouse-leave, so clear
@@ -59,6 +90,11 @@ export function AppLayout() {
   };
 
   useEffect(() => {
+    // Auto-hide is a phone affordance. On wider viewports the CSS never
+    // applies the transform, so skip the listeners entirely rather than
+    // toggling `headerHidden` on every scroll frame for nothing.
+    if (!autoHideViewport) return;
+
     let lastY = Math.max(0, window.scrollY);
     let ticking = false;
     let idleTimer: number | undefined;
@@ -165,6 +201,7 @@ export function AppLayout() {
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     headerEl?.addEventListener('pointerenter', onHeaderEnter);
     headerEl?.addEventListener('pointerleave', onHeaderLeave);
+
     return () => {
       window.removeEventListener('scroll', onScrollRaw);
       window.removeEventListener('pointermove', onPointerMove);
@@ -173,10 +210,16 @@ export function AppLayout() {
       clearIdleTimer();
       window.clearTimeout(stopTimer);
     };
-  }, [autoHideHeader]);
+  }, [autoHideHeader, autoHideViewport]);
 
   return (
-    <div className={`app-shell app-shell--wide${autoHideHeader ? ' app-shell--auto-hide-header' : ''}`}>
+    <div
+      className={`app-shell app-shell--wide${
+        // The shell class only gates the phone-only transform; the JS gate
+        // above decides whether the scroll listeners run at all.
+        autoHideHeader && autoHideViewport ? ' app-shell--auto-hide-header' : ''
+      }`}
+    >
       <header className={`app-header${headerHidden ? ' app-header--hidden' : ''}`}>
         <div className="app-header__inner">
           <NavLink to="/" className="app-header__brand" aria-label="Panel Reader home">
