@@ -635,7 +635,7 @@ export function LatestPage() {
                           <>
                             {progress ? (
                               <p className="panel-card__meta panel-card__meta--progress">
-                                {`${progress.chapterTitle ?? 'Chapter'} · Page ${progress.page + 1}`}
+                                {progress.chapterTitle ?? 'Chapter'}
                               </p>
                             ) : (
                               panel.latestChapter && (

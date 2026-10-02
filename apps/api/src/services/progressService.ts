@@ -56,10 +56,6 @@ export class ProgressService {
     return {
       panelId: panelGlobalId,
       chapterId: chapterGlobalId,
-      page: row.page,
-      scrollFraction: row.scrollFraction ?? null,
-      scrollX: row.scrollX ?? null,
-      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -69,9 +65,6 @@ export class ProgressService {
     const chapterParsed = parseGlobalId(input.chapterId);
     if (!panelParsed || !chapterParsed) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invalid panel or chapter id.');
-    }
-    if (!Number.isInteger(input.page) || input.page < 0) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Page must be a non-negative integer.');
     }
 
     const source = this.registry.get(panelParsed.source);
@@ -94,14 +87,10 @@ export class ProgressService {
       sourceUrl: source.buildChapterUrl(chapterParsed.nativeId),
     });
 
-    const row = await this.progress.upsert(panelRow.id, chapterRow.id, input.page, input.scrollFraction ?? null, input.scrollX ?? null, input.anchorRatio ?? null);
+    const row = await this.progress.upsert(panelRow.id, chapterRow.id);
     return {
       panelId: input.panelId,
       chapterId: input.chapterId,
-      page: row.page,
-      scrollFraction: row.scrollFraction ?? null,
-      scrollX: row.scrollX ?? null,
-      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
@@ -126,10 +115,6 @@ export class ProgressService {
     return {
       panelId: globalPanelId,
       chapterId: chapterRow.globalId,
-      page: row.page,
-      scrollFraction: row.scrollFraction ?? null,
-      scrollX: row.scrollX ?? null,
-      anchorRatio: row.anchorRatio ?? null,
       updatedAt: row.updatedAt.toISOString(),
       panelTitle: panelRow.title,
       coverUrl: panelRow.coverUrl,
@@ -151,10 +136,6 @@ export class ProgressService {
     return rows.map((row) => ({
       panelId: row.panelGlobalId,
       chapterId: row.chapterGlobalId,
-      page: row.progress.page,
-      scrollFraction: row.progress.scrollFraction ?? null,
-      scrollX: row.progress.scrollX ?? null,
-      anchorRatio: row.progress.anchorRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,
@@ -168,10 +149,6 @@ export class ProgressService {
     return rows.map((row) => ({
       panelId: row.panelGlobalId,
       chapterId: row.chapterGlobalId,
-      page: row.progress.page,
-      scrollFraction: row.progress.scrollFraction ?? null,
-      scrollX: row.progress.scrollX ?? null,
-      anchorRatio: row.progress.anchorRatio ?? null,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
       coverUrl: row.coverUrl,
@@ -187,13 +164,13 @@ export class ProgressService {
   }
 
   /**
-   * Bulk mark chapters read / unread (T1-6). `page` = null means "unread";
-   * otherwise the chapter is upserted at that page index. Returns the
+   * Bulk mark chapters read / unread (T1-6). `read` = false means
+   * "unread"; otherwise a chapter-level marker is upserted. Returns the
    * count of rows that were actually changed.
    */
   async bulkMark(
     globalPanelId: string,
-    chapters: Array<{ chapterId: string; page: number | null }>,
+    chapters: Array<{ chapterId: string; read: boolean }>,
   ): Promise<{ markedRead: number; markedUnread: number }> {
     const parsed = parseGlobalId(globalPanelId);
     if (!parsed) {
@@ -202,23 +179,20 @@ export class ProgressService {
     const panelRow = await this.panelCache.findPanelByGlobalId(globalPanelId);
     if (!panelRow) return { markedRead: 0, markedUnread: 0 };
 
-    const resolved: Array<{ chapterRowId: string; page: number | null }> = [];
+    const resolved: Array<{ chapterRowId: string; read: boolean }> = [];
     for (const entry of chapters) {
       const chapterParsed = parseGlobalId(entry.chapterId);
       if (!chapterParsed) {
         throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invalid chapter id.', { chapterId: entry.chapterId });
       }
-      if (
-        !Number.isInteger(entry.page) ||
-        (entry.page !== null && (entry.page < 0 || entry.page > 100_000))
-      ) {
-        throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Page must be a non-negative integer or null.', {
-          page: entry.page,
+      if (typeof entry.read !== 'boolean') {
+        throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Field "read" must be a boolean.', {
+          read: entry.read,
         });
       }
       const chapterRow = await this.panelCache.findChapterByGlobalId(entry.chapterId);
       if (!chapterRow) continue; // unknown chapter — skip rather than error
-      resolved.push({ chapterRowId: chapterRow.id, page: entry.page });
+      resolved.push({ chapterRowId: chapterRow.id, read: entry.read });
     }
 
     if (resolved.length === 0) return { markedRead: 0, markedUnread: 0 };

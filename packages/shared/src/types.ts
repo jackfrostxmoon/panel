@@ -118,41 +118,19 @@ export interface Bookmark {
   progress?: {
     chapterId: string;
     chapterTitle: string | null;
-    page: number;
     updatedAt: string;
   } | null;
 }
 
+/**
+ * Chapter-level read marker: which chapter was last opened, never a page
+ * position. Page-position fields (`page`, `scrollFraction`, `scrollX`,
+ * `anchorRatio`) were removed — the reader always opens a chapter at
+ * page 0.
+ */
 export interface ReadingProgress {
   panelId: string;
   chapterId: string;
-  /** 0-based page index. */
-  page: number;
-  /**
-   * Overall chapter scroll fraction (0–1) in vertical mode:
-   * `scrollTop / (scrollHeight - clientHeight)`. Null when the position is
-   * page-granular (paged/gallery modes or legacy rows). A fraction stays
-   * valid across image loads and screen widths where absolute page offsets
-   * shift, so continue-reading restores the same relative content.
-   */
-  scrollFraction: number | null;
-  /**
-   * Horizontal pan (scroller `scrollLeft` in CSS px) in vertical mode —
-   * the precision complement to the fraction: image widths never grow on
-   * load, so X is layout-stable where Y needs the fraction. Nonzero while
-   * pinch-zoomed and panned; null when page-granular. Browsers clamp out
-   * of range values on restore (including RTL negative origins).
-   */
-  scrollX: number | null;
-  /**
-   * Intra-page anchor ratio (0–1) in vertical mode: how far the viewport
-   * center has progressed through the saved `page`. Unlike the overall
-   * chapter fraction, this survives non-uniform image growth (long-strip
-   * chapters whose boxes grow 10x on load while lazy siblings stay small)
-   * because it is relative to one page's own box, not the chapter total.
-   * Null when page-granular or saved by an older client.
-   */
-  anchorRatio: number | null;
   updatedAt: string;
 }
 

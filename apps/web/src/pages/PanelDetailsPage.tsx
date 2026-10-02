@@ -524,7 +524,7 @@ const filteredAndSortedChapters = useMemo(() => {
   const bulkMarkSelected = useBulkMarkChaptersRead();
   /**
    * Bulk-mark every currently-selected chapter as read. Reuses the same
-   * `/api/progress/bulk` endpoint as "Mark All Read" (`page: 0`), chunked
+   * `/api/progress/bulk` endpoint as "Mark All Read", chunked
    * by `BULK_CHAPTER_LIMIT`. Clears the selection (stays in select mode)
    * so the row read-markers update without stale highlights.
    */
@@ -541,7 +541,7 @@ const filteredAndSortedChapters = useMemo(() => {
           panelId: id,
           chapters: batch
             .slice(i, i + BULK_CHAPTER_LIMIT)
-            .map((ch) => ({ chapterId: ch.id, page: 0 })),
+            .map((ch) => ({ chapterId: ch.id, read: true })),
         });
         markedRead += result.markedRead;
       }
@@ -556,7 +556,7 @@ const filteredAndSortedChapters = useMemo(() => {
   }, [selectedChapters, bulkMarkSelected, id, toast, handleClearSelection]);
 
   /**
-   * Bulk-unmark every currently-selected chapter (`page: null`), the
+   * Bulk-unmark every currently-selected chapter, the
    * counterpart to `handleMarkSelectedRead` and "Unmark All".
    */
   const handleMarkSelectedUnread = useCallback(async () => {
@@ -572,7 +572,7 @@ const filteredAndSortedChapters = useMemo(() => {
           panelId: id,
           chapters: batch
             .slice(i, i + BULK_CHAPTER_LIMIT)
-            .map((ch) => ({ chapterId: ch.id, page: null })),
+            .map((ch) => ({ chapterId: ch.id, read: false })),
         });
         markedUnread += result.markedUnread;
       }
@@ -605,13 +605,13 @@ const filteredAndSortedChapters = useMemo(() => {
         if (kind === 'read') {
           await bulkMarkOne.mutateAsync({
             panelId: id,
-            chapters: [{ chapterId: chapter.id, page: 0 }],
+            chapters: [{ chapterId: chapter.id, read: true }],
           });
           toast('Marked read', 'success');
         } else if (kind === 'unread') {
           await bulkMarkOne.mutateAsync({
             panelId: id,
-            chapters: [{ chapterId: chapter.id, page: null }],
+            chapters: [{ chapterId: chapter.id, read: false }],
           });
           toast('Marked unread', 'success');
         } else if (kind === 'bookmark') {

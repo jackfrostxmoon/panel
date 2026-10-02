@@ -395,7 +395,7 @@ export function ReaderPage() {
     setAutoScrollActive((active) => !active);
   }, [autoScrollActive, pageCount, settings.autoScrollDelayMs, settings.mode, toast]);
 
-  /* Seed `pendingSaveRef` at page 0 for a fresh chapter. The unload flush
+  /* Seed `pendingSaveRef` for a fresh chapter. The unload flush
      (pagehide / unmount / chapter hop) needs a payload to send, and on a
      brand-new chapter the user can close the tab in <100ms — before the
      save effect below ever fires. Without this, the first read of a
@@ -403,13 +403,12 @@ export function ReaderPage() {
      silently disappears after a restart. */
   useEffect(() => {
     if (!progress.isSuccess || !chapterPages.data) return;
-    if (progress.data && progress.data.page > 0) return;
+    if (progress.data) return;
     const data = chapterPages.data;
     if (!pendingSaveRef.current || pendingSaveRef.current.chapterId !== data.chapterId) {
       pendingSaveRef.current = {
         panelId: data.panelId,
         chapterId: data.chapterId,
-        page: 0,
         panelTitle: data.panelTitle ?? undefined,
         coverUrl: data.coverUrl,
         chapterTitle: data.chapterTitle ?? undefined,
@@ -572,19 +571,20 @@ export function ReaderPage() {
     [chapterId, hardHopToChapter],
   );
 
-  /* Persist progress on every page change. Exits are covered
+  /* Persist a chapter-level read marker on open. No page position is
+     stored — the reader always opens at page 0. Exits are covered
      by the explicit hop flush, the unmount flush below, and `pagehide`. */
   useEffect(() => {
     if (pageCount === 0 || !chapterPages.data) return;
-    // Guard against a stale payload: never persist a page against a chapter
-    // id it doesn't belong to (see `resetChapter`). The reset effect
-    // re-renders with the correct values right after, and the save fires then.
+    // Guard against a stale payload: never persist a marker against a
+    // chapter id it doesn't belong to (see `resetChapter`). The reset
+    // effect re-renders with the correct values right after, and the
+    // save fires then.
     if (resetChapter !== chapterPages.data.chapterId) return;
     const data = chapterPages.data;
     pendingSaveRef.current = {
       panelId: data.panelId,
       chapterId: data.chapterId,
-      page,
       panelTitle: data.panelTitle ?? undefined,
       coverUrl: data.coverUrl,
       chapterTitle: data.chapterTitle ?? undefined,
@@ -593,8 +593,8 @@ export function ReaderPage() {
     const payload = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (payload) saveProgress.mutate(payload);
-    // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on page
-  }, [page, pageCount, chapterPages.data, resetChapter]);
+    // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on chapter
+  }, [pageCount, chapterPages.data, resetChapter]);
 
   /* Flush on the way out. React cleanups don't run when the tab itself
      closes, and `beforeunload` is unreliable on mobile — `pagehide`

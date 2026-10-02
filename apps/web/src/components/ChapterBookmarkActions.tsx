@@ -40,13 +40,13 @@ export function ChapterBookmarkActions({
       constant on the server's Zod schemas), so long panel are sent in
       chunks and the counts aggregated (T1-6). */
   const bulkMarkInChunks = useCallback(
-    async (chapters: Chapter[], page: number | null) => {
+    async (chapters: Chapter[], read: boolean) => {
       let markedRead = 0;
       let markedUnread = 0;
       for (let i = 0; i < chapters.length; i += BULK_CHAPTER_LIMIT) {
         const result = await bulkMark.mutateAsync({
           panelId,
-          chapters: chapters.slice(i, i + BULK_CHAPTER_LIMIT).map((ch) => ({ chapterId: ch.id, page })),
+          chapters: chapters.slice(i, i + BULK_CHAPTER_LIMIT).map((ch) => ({ chapterId: ch.id, read })),
         });
         markedRead += result.markedRead;
         markedUnread += result.markedUnread;
@@ -104,7 +104,7 @@ export function ChapterBookmarkActions({
       return;
     }
     try {
-      const result = await bulkMarkInChunks(chapters, 0);
+      const result = await bulkMarkInChunks(chapters, true);
       toast(
         `Marked ${result.markedRead} chapter${result.markedRead === 1 ? '' : 's'} read`,
         'success',
@@ -121,7 +121,7 @@ export function ChapterBookmarkActions({
       return;
     }
     try {
-      const result = await bulkMarkInChunks(chapters, null);
+      const result = await bulkMarkInChunks(chapters, false);
       toast(
         `Unmarked ${result.markedUnread} chapter${result.markedUnread === 1 ? '' : 's'}`,
         'success',

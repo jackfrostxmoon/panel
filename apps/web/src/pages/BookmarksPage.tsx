@@ -719,7 +719,7 @@ export function BookmarksPage() {
             <PanelList className="panel-list--bookmarks">
               {sorted.map((bookmark) => {
                 const progressLabel = bookmark.progress
-                  ? `${bookmark.progress.chapterTitle ?? 'Chapter'} · Page ${bookmark.progress.page + 1}`
+                  ? (bookmark.progress.chapterTitle ?? 'Chapter')
                   : 'Not started yet';
                 const folderNames = (bookmark.folderIds ?? [])
                   .map((id) => allFolders.find((f) => f.id === id)?.name)
@@ -882,7 +882,7 @@ export function BookmarksPage() {
           >
             {sorted.map((bookmark) => {
               const progressLabel = bookmark.progress
-                ? `${bookmark.progress.chapterTitle ?? 'Chapter'} · Page ${bookmark.progress.page + 1}`
+                ? (bookmark.progress.chapterTitle ?? 'Chapter')
                 : 'Not started yet';
               const folderNames = (bookmark.folderIds ?? [])
                 .map((id) => allFolders.find((f) => f.id === id)?.name)

@@ -17,10 +17,6 @@ export interface ReadingListEntry {
     chapterId: string;
     chapterGlobalId: string;
     chapterTitle: string;
-    page: number;
-    scrollFraction: number | null;
-    scrollX: number | null;
-    anchorRatio: number | null;
     updatedAt: Date;
   } | null;
 }
@@ -40,10 +36,6 @@ export class ReadingListRepository {
         .selectDistinctOn([readingProgress.panelId], {
           panelId: readingProgress.panelId,
           chapterId: readingProgress.chapterId,
-          page: readingProgress.page,
-          scrollFraction: readingProgress.scrollFraction,
-          scrollX: readingProgress.scrollX,
-          anchorRatio: readingProgress.anchorRatio,
           updatedAt: readingProgress.updatedAt,
         })
         .from(readingProgress)
@@ -61,10 +53,6 @@ export class ReadingListRepository {
         row: readingList,
         panel: panel,
         progressChapterRowId: latest.chapterId,
-        progressPage: latest.page,
-        progressScrollFraction: latest.scrollFraction,
-        progressScrollX: latest.scrollX,
-        progressAnchorRatio: latest.anchorRatio,
         progressUpdatedAt: latest.updatedAt,
         chapterGlobalId: chapters.globalId,
         chapterTitle: chapters.title,
@@ -85,10 +73,6 @@ export class ReadingListRepository {
               chapterId: row.chapterGlobalId,
               chapterGlobalId: row.chapterGlobalId,
               chapterTitle: row.chapterTitle,
-              page: row.progressPage ?? 0,
-              scrollFraction: row.progressScrollFraction ?? null,
-              scrollX: row.progressScrollX ?? null,
-              anchorRatio: row.progressAnchorRatio ?? null,
               updatedAt: row.progressUpdatedAt ?? new Date(0),
             }
           : null,

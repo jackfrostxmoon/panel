@@ -59,7 +59,6 @@ export class BookmarkService {
         ? {
             chapterId: progress.chapterId,
             chapterTitle: progress.chapterTitle,
-            page: progress.page,
             updatedAt: progress.updatedAt,
           }
         : null,
@@ -132,7 +131,7 @@ export class BookmarkService {
 function toBookmark(
   row: BookmarkRow,
   panel: PanelRow,
-  progress: { chapterId: string; chapterTitle: string; page: number; updatedAt: Date } | null,
+  progress: { chapterId: string; chapterTitle: string; updatedAt: Date } | null,
   latestChapter: string | null = null,
   latestChapterCachedAt: Date | string | null = null,
   folderIds: string[] = [],
@@ -161,7 +160,6 @@ function toBookmark(
       ? {
           chapterId: progress.chapterId,
           chapterTitle: progress.chapterTitle,
-          page: progress.page,
           updatedAt: progress.updatedAt.toISOString(),
         }
       : null,

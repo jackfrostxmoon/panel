@@ -211,20 +211,9 @@ export const readingProgress = pgTable(
     chapterId: uuid('chapter_id')
       .notNull()
       .references(() => chapters.id, { onDelete: 'cascade' }),
-    /** 0-based page index. */
-    page: integer('page').notNull().default(0),
-    /**
-     * Overall chapter scroll fraction (0–1) for vertical continue-reading.
-     * Null = page-granular (paged/gallery or legacy rows).
-     */
-    scrollFraction: doublePrecision('scroll_fraction'),
-    /** Horizontal pan in CSS px (vertical/zoomed reading). Null = unknown. */
-    scrollX: doublePrecision('scroll_x'),
-    /**
-     * Intra-page anchor ratio (0–1) for `page` in vertical mode.
-     * Null = page-granular or saved by an older client.
-     */
-    anchorRatio: doublePrecision('anchor_ratio'),
+    // Page-position columns (`page`, `scroll_fraction`, `scroll_x`,
+    // `anchor_ratio`) were dropped: progress is a chapter-level read
+    // marker (which chapters were opened), never a page position.
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -37,31 +37,18 @@ export class ProgressRepository {
     return row;
   }
 
+  /** Record a chapter-level read marker (no page position is stored). */
   async upsert(
     panelRowId: string,
     chapterRowId: string,
-    page: number,
-    scrollFraction?: number | null,
-    scrollX?: number | null,
-    anchorRatio?: number | null,
   ): Promise<ReadingProgressRow> {
     const now = new Date();
-    const fraction =
-      typeof scrollFraction === 'number' && Number.isFinite(scrollFraction)
-        ? scrollFraction < 0 ? 0 : scrollFraction > 1 ? 1 : scrollFraction
-        : null;
-    const panX =
-      typeof scrollX === 'number' && Number.isFinite(scrollX) ? scrollX : null;
-    const anchor =
-      typeof anchorRatio === 'number' && Number.isFinite(anchorRatio)
-        ? anchorRatio < 0 ? 0 : anchorRatio > 1 ? 1 : anchorRatio
-        : null;
     const [row] = await this.db
       .insert(readingProgress)
-      .values({ panelId: panelRowId, chapterId: chapterRowId, page, scrollFraction: fraction, scrollX: panX, anchorRatio: anchor, updatedAt: now })
+      .values({ panelId: panelRowId, chapterId: chapterRowId, updatedAt: now })
       .onConflictDoUpdate({
         target: [readingProgress.panelId, readingProgress.chapterId],
-        set: { page, scrollFraction: fraction, scrollX: panX, anchorRatio: anchor, updatedAt: now },
+        set: { updatedAt: now },
       })
       .returning();
     if (!row) throw new Error('Failed to save reading progress.');
@@ -125,17 +112,17 @@ export class ProgressRepository {
   }
 
   /**
-   * Bulk upsert or delete progress rows. `page` = null deletes the row
-   * (unread); otherwise it upserts at that page. Returns counts.
+   * Bulk upsert or delete progress rows. `read` = false deletes the row
+   * (unread); otherwise it upserts a chapter-level marker. Returns counts.
    */
   async bulkMark(
     panelRowId: string,
-    chapterRowIds: Array<{ chapterRowId: string; page: number | null }>,
+    chapterRowIds: Array<{ chapterRowId: string; read: boolean }>,
   ): Promise<{ markedRead: number; markedUnread: number }> {
     let markedRead = 0;
     let markedUnread = 0;
-    for (const { chapterRowId, page } of chapterRowIds) {
-      if (page === null) {
+    for (const { chapterRowId, read } of chapterRowIds) {
+      if (!read) {
         const deleted = await this.db
           .delete(readingProgress)
           .where(
@@ -149,10 +136,10 @@ export class ProgressRepository {
       } else {
         const [row] = await this.db
           .insert(readingProgress)
-          .values({ panelId: panelRowId, chapterId: chapterRowId, page, updatedAt: new Date() })
+          .values({ panelId: panelRowId, chapterId: chapterRowId, updatedAt: new Date() })
           .onConflictDoUpdate({
             target: [readingProgress.panelId, readingProgress.chapterId],
-            set: { page, updatedAt: new Date() },
+            set: { updatedAt: new Date() },
           })
           .returning();
         if (row) markedRead++;

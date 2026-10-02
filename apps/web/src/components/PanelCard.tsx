@@ -9,7 +9,6 @@ import { CoverImage } from './CoverImage';
 export interface PanelCardProgress {
   chapterId: string;
   chapterTitle: string | null;
-  page: number;
 }
 
 /**
@@ -46,7 +45,7 @@ export function PanelCard({
   from?: string;
   /** Highlight the card when this panel is already bookmarked. */
   bookmarked?: boolean;
-  /** Reading progress — surfaces a "Last: Ch. X · Page Y" meta line. */
+  /** Reading progress — surfaces a "Last: Ch. X" meta line. */
   progress?: PanelCardProgress | null;
   /** Hide the corner bookmark glyph. Useful on Latest where the action
    *  strip already exposes Remove from Bookmarks. */
@@ -71,7 +70,7 @@ export function PanelCard({
     : `/panel/${encodeURIComponent(panel.id)}`;
 
   const progressFooter = progress
-    ? `${progress.chapterTitle ?? 'Chapter'} · Page ${progress.page + 1}`
+    ? (progress.chapterTitle ?? 'Chapter')
     : null;
 
   const handleContinue = (e: MouseEvent<HTMLButtonElement>) => {
@@ -147,7 +146,7 @@ export function PanelCard({
             {panel.title}
           </Link>
         </h3>
-        {/* Reading progress: "Chapter X · Page Y" — same shape as the
+        {/* Reading progress: "Chapter X" — same shape as the
             bookmarks grid card. When progress is set, also show the
             source's latest chapter underneath so the user can see how
             far behind they are at a glance. */}
@@ -175,7 +174,7 @@ export function PanelCard({
         <button
           type="button"
           className="panel-card__continue"
-          aria-label={`Continue reading at ${progress.chapterTitle ?? 'last chapter'}, page ${progress.page + 1}`}
+          aria-label={`Continue reading at ${progress.chapterTitle ?? 'last chapter'}`}
           onClick={handleContinue}
         >
           <svg

@@ -146,7 +146,6 @@ export class BookmarkFolderService {
             ? {
                 chapterId: progress.chapterId,
                 chapterTitle: progress.chapterTitle,
-                page: progress.page,
                 updatedAt: progress.updatedAt,
               }
             : null,
@@ -173,7 +172,7 @@ function toApiFolder(row: BookmarkFolderRow): BookmarkFolder {
 function toBookmarkSummary(
   row: { id: string; createdAt: Date; updatedAt: Date },
   panel: PanelRow,
-  progress: { chapterId: string; chapterTitle: string; page: number; updatedAt: Date } | null,
+  progress: { chapterId: string; chapterTitle: string; updatedAt: Date } | null,
   latestChapter: string | null = null,
   latestChapterCachedAt: Date | string | null = null,
   folderIds: string[] = [],
@@ -200,7 +199,6 @@ function toBookmarkSummary(
       ? {
           chapterId: progress.chapterId,
           chapterTitle: progress.chapterTitle,
-          page: progress.page,
           updatedAt: progress.updatedAt.toISOString(),
         }
       : null,

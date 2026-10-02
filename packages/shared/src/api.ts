@@ -100,20 +100,6 @@ export interface RecordRecentlyViewedInput {
 export interface SaveProgressInput {
   panelId: string;
   chapterId: string;
-  /** 0-based page index. */
-  page: number;
-  /**
-   * Overall chapter scroll fraction (0–1) in vertical mode.
-   * Omit or null for page-granular saves (paged/gallery modes).
-   */
-  scrollFraction?: number | null;
-  /** Horizontal pan in CSS px (vertical mode); omit or null when unknown. */
-  scrollX?: number | null;
-  /**
-   * Intra-page anchor ratio (0–1) for the saved `page` in vertical mode.
-   * Omit or null for page-granular saves or when unknown.
-   */
-  anchorRatio?: number | null;
   /** Optional display metadata so the home screen can render without an
    *  extra source round-trip. */
   panelTitle?: string;
@@ -225,10 +211,10 @@ export interface BookmarkFolderContents {
   items: Bookmark[];
 }
 
-/** Bulk mark chapters read / unread (T1-6). `page` = null means "unread". */
+/** Bulk mark chapters read / unread (T1-6). `read` = false means "unread". */
 export interface BulkMarkChaptersReadInput {
   panelId: string;
-  chapters: Array<{ chapterId: string; page: number | null }>;
+  chapters: Array<{ chapterId: string; read: boolean }>;
 }
 
 /**

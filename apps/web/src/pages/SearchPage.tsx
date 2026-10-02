@@ -197,7 +197,6 @@ export function SearchPage() {
         map.set(bookmark.panelId, {
           chapterId: bookmark.progress.chapterId,
           chapterTitle: bookmark.progress.chapterTitle,
-          page: bookmark.progress.page,
         });
       }
     }
@@ -611,7 +610,7 @@ export function SearchPage() {
                         meta={
                           progress ? (
                             <p className="panel-card__meta panel-card__meta--progress">
-                              {`${progress.chapterTitle ?? 'Chapter'} · Page ${progress.page + 1}`}
+                              {progress.chapterTitle ?? 'Chapter'}
                             </p>
                           ) : (
                             panel.latestChapter && (

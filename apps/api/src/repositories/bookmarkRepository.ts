@@ -33,7 +33,6 @@ export interface BookmarkWithDetails {
     chapterId: string;
     chapterGlobalId: string;
     chapterTitle: string;
-    page: number;
     updatedAt: Date;
   } | null;
 }
@@ -43,7 +42,6 @@ export interface LatestProgress {
   panelId: string;
   chapterId: string;
   chapterTitle: string;
-  page: number;
   updatedAt: Date;
 }
 
@@ -60,7 +58,6 @@ export class BookmarkRepository {
         .selectDistinctOn([readingProgress.panelId], {
           panelId: readingProgress.panelId,
           chapterId: readingProgress.chapterId,
-          page: readingProgress.page,
           updatedAt: readingProgress.updatedAt,
         })
         .from(readingProgress)
@@ -77,7 +74,6 @@ export class BookmarkRepository {
         bookmark: bookmarks,
         panel: panel,
         progressChapterRowId: latest.chapterId,
-        progressPage: latest.page,
         progressUpdatedAt: latest.updatedAt,
         chapterGlobalId: chapters.globalId,
         chapterTitle: chapters.title,
@@ -97,7 +93,6 @@ export class BookmarkRepository {
               chapterId: row.chapterGlobalId,
               chapterGlobalId: row.chapterGlobalId,
               chapterTitle: row.chapterTitle,
-              page: row.progressPage ?? 0,
               updatedAt: row.progressUpdatedAt ?? new Date(0),
             }
           : null,
@@ -120,7 +115,6 @@ export class BookmarkRepository {
       .with(latest)
       .select({
         panelId: latest.panelId,
-        page: latest.page,
         updatedAt: latest.updatedAt,
         chapterGlobalId: chapters.globalId,
         chapterTitle: chapters.title,
@@ -133,7 +127,6 @@ export class BookmarkRepository {
         panelId: row.panelId,
         chapterId: row.chapterGlobalId,
         chapterTitle: row.chapterTitle,
-        page: row.page,
         updatedAt: row.updatedAt,
       });
     }
