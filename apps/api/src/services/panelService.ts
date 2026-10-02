@@ -227,6 +227,11 @@ export class PanelService {
             })),
             x,
           ),
+          // An empty upstream page must never claim more pages (paginator
+          // chrome on empty pages kept infinite scroll fetching forever).
+          // Clamped on the pre-filter count so exclude-filtered empties
+          // still advance to later pages. General guard for all sources.
+          hasMore: result.hasMore && result.results.length > 0,
         };
         // Persist so a later offline visit shows the same list.
         await this.panelCache
@@ -291,6 +296,9 @@ export class PanelService {
             })),
             x,
           ),
+          // Same empty-page guard as search: no source may claim more
+          // pages from zero results.
+          hasMore: result.hasMore && result.results.length > 0,
         };
         // An empty live parse on a latest feed is almost always an outage
         // (challenge page, origin 5xx served as 200, changed markup) — never

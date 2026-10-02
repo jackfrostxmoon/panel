@@ -227,9 +227,13 @@ export function parseSearchPage(html: string, baseUrl: string): RawSearchPage {
   // `KaliscanSource.latest` heuristic (items.length >= 20) still keeps
   // `hasMore` true on dense pages even if this selector ever misses.
   const pagination = root.querySelector('.pagination, .uk-pagination, .paginator');
+  // The site renders the paginator chrome (with "Next »" text) even on
+  // empty out-of-range pages — without the item guard every empty page
+  // reported hasMore and infinite scroll fetched forever.
   const hasMore =
-    pagination?.querySelector('.next, .uk-pagination-next, a[rel="next"]') !== null ||
-    (pagination?.text ?? '').toLowerCase().includes('next');
+    items.length > 0 &&
+    (pagination?.querySelector('.next, .uk-pagination-next, a[rel="next"]') !== null ||
+      (pagination?.text ?? '').toLowerCase().includes('next'));
 
   return { items, totalCount: null, hasMore };
 }
