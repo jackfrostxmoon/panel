@@ -119,9 +119,9 @@ export class RawSakuraSource implements PanelSource {
    * protection), but routing them through the API's image proxy lets the
     * client-side cache warm + persist them in the on-disk image cache.
    */
-  async fetchImage(url: string): Promise<SourceImage> {
+  async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
-    return this.http.fetchImage(url);
+    return this.http.fetchImage(url, undefined, opts?.signal);
   }
 
   buildPanelUrl(nativePanelId: string): string {

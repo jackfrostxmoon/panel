@@ -894,11 +894,11 @@ private async getOrderedChapters(nativePanelId: string): Promise<RawChapterItem[
   /**
    * Serve one CDN image with the Referer the source requires.
    */
-  async fetchImage(url: string): Promise<SourceImage> {
+  async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
     const { bytes, contentType } = await this.http.fetchImage(url, {
       Referer: `${this.baseUrl}/`,
-    });
+    }, opts?.signal);
     return { bytes, contentType };
   }
 

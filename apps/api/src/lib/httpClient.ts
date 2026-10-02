@@ -126,6 +126,63 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Sleep that rejects when `signal` aborts first, so the retry backoff
+ * never outlives a client that already went away (closed reader).
+ */
+function sleepOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Combine the per-attempt timeout with an external (client-disconnect)
+ * signal. The attempt aborts on whichever fires first; the reason is
+ * preserved so timeouts still classify as transient while client aborts
+ * propagate as plain `AbortError`s the retry loop refuses to retry.
+ */
+function combinedSignal(
+  timeoutMs: number,
+  external?: AbortSignal,
+): { signal: AbortSignal; dispose: () => void } {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!external || external.aborted) {
+    return { signal: external ?? timeout, dispose: () => undefined };
+  }
+  if (typeof AbortSignal.any === 'function') {
+    return { signal: AbortSignal.any([timeout, external]), dispose: () => undefined };
+  }
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort(external.reason);
+  const onTimeoutAbort = () => controller.abort(timeout.reason);
+  external.addEventListener('abort', onExternalAbort, { once: true });
+  timeout.addEventListener('abort', onTimeoutAbort, { once: true });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      external.removeEventListener('abort', onExternalAbort);
+      timeout.removeEventListener('abort', onTimeoutAbort);
+    },
+  };
+}
+
+/** True when `signal` fired — an intentional client abort, never a retryable fault. */
+function isClientAbort(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
 export class SourceHttpClient {
   private readonly allowedHosts: readonly string[];
   private readonly timeoutMs: number;
@@ -238,6 +295,7 @@ export class SourceHttpClient {
   async fetchImage(
     rawUrl: string,
     extraHeaders?: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<FetchedImage> {
     return this.requestBinary(rawUrl, {
       headers: {
@@ -245,7 +303,7 @@ export class SourceHttpClient {
         Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         ...extraHeaders,
       },
-    }, this.imageHosts);
+    }, this.imageHosts, signal);
   }
 
   /** Shared guard: URL must be http(s) and on the allowlist. */
@@ -287,15 +345,27 @@ export class SourceHttpClient {
    * error, 429, 5xx) — those are the only cases the retry loop in
    * `request`/`requestBinary` will retry. Non-transient failures (other 4xx,
    * SSRF rejections) throw a public `SourceError` immediately. */
-  private async doFetch(rawUrl: string, init: RequestInit): Promise<Response> {
+  private async doFetch(rawUrl: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+    // An already-aborted client must never start an upstream fetch that
+    // would hold a proxy slot for a reader that is already gone.
+    signal?.throwIfAborted();
+    const combined = combinedSignal(this.timeoutMs, signal);
     let response: Response;
     try {
       response = await fetch(rawUrl, {
         ...init,
         redirect: 'follow',
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: combined.signal,
       });
     } catch (error) {
+      combined.dispose();
+      // A client abort (closed reader / chapter hop) is intentional — let
+      // the raw AbortError propagate so callers can tell it apart from a
+      // real timeout and, crucially, so the retry loop does NOT retry it.
+      if (isClientAbort(error, signal)) {
+        logger.debug('Source request aborted by client disconnect', { url: rawUrl });
+        throw error;
+      }
       if (error instanceof DOMException && error.name === 'TimeoutError') {
         logger.warn('Source request timed out', { url: rawUrl, timeoutMs: this.timeoutMs });
         throw new SourceNetworkError(
@@ -325,6 +395,7 @@ export class SourceHttpClient {
         false,
       );
     }
+    combined.dispose();
     return response;
   }
 
@@ -382,11 +453,12 @@ export class SourceHttpClient {
     rawUrl: string,
     init: RequestInit,
     hosts: readonly string[] = this.allowedHosts,
+    signal?: AbortSignal,
   ): Promise<FetchedImage> {
     this.assertAllowedUrl(rawUrl, hosts);
 
     const startedAt = Date.now();
-    const response = await this.fetchWithRetry(rawUrl, init, hosts);
+    const response = await this.fetchWithRetry(rawUrl, init, hosts, signal);
 
     const contentType = response.headers.get('content-type');
     const bytes = await this.readBytesWithLimit(response, this.maxImageBytes);
@@ -413,10 +485,11 @@ export class SourceHttpClient {
     rawUrl: string,
     init: RequestInit,
     hosts: readonly string[],
+    signal?: AbortSignal,
   ): Promise<Response> {
     const startedAt = Date.now();
     try {
-      const response = await this.doFetchWithRetries(rawUrl, init, hosts);
+      const response = await this.doFetchWithRetries(rawUrl, init, hosts, signal);
       recordSourceRequest(this.sourceName, Date.now() - startedAt, true);
       return response;
     } catch (error) {
@@ -429,13 +502,18 @@ export class SourceHttpClient {
     rawUrl: string,
     init: RequestInit,
     hosts: readonly string[],
+    signal?: AbortSignal,
   ): Promise<Response> {
     for (let attempt = 1; attempt <= this.retryCount + 1; attempt++) {
+      // Never start (or retry) for a reader that already went away.
+      signal?.throwIfAborted();
       try {
-        const response = await this.doFetch(rawUrl, init);
+        const response = await this.doFetch(rawUrl, init, signal);
         this.assertResponseOk(response, rawUrl, hosts);
         return response;
       } catch (error) {
+        // Intentional client aborts propagate raw and are never retried.
+        if (isClientAbort(error, signal)) throw error;
         // Only transient failures (timeout, network error, 429, 5xx) are
         // retried. Definitive failures (SSRF rejections, other 4xx, redirects
         // out of the allowlist) propagate unchanged — retrying those would
@@ -455,7 +533,7 @@ export class SourceHttpClient {
           status: error.status,
           error: error.message,
         });
-        await sleep(delay);
+        await sleepOrAbort(delay, signal);
       }
     }
     // Unreachable — the loop always throws or returns.

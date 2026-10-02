@@ -53,6 +53,7 @@ export function useWarmCovers() {
     return () => {
       for (const img of preloaders) {
         img.src = '';
+        img.removeAttribute('src');
       }
     };
   }, [queryClient]);

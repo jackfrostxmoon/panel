@@ -1,3 +1,7 @@
+/// <reference lib="dom" />
+// Type-only DOM lib reference: `AbortSignal` below is used purely as an
+// opaque cancellation token (it also exists in Bun/Node) — no DOM runtime
+// usage lives in this package.
 import type { Chapter, ChapterPages, Panel, PanelSummary } from './types.js';
 
 /**
@@ -41,8 +45,13 @@ export interface PanelSource {
    * source's CDN. Implement only when the CDN blocks direct browser access
    * (hotlink protection); adapters that do should also rewrite every image
    * URL they return to point at the API's /api/source-image endpoint.
+   *
+   * `opts.signal` aborts the upstream fetch — the image proxy passes the
+   * client connection's signal through, so closing the reader (or hopping
+   * to an already-cached chapter) stops the abandoned upstream fetch
+   * instead of letting it hold a proxy slot.
    */
-  fetchImage?(url: string): Promise<SourceImage>;
+  fetchImage?(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage>;
 
   /** Canonical source URL for a panel (the source owns its URL layout). */
   buildPanelUrl(nativePanelId: string): string;

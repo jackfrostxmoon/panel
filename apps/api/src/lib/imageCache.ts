@@ -519,11 +519,43 @@ export class ImageCache {
     this.dirEnsured = true;
   }
 
-  /** Run `fn` holding one upstream slot (FIFO when saturated). */
-  private async withUpstreamSlot<T>(fn: () => Promise<T>): Promise<T> {
+  /**
+   * Run `fn` holding one upstream slot (FIFO when saturated).
+   *
+   * `signal` (the reader's client-disconnect signal) unqueues a waiter
+   * that hasn't been granted a slot yet, so closing the reader — or
+   * hopping to an already-cached chapter — stops feeding abandoned
+   * upstream fetches instead of letting them queue behind (and stall)
+   * the pages the user actually navigated to.
+   */
+  private async withUpstreamSlot<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     if (this.upstreamActive >= this.upstreamSlots) {
-      await new Promise<void>((resolve) => this.upstreamQueue.push(resolve));
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const waiter = () => {
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        };
+        const onAbort = () => {
+          if (settled) return;
+          settled = true;
+          const idx = this.upstreamQueue.indexOf(waiter);
+          if (idx >= 0) this.upstreamQueue.splice(idx, 1);
+          reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+        };
+        this.upstreamQueue.push(waiter);
+        if (signal) {
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
     }
+    // The signal may have fired between the grant and here — never start
+    // an upstream fetch for a reader that already went away.
+    signal?.throwIfAborted();
     this.upstreamActive += 1;
     try {
       return await fn();
@@ -556,15 +588,29 @@ export class ImageCache {
 
   async getOrCreate(
     url: string,
-    fetcher: () => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
     kind: ImageKind,
     tag: string | null = null,
     stableKey: string | null = null,
+    signal?: AbortSignal,
   ): Promise<ImageCacheEntry> {
     await this.ensureDirs();
+    signal?.throwIfAborted();
     const inFlightKey = `${kind}|${tag ?? ''}|${stableKey ?? ''}|${url}`;
     const existing = this.inFlight.get(inFlightKey);
-    if (existing) return existing;
+    if (existing) {
+      if (!signal) return existing;
+      // Join the shared upstream fetch, but reject for THIS caller when
+      // its reader goes away — without disturbing the other waiter(s)
+      // sharing the same fetch.
+      return await Promise.race([
+        existing,
+        new Promise<never>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+      ]);
+    }
 
     // Serve from disk if already cached — no upstream hit on revisit. This is
     // what makes covers survive a browser close/reopen (the browser cache is
@@ -572,15 +618,20 @@ export class ImageCache {
     const cached = await this.readFromDisk(kind, url, tag, stableKey);
     if (cached) return cached;
 
-    const promise = this.withUpstreamSlot(() =>
-      this.doFetch(url, fetcher, kind, tag, stableKey),
+    signal?.throwIfAborted();
+    const promise = this.withUpstreamSlot(
+      () => this.doFetch(url, fetcher, kind, tag, stableKey, signal),
+      signal,
     );
     this.inFlight.set(inFlightKey, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inFlight.delete(inFlightKey);
-    }
+    // Delete on settle — NOT in an await-finally — so an aborted joiner
+    // racing a shared fetch above never removes an entry other waiters
+    // still need.
+    const release = () => {
+      if (this.inFlight.get(inFlightKey) === promise) this.inFlight.delete(inFlightKey);
+    };
+    promise.then(release, release);
+    return await promise;
   }
 
   /**
@@ -745,12 +796,13 @@ export class ImageCache {
 
   private async doFetch(
     url: string,
-    fetcher: () => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
     kind: ImageKind,
     tag: string | null,
     stableKey: string | null = null,
+    signal?: AbortSignal,
   ): Promise<ImageCacheEntry> {
-    const { bytes, contentType } = await fetcher();
+    const { bytes, contentType } = await fetcher(signal);
     const ext = this.extFor(url, contentType);
     // Organize attributable files into per-panel folders (and chapter
     // pages into chapter subfolders with human page names); unattributable

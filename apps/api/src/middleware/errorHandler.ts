@@ -55,6 +55,15 @@ export const errorHandler: ErrorHandler = (err, c) => {
     );
   }
 
+  // The reader closed (or hopped chapters) mid-fetch: the image proxy
+  // aborts the abandoned upstream fetch with the connection's signal.
+  // The client is already gone, so there is nobody to answer — stay
+  // quiet instead of logging an "unhandled" 500 for an intentional abort.
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    logger.debug('Request aborted by client disconnect');
+    return new Response(null, { status: 499 });
+  }
+
   if (err instanceof HTTPException) {
     const status = err.status;
     const code =

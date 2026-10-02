@@ -454,7 +454,10 @@ export function useChapters(id: string, opts?: QueryOpts<Chapter[]>) {
 export function useChapterPages(id: string, opts?: QueryOpts<ChapterPages>) {
   return useQuery<ChapterPages, ApiClientError>({
     queryKey: queryKeys.chapterPages(id),
-    queryFn: () => api.getChapterPages(id),
+    // Forward TanStack's signal so closing the reader (or hopping to an
+    // already-cached chapter) aborts the in-flight JSON fetch instead of
+    // letting the server finish scraping a chapter nobody reads anymore.
+    queryFn: ({ signal }) => api.getChapterPages(id, signal),
     staleTime: 30 * 60_000,
     refetchOnMount: 'always',
     ...opts,
@@ -470,15 +473,23 @@ export function useChapterPages(id: string, opts?: QueryOpts<ChapterPages>) {
  */
 export function usePrefetchChapterPages() {
   const queryClient = useQueryClient();
-  return useCallback((chapterId: string) => {
+  const prefetch = useCallback((chapterId: string) => {
     // Skip if it's already in the cache (any state) — no duplicate work.
     if (queryClient.getQueryData(queryKeys.chapterPages(chapterId))) return;
     void queryClient.prefetchQuery({
       queryKey: queryKeys.chapterPages(chapterId),
-      queryFn: () => api.getChapterPages(chapterId),
+      // Abortable like the main fetch (see useChapterPages): the reader
+      // cancels this on close/hop via cancelPrefetchChapterPages below.
+      queryFn: ({ signal }) => api.getChapterPages(chapterId, signal),
       staleTime: 30 * 60_000,
     });
   }, [queryClient]);
+  const cancel = useCallback((chapterId: string) => {
+    void queryClient.cancelQueries({ queryKey: queryKeys.chapterPages(chapterId) });
+  }, [queryClient]);
+  // The prefetch callback carries its canceller so the reader can abort
+  // an abandoned next-chapter fetch on close/hop with one reference.
+  return Object.assign(prefetch, { cancel });
 }
 
 export function useBookmarks(opts?: QueryOpts<Bookmark[]>) {

@@ -133,6 +133,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     });
   } catch (error) {
+    // Intentional aborts (reader closed / chapter hop cancels the JSON
+    // fetch) are expected — propagate raw so TanStack Query marks the
+    // query cancelled instead of failed, and stay quiet in the log.
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      log.debug('request aborted by navigation', { requestId, method, path });
+      throw error;
+    }
     log.error('network failure — could not reach the server', {
       requestId,
       method,
@@ -147,6 +154,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     text = await response.text();
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      log.debug('response read aborted by navigation', { requestId, method, path });
+      throw error;
+    }
     log.error('response body could not be read', {
       requestId,
       method,
@@ -305,8 +316,8 @@ export const api = {
     request<GenreCatalog>(`/api/panel/genres?source=${encodeURIComponent(source)}`),
   getChapters: (id: string) => request<Chapter[]>(`/api/panel/${encodeURIComponent(id)}/chapters`),
   getChapter: (id: string) => request<Chapter>(`/api/chapter/${encodeURIComponent(id)}`),
-  getChapterPages: (id: string) =>
-    request<ChapterPages>(`/api/chapter/${encodeURIComponent(id)}/pages`),
+  getChapterPages: (id: string, signal?: AbortSignal) =>
+    request<ChapterPages>(`/api/chapter/${encodeURIComponent(id)}/pages`, { signal }),
 
   /**
    * Enqueue a server-side cache warm: the API's background worker fetches

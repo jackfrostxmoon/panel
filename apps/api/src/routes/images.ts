@@ -205,6 +205,14 @@ export function sourceImageRoutes(
     kind: ImageKind,
     tag: string | null,
     pageIdx: number | null = null,
+    /**
+     * The reader's connection signal (`c.req.raw.signal`). Aborts the
+     * queued/upstream fetch when the reader closes or hops to an
+     * already-cached chapter, freeing the proxy slot for the pages the
+     * user actually navigated to instead of stalling them behind
+     * abandoned downloads.
+     */
+    clientSignal?: AbortSignal,
   ) {
     const source = registry.get(sourceName);
     if (!source.fetchImage) {
@@ -228,10 +236,11 @@ export function sourceImageRoutes(
     const entry = await imageCache
       .getOrCreate(
         cacheUrl,
-        () => source.fetchImage!(cacheUrl),
+        (fetchSignal) => source.fetchImage!(cacheUrl, fetchSignal ? { signal: fetchSignal } : undefined),
         kind,
         tag,
         stableKey,
+        clientSignal,
       )
       .then(
         (hit) => {
@@ -288,7 +297,7 @@ return new Response(Bun.file(entry.path), {
       );
     }
     const tag = parseTag(c.req.query('tag'), { lenient: true });
-    return serveImage(sourceName, rawUrl, 'cover', tag);
+    return serveImage(sourceName, rawUrl, 'cover', tag, null, c.req.raw.signal);
   });
 
   /**
@@ -320,6 +329,7 @@ return new Response(Bun.file(entry.path), {
       (kindParam as ImageKind | undefined) ?? 'chapter',
       tag,
       parsePageIdx(c.req.query('p')),
+      c.req.raw.signal,
     );
   });
 
@@ -339,6 +349,7 @@ return new Response(Bun.file(entry.path), {
       'chapter',
       tag,
       parsePageIdx(c.req.query('p')),
+      c.req.raw.signal,
     );
   });
 

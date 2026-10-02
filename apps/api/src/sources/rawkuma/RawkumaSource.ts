@@ -494,11 +494,11 @@ export class RawkumaSource implements PanelSource {
    * client routes them through the API's image proxy; proxying also warms +
     * persists images in the on-disk image cache.
    */
-  async fetchImage(url: string): Promise<SourceImage> {
+  async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
     const { bytes, contentType } = await this.http.fetchImage(url, {
       Referer: `${this.baseUrl}/`,
-    });
+    }, opts?.signal);
     return { bytes, contentType };
   }
 

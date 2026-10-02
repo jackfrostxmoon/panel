@@ -8,7 +8,8 @@ import {
 } from 'react';
 import type { PanelPage, SaveProgressInput } from '@panel/shared';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys, useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
 import { api } from '../api/client';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -137,6 +138,28 @@ export function ReaderPage() {
   const chapterPages = useChapterPages(chapterId);
   const showPagesLoading = useDelayedLoading(chapterPages.isLoading);
   const prefetchChapterPages = usePrefetchChapterPages();
+  const queryClient = useQueryClient();
+  /** Next-chapter id whose JSON prefetch is (or was) in flight — cancelled on close/hop. */
+  const prefetchedNextRef = useRef<string | null>(null);
+  /**
+   * Abort abandoned chapter work on close/hop. Hops reuse this component
+   * (only `chapterId` changes), so the cleanup runs for the OLD chapter:
+   * its JSON fetch is already settled (harmless no-op cancel) or still in
+   * flight (aborted — the server stops scraping it). On reader close the
+   * same cleanup aborts the current chapter plus any pending next-chapter
+   * prefetch, so neither keeps the server busy after the reader is gone.
+   */
+  useEffect(() => {
+    const id = chapterId;
+    return () => {
+      void queryClient.cancelQueries({ queryKey: queryKeys.chapterPages(id) });
+      const next = prefetchedNextRef.current;
+      if (next) {
+        prefetchedNextRef.current = null;
+        prefetchChapterPages.cancel(next);
+      }
+    };
+  }, [chapterId, queryClient, prefetchChapterPages]);
   const pages = chapterPages.data?.pages ?? EMPTY_PAGES;
   const pageCount = pages.length;
   const panelId = chapterPages.data?.panelId ?? '';
@@ -466,8 +489,15 @@ export function ReaderPage() {
     });
 
     return () => {
+      // Drop the abandoned chapter's pending downloads on close/hop.
+      // Clearing `src` aborts the browser request, which aborts the
+      // server's upstream fetch via the connection signal — without
+      // this the old chapter keeps holding proxy slots behind the one
+      // the user actually navigated to. `removeAttribute` covers
+      // browsers that keep loading a detached image from `src = ''`.
       for (const img of preloaders) {
         img.src = '';
+        img.removeAttribute('src');
       }
     };
   }, [pages, chapterPages.data?.chapterId, settings.imageLoad, settings.dataSaver]);
@@ -1237,7 +1267,10 @@ export function ReaderPage() {
     if (settings.dataSaver) return;
     const nextId = chapterPages.data?.nextChapterId;
     if (!nextId) return;
-    const timer = window.setTimeout(() => prefetchChapterPages(nextId), 2_000);
+    const timer = window.setTimeout(() => {
+      prefetchedNextRef.current = nextId;
+      prefetchChapterPages(nextId);
+    }, 2_000);
     return () => window.clearTimeout(timer);
   }, [chapterPages.data?.nextChapterId, settings.dataSaver, prefetchChapterPages]);
 

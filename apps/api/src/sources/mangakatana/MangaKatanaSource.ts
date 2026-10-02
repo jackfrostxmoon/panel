@@ -90,11 +90,11 @@ export class MangaKatanaSource implements PanelSource {
    * to the 15s timeout and truncates without one, returns in ~3s with one).
    * Covers on the main host are unaffected by the extra header.
    */
-  async fetchImage(url: string): Promise<SourceImage> {
+  async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
     const { bytes, contentType } = await this.http.fetchImage(url, {
       Referer: `${this.baseUrl}/`,
-    });
+    }, opts?.signal);
     return { bytes, contentType };
   }
 

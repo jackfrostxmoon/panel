@@ -174,6 +174,7 @@ export function PagedReader({
     // Drop any preloaders from a previous chapter/spread.
     for (const img of preloadImgsRef.current) {
       img.src = '';
+      img.removeAttribute('src');
     }
     preloadImgsRef.current = [];
     if (!chapterTag) return;
@@ -211,7 +212,12 @@ export function PagedReader({
     }
     preloadImgsRef.current = imgs;
     return () => {
-      for (const img of imgs) img.src = '';
+      // Abort the abandoned spread's pending downloads on close/hop —
+      // see the parent reader's parallel preloader for why both steps matter.
+      for (const img of imgs) {
+        img.src = '';
+        img.removeAttribute('src');
+      }
     };
   }, [eagerPages, page, pages, direction, doublePage, chapterTag]);
 
@@ -226,6 +232,7 @@ export function PagedReader({
     // imageLoad from "While scrolling" to "All at once").
     for (const img of preloadImgsRef.current) {
       img.src = '';
+      img.removeAttribute('src');
     }
     preloadImgsRef.current = [];
     if (!chapterTag) return;
@@ -251,7 +258,12 @@ export function PagedReader({
     }
     preloadImgsRef.current = imgs;
     return () => {
-      for (const img of imgs) img.src = '';
+      // Abort the abandoned chapter's pending downloads on close/hop —
+      // see the parent reader's parallel preloader for why both steps matter.
+      for (const img of imgs) {
+        img.src = '';
+        img.removeAttribute('src');
+      }
     };
   }, [eagerPages, pages, chapterTag]);
 
