@@ -55,17 +55,7 @@ function pingReaderSettingsSync(): void {
   }
 }
 
-/**
- * Chapter-hop handoff keys. The destination chapter's landing position
- * (paged mode) and the abandoned chapter's exact page (vertical/gallery)
- * are stashed in sessionStorage just before the hop — in-memory refs are
- * reset for the new chapter, and the render below reads the stash back to
- * mount the fresh reader at the right position even when the payload is
- * served instantly from cache. Tab-scoped, so a hop never leaks position
- * into another tab.
- */
 const CHAPTER_LANDING_SESSION_KEY = 'panel-reader:chapter-landing:v1';
-const CHAPTER_PAGE_MEMORY_SESSION_KEY = 'panel-reader:page-memory:v1';
 
 /** Read a string map from sessionStorage (tolerates blocked storage). */
 function readSessionMap(key: string): Map<string, string> {
@@ -82,10 +72,17 @@ function writeSessionMap(key: string, map: Map<string, string>): void {
   try {
     sessionStorage.setItem(key, JSON.stringify(Object.fromEntries(map)));
   } catch {
-    // Storage blocked — the hop still works, just without the landing/memory restore.
+    // Storage blocked — the hop still works, just without the landing restore.
   }
 }
 
+/** Chapter-hop handoff key. The destination chapter's landing position
+ * (paged mode) is stashed in sessionStorage just before the hop — in-memory
+ * refs are reset for the new chapter, and the reset effect reads the stash
+ * back to mount the fresh reader at the right position even when the
+ * payload is served instantly from cache. Tab-scoped, so a hop never leaks
+ * position into another tab.
+ */
 /** Stash a paged-mode directed landing for the destination chapter. */
 function stashChapterLanding(destChapterId: string, landing: 'first' | 'last'): void {
   const map = readSessionMap(CHAPTER_LANDING_SESSION_KEY);
@@ -103,27 +100,6 @@ function consumeChapterLanding(chapterId: string): 'first' | 'last' | null {
     return landing;
   }
   return null;
-}
-
-/** Remember the current page so a later hop back restores the exact position. */
-function stashPageMemory(chapterId: string, page: number): void {
-  const map = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY);
-  map.set(chapterId, String(page));
-  // Bound the memory: a long hopping session must not grow storage unbounded.
-  while (map.size > 100) {
-    const oldest = map.keys().next();
-    if (oldest.done) break;
-    map.delete(oldest.value);
-  }
-  writeSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY, map);
-}
-
-/** Exact page previously left on this chapter via chapter navigation, if any. */
-function readPageMemory(chapterId: string): number | undefined {
-  const raw = readSessionMap(CHAPTER_PAGE_MEMORY_SESSION_KEY).get(chapterId);
-  if (raw === undefined) return undefined;
-  const page = Number(raw);
-  return Number.isInteger(page) && page >= 0 ? page : undefined;
 }
 
 /**
@@ -235,10 +211,8 @@ export function ReaderPage() {
 
   const [page, setPage] = useState(0);
   const [scrollRatio, setScrollRatio] = useState(0);
-  /** False until the user picks "continue" / "start over" (or nothing to resume). */
-  const [resumeResolved, setResumeResolved] = useState(false);
   /**
-   * Chapter the page/resume state was last reset for. Guards the progress-save
+   * Chapter the page state was last reset for. Guards the progress-save
    * effect below against a stale payload: never persist a page against a
    * chapter id it doesn't belong to. The reset effect re-renders with the
    * correct values right after mount, and the save fires then.
@@ -336,28 +310,23 @@ export function ReaderPage() {
   scrollSpeedRef.current = scrollSpeedPx(settings.scrollSpeed);
   pageRef.current = page;
 
-  /* Reset on mount. Hops are full document loads, so this runs once per
-     chapter with the landing/page-memory stashed in sessionStorage just
-     before the unload (see `hardHopToChapter`). A paged-mode directed
-     transition chooses the landing position: the next chapter opens at
-     its first page, the previous chapter at its last page. Otherwise, if
-     we have a saved page for this chapter from a previous chapter
-     navigation (vertical/gallery), restore it instead of starting
-     from page 0. */
+  /* Reset on mount. Hops remount the inner reader, so this runs once per
+     chapter with the landing stashed in sessionStorage just before the
+     hop (see `hardHopToChapter`). A paged-mode directed transition
+     chooses the landing position: the next chapter opens at its first
+     page, the previous chapter at its last page. Every other open starts
+     at page 0 — no resume. */
   useEffect(() => {
     const landing = consumeChapterLanding(chapterId);
     if (landing) {
-      // Directed paged-mode transition — the position is decided for us, so
-      // suppress the resume prompt. The previous chapter's last page needs the
-      // payload's page count, which isn't known yet; hold the destination id in
+      // Directed paged-mode transition — the position is decided for us.
+      // The previous chapter's last page needs the payload's page count,
+      // which isn't known yet; hold the destination id in
       // lastPageChapterRef and let the page-load effect apply it below.
       lastPageChapterRef.current = landing === 'last' ? chapterId : null;
-      setResumeResolved(true);
       setPage(0);
     } else {
-      const savedPage = readPageMemory(chapterId);
-      setPage(savedPage ?? 0);
-      setResumeResolved(savedPage !== undefined); // Skip resume prompt if restoring a position
+      setPage(0);
       lastPageChapterRef.current = null;
     }
     setResetChapter(chapterId);
@@ -426,14 +395,12 @@ export function ReaderPage() {
     setAutoScrollActive((active) => !active);
   }, [autoScrollActive, pageCount, settings.autoScrollDelayMs, settings.mode, toast]);
 
-  /* Resume decision: no saved page → start at the beginning immediately.
-     When the chapter is fresh, also seed `pendingSaveRef` at page 0 and
-     resolve resume at the same time. The unload flush (pagehide / unmount /
-     chapter hop) needs a payload to send, and on a brand-new chapter the
-     user can close the tab in <100ms — well before the save effect's 800ms
-     debounce ever fires. Without this, the first read of a chapter leaves
-     no row in `reading_progress` and the Continue button silently
-     disappears after a restart. */
+  /* Seed `pendingSaveRef` at page 0 for a fresh chapter. The unload flush
+     (pagehide / unmount / chapter hop) needs a payload to send, and on a
+     brand-new chapter the user can close the tab in <100ms — before the
+     save effect below ever fires. Without this, the first read of a
+     chapter leaves no row in `reading_progress` and the Continue button
+     silently disappears after a restart. */
   useEffect(() => {
     if (!progress.isSuccess || !chapterPages.data) return;
     if (progress.data && progress.data.page > 0) return;
@@ -448,17 +415,7 @@ export function ReaderPage() {
         chapterTitle: data.chapterTitle ?? undefined,
       };
     }
-    setResumeResolved(true);
   }, [progress.isSuccess, progress.data, chapterPages.data]);
-
-  /* Resume decision: the user scrolled past the saved page on their own —
-     the prompt is moot, so dismiss it (and start persisting progress). */
-  useEffect(() => {
-    const savedPage = progress.data?.page ?? 0;
-    if (!resumeResolved && savedPage > 0 && page >= savedPage) {
-      setResumeResolved(true);
-    }
-  }, [page, resumeResolved, progress.data]);
 
 /* Preload every page as soon as the chapter payload arrives — parallel
       image loading only. Sequential mode lets the browser's lazy loading
@@ -575,12 +532,10 @@ export function ReaderPage() {
       if (settings.mode === 'paged') {
         hardHopToChapter(id, dir === 'next' ? 'first' : 'last');
       } else {
-        // Remember the current page for this chapter so a later hop back restores it.
-        stashPageMemory(chapterId, page);
         hardHopToChapter(id);
       }
     },
-    [chapterPages.data, chapterId, hardHopToChapter, page, toast, settings.mode],
+    [chapterPages.data, hardHopToChapter, toast, settings.mode],
   );
 
   const handleIntent = useCallback(
@@ -617,10 +572,10 @@ export function ReaderPage() {
     [chapterId, hardHopToChapter],
   );
 
-  /* Persist progress once the resume decision was made. Exits are covered
+  /* Persist progress on every page change. Exits are covered
      by the explicit hop flush, the unmount flush below, and `pagehide`. */
   useEffect(() => {
-    if (!resumeResolved || pageCount === 0 || !chapterPages.data) return;
+    if (pageCount === 0 || !chapterPages.data) return;
     // Guard against a stale payload: never persist a page against a chapter
     // id it doesn't belong to (see `resetChapter`). The reset effect
     // re-renders with the correct values right after, and the save fires then.
@@ -639,7 +594,7 @@ export function ReaderPage() {
     pendingSaveRef.current = null;
     if (payload) saveProgress.mutate(payload);
     // oxlint-disable-next-line react/exhaustive-deps -- mutate is stable; we key on page
-  }, [page, resumeResolved, pageCount, chapterPages.data, resetChapter]);
+  }, [page, pageCount, chapterPages.data, resetChapter]);
 
   /* Flush on the way out. React cleanups don't run when the tab itself
      closes, and `beforeunload` is unreliable on mobile — `pagehide`
@@ -1314,17 +1269,11 @@ export function ReaderPage() {
      * reset effect below hasn't run yet, so `page` still holds the old
      * chapter's position — mounting the new reader at it would jump to the
      * wrong spot when the payload is served instantly from cache (the
-     * restore gate only fires once per mount). Read the stashed position
-     * instead; once the reset effect runs, `page` agrees with the stash
-     * and this is a no-op. Pure sessionStorage read — safe during render.
+     * restore gate only fires once per mount). Mount at 0 instead; once
+     * the reset effect runs, `page` agrees and this is a no-op. After a
+     * mode switch (same chapter) keep the current page.
      */
-    const hopInitialPage = chapterId !== resetChapter ? (readPageMemory(chapterId) ?? 0) : page;
-    const savedPage = progress.data?.page ?? 0;
-    // No banner if the user already finished the chapter (saved page is the
-    // last one) — resuming there is pointless, and a 0/1-page chapter has
-    // nothing to resume from either.
-    const showResumeBanner =
-      !resumeResolved && savedPage > 0 && pageCount > 1 && savedPage < pageCount - 1;
+    const hopInitialPage = chapterId !== resetChapter ? 0 : page;
 
     const currentChapter = chapters.data?.find((c) => c.id === data.chapterId);
     // Prefer the chapter-list title, but never blank the header: while the
@@ -1380,36 +1329,6 @@ export function ReaderPage() {
             currentChapterId={data.chapterId}
             onChapterSelect={goToChapterById}
           />
-        )}
-
-        {showResumeBanner && (
-          <div className="reader-resume" role="dialog" aria-label="Resume reading">
-            <p>
-              Continue from page <strong>{savedPage + 1}</strong>?
-            </p>
-            <div className="reader-resume__actions">
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                onClick={() => {
-                  setResumeResolved(true);
-                  goToPage(savedPage, 'instant');
-                }}
-              >
-                Continue
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => {
-                  setResumeResolved(true);
-                  goToPage(0, 'instant');
-                }}
-              >
-                Start over
-              </button>
-            </div>
-          </div>
         )}
 
         <main

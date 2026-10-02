@@ -1414,40 +1414,6 @@
   color: #8b90a0;
 }
 
-/* --- Resume banner ------------------------------------------------------------- */
-
-.reader-resume {
-  position: fixed;
-  top: calc(var(--reader-toolbar-height) + var(--space-3));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 55;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-3) var(--space-4);
-  animation: page-in var(--duration-med) var(--ease-out);
-  max-width: calc(100vw - 2 * var(--space-4));
-}
-
-.reader-resume__actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-@media (max-width: 560px) {
-  .reader-resume {
-    flex-direction: column;
-    gap: var(--space-2);
-    text-align: center;
-  }
-}
-
 /* --- Misc ------------------------------------------------------------------------ */
 
 .reader-error-actions {
