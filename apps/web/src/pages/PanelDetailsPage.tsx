@@ -203,6 +203,36 @@ export function PanelDetailsPage() {
   const continueLabel = continueChapter
     ? chapterLabel(continueChapter.chapterNumber, continueChapter.title)
     : continueEntry?.chapterTitle || 'Latest chapter';
+  /**
+   * Oldest / newest chapter by number. Null numbers sort last in both
+   * directions so untagged extras never pose as the first (or latest)
+   * chapter. Titles whose numbering starts above 1 — the source itself
+   * lists Ch. 13 first — resolve to their real first chapter instead of
+   * a hardcoded "Chapter 1". Copied before sorting: the old inline
+   * `.sort()` calls below mutated the cached array in place.
+   */
+  const firstChapter = useMemo(() => {
+    const list = chapters.data;
+    if (!list || list.length === 0) return null;
+    return (
+      [...list].sort(
+        (a, b) =>
+          (a.chapterNumber ?? Number.POSITIVE_INFINITY) -
+          (b.chapterNumber ?? Number.POSITIVE_INFINITY),
+      )[0] ?? null
+    );
+  }, [chapters.data]);
+  const latestChapter = useMemo(() => {
+    const list = chapters.data;
+    if (!list || list.length === 0) return null;
+    return (
+      [...list].sort(
+        (a, b) =>
+          (b.chapterNumber ?? Number.NEGATIVE_INFINITY) -
+          (a.chapterNumber ?? Number.NEGATIVE_INFINITY),
+      )[0] ?? null
+    );
+  }, [chapters.data]);
 
 const filteredAndSortedChapters = useMemo(() => {
     let list = chapters.data ?? [];
@@ -1086,13 +1116,9 @@ const filteredAndSortedChapters = useMemo(() => {
                   </div>
                 </Link>
               )}
-              {(chapters.data ?? []).length > 0 && (
+              {firstChapter && (
                 <Link
-                  to={`/read/${encodeURIComponent(
-                    (chapters.data ?? []).sort(
-                      (a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0),
-                    )[0]?.id || '',
-                  )}`}
+                  to={`/read/${encodeURIComponent(firstChapter.id)}`}
                   className="btn btn--primary btn--lg btn--outline"
                   aria-label="Read from beginning"
                 >
@@ -1111,17 +1137,17 @@ const filteredAndSortedChapters = useMemo(() => {
                   </span>
                   <div className="btn-text-group">
                     <span className="btn-text">Read First</span>
-                    <span className="btn-subtext">Chapter 1</span>
+                    <span className="btn-subtext">
+                      {firstChapter.chapterNumber != null
+                        ? `Chapter ${firstChapter.chapterNumber}`
+                        : (firstChapter.title || 'First chapter')}
+                    </span>
                   </div>
                 </Link>
               )}
-              {(chapters.data ?? []).length > 0 && (
+              {latestChapter && (
                 <Link
-                  to={`/read/${encodeURIComponent(
-                    (chapters.data ?? []).sort(
-                      (a, b) => (b.chapterNumber ?? 0) - (a.chapterNumber ?? 0),
-                    )[0]?.id || '',
-                  )}`}
+                  to={`/read/${encodeURIComponent(latestChapter.id)}`}
                   className="btn btn--primary btn--lg btn--outline"
                   aria-label="Read latest chapter"
                 >
@@ -1141,14 +1167,9 @@ const filteredAndSortedChapters = useMemo(() => {
                   <div className="btn-text-group">
                     <span className="btn-text">Read Latest</span>
                     <span className="btn-subtext">
-                      {(() => {
-                        const latest = (chapters.data ?? []).sort(
-                          (a, b) => (b.chapterNumber ?? 0) - (a.chapterNumber ?? 0),
-                        )[0];
-                        return latest?.chapterNumber
-                          ? `Chapter ${latest.chapterNumber}`
-                          : 'Latest chapter';
-                      })()}
+                      {latestChapter.chapterNumber != null
+                        ? `Chapter ${latestChapter.chapterNumber}`
+                        : (latestChapter.title || 'Latest chapter')}
                     </span>
                   </div>
                 </Link>
