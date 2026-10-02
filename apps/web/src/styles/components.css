@@ -1604,6 +1604,22 @@ input::placeholder {
   margin-top: var(--space-5);
 }
 
+/* Two-choice dialog (chapter download direction): each button spans the row
+   with its explanation underneath, so the direction reads unambiguously
+   before committing. Stacked so the hint always sits under its own button. */
+.dialog__actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.chapter-order-dialog__hint {
+  margin-bottom: var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
 /* --- Backup export options (Bookmarks page Export dialog) ----------------- */
 
 .export-options {

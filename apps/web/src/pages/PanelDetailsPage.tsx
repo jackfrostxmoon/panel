@@ -13,6 +13,8 @@ import { ChapterList } from '../components/ChapterList';
 import { CoverImage } from '../components/CoverImage';
 import { ChapterBookmarkActions } from '../components/ChapterBookmarkActions';
 import { ChapterDownloadActions } from '../components/ChapterDownloadActions';
+import { ChapterOrderDialog } from '../components/ChapterOrderDialog';
+import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 import { StarRating } from '../components/StarRating';
 import { TagEditor } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -203,6 +205,7 @@ export function PanelDetailsPage() {
   const continueLabel = continueChapter
     ? chapterLabel(continueChapter.chapterNumber, continueChapter.title)
     : continueEntry?.chapterTitle || 'Latest chapter';
+
   /**
    * Oldest / newest chapter by number. Null numbers sort last in both
    * directions so untagged extras never pose as the first (or latest)
@@ -465,16 +468,21 @@ const filteredAndSortedChapters = useMemo(() => {
     // order, and ids that have since been dropped by a refetch are skipped.
     return visibleChapters.filter((c) => selectedChapterIds.has(c.id));
   }, [selectedChapterIds, visibleChapters]);
-  const handleDownloadSelected = useCallback(async () => {
-    const batch = selectedChapters;
-    if (batch.length === 0) {
-      toast('No chapters selected', 'info');
-      return;
-    }
-    try {
-      const result = await downloader.downloadChapters(batch, {
-        chapterIntervalMs: downloadSettingsState.settings.chapterIntervalMs,
-      });
+  /* Selection-mode download asks for a direction too: the batch order is the
+     download order, and `selectedChapters` carries the list's display order,
+     so without this the Newest/Oldest view toggle would decide it silently. */
+  const handleDownloadSelected = useCallback(
+    async (order: ChapterOrder) => {
+      const batch = sortChaptersForDownload(selectedChapters, order);
+      if (batch.length === 0) {
+        toast('No chapters selected', 'info');
+        return;
+      }
+      try {
+        const result = await downloader.downloadChapters(batch, {
+          chapterIntervalMs: downloadSettingsState.settings.chapterIntervalMs,
+          order,
+        });
       if (result.cancelled) {
         toast(
           `Download stopped — ${result.done} chapter${result.done === 1 ? '' : 's'} cached so far.`,
@@ -500,15 +508,21 @@ const filteredAndSortedChapters = useMemo(() => {
       // user sees the row icons flip to "done" without stale highlights.
       handleClearSelection();
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Download failed.', 'error');
+        toast(error instanceof Error ? error.message : 'Download failed.', 'error');
+      }
+    },
+    [selectedChapters, downloader, downloadSettingsState.settings.chapterIntervalMs, toast, handleClearSelection],
+  );
+
+  /** Batch awaiting a direction choice from the order dialog; null = closed. */
+  const [selectedOrderPrompt, setSelectedOrderPrompt] = useState(false);
+  const requestSelectedDownload = useCallback(() => {
+    if (selectedChapters.length === 0) {
+      toast('No chapters selected', 'info');
+      return;
     }
-  }, [
-    selectedChapters,
-    downloader,
-    downloadSettingsState.settings.chapterIntervalMs,
-    toast,
-    handleClearSelection,
-  ]);
+    setSelectedOrderPrompt(true);
+  }, [selectedChapters.length, toast]);
 
   /** Hook for the multi-select "Bookmark selected" button. */
   const addChapterBookmarks = useAddChapterBookmarks();
@@ -1479,6 +1493,17 @@ const filteredAndSortedChapters = useMemo(() => {
             {/* Once selection mode is on, the multi-select toolbar
                 (Select all / Bookmark N / Download N / Cancel) swaps in
                 below the main action row. */}
+            <ChapterOrderDialog
+              open={selectedOrderPrompt}
+              count={selectedChapters.length}
+              batchLabel={selectedChapters.length === 1 ? 'selected chapter' : 'selected chapters'}
+              chapters={selectedChapters}
+              onPick={(order) => {
+                setSelectedOrderPrompt(false);
+                void handleDownloadSelected(order);
+              }}
+              onCancel={() => setSelectedOrderPrompt(false)}
+            />
             <ChapterSelectActions
               chapters={visibleChapters}
               selectionMode={selectionMode}
@@ -1487,7 +1512,7 @@ const filteredAndSortedChapters = useMemo(() => {
               onSelectAll={handleSelectAllVisible}
               onClearSelection={handleClearSelection}
               onBookmarkSelected={handleBookmarkSelected}
-              onDownloadSelected={handleDownloadSelected}
+              onDownloadSelected={requestSelectedDownload}
               onMarkSelectedRead={handleMarkSelectedRead}
               onMarkSelectedUnread={handleMarkSelectedUnread}
               isDownloading={downloader.isDownloading}

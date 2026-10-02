@@ -1,8 +1,10 @@
 import { useCallback, useId, useState } from 'react';
 import type { Chapter } from '@panel/shared';
 import { useToast } from './Toast';
+import { ChapterOrderDialog } from './ChapterOrderDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { IconDownload, IconStop } from './icons';
+import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 import type { ChapterDownloader } from '../hooks/useChapterDownloader';
 import {
   CHAPTER_INTERVAL_PRESETS,
@@ -64,6 +66,15 @@ export function ChapterDownloadActions({
 }: ChapterDownloadActionsProps) {
   const { toast } = useToast();
   const [confirmStop, setConfirmStop] = useState(false);
+  /**
+   * The batch waiting on a direction choice, or null when the dialog is
+   * closed. Held here (not derived from the buttons) so the dialog can name
+   * the chapter count and endpoints of the specific trigger that opened it.
+   */
+  const [pendingOrder, setPendingOrder] = useState<{
+    label: string;
+    batch: Chapter[];
+  } | null>(null);
 
   const allChapters = chapters;
   const unreadChapters = readChapterIds
@@ -74,7 +85,7 @@ export function ChapterDownloadActions({
 
   /** Common entry-point — runs a batch and surfaces a single result toast. */
   const runBatch = useCallback(
-    async (label: string, batch: Chapter[]) => {
+    async (label: string, batch: Chapter[], order: ChapterOrder) => {
       if (batch.length === 0) {
         toast('No chapters to download', 'info');
         return;
@@ -82,6 +93,7 @@ export function ChapterDownloadActions({
       try {
         const result = await downloader.downloadChapters(batch, {
           chapterIntervalMs: downloadSettings.chapterIntervalMs,
+          order,
         });
         if (result.cancelled) {
           toast(
@@ -111,18 +123,43 @@ export function ChapterDownloadActions({
     [downloader, downloadSettings.chapterIntervalMs, toast],
   );
 
+  /* Both bulk buttons open the direction prompt instead of downloading
+     straight away — the batch order is the download order, and before this
+     it silently followed the chapter list's Newest/Oldest view toggle. */
   const handleDownloadAll = () => {
-    void runBatch(
-      allChapters.length === 1 ? 'chapter' : 'chapters',
-      allChapters,
-    );
+    if (allChapters.length === 0) {
+      toast('No chapters to download', 'info');
+      return;
+    }
+    setPendingOrder({
+      label: allChapters.length === 1 ? 'chapter' : 'chapters',
+      batch: allChapters,
+    });
   };
   const handleDownloadUnread = () => {
-    void runBatch(
-      unreadChapters.length === 1 ? 'chapter' : 'chapters',
-      unreadChapters,
-    );
+    if (unreadChapters.length === 0) {
+      toast('No unread chapters to download', 'info');
+      return;
+    }
+    setPendingOrder({
+      label: 'unread chapters',
+      batch: unreadChapters,
+    });
   };
+  /** Direction chosen — sort here too so the toast/progress agree with the run. */
+  const handlePickOrder = useCallback(
+    (order: ChapterOrder) => {
+      const pending = pendingOrder;
+      setPendingOrder(null);
+      if (!pending) return;
+      void runBatch(
+        pending.label,
+        sortChaptersForDownload(pending.batch, order),
+        order,
+      );
+    },
+    [pendingOrder, runBatch],
+  );
   const handleStop = () => {
     downloader.cancel();
     setConfirmStop(false);
@@ -283,6 +320,15 @@ export function ChapterDownloadActions({
         them. Cached pages count toward the on-disk cap — manage them on the{' '}
         <a href="/settings/cache" className="chapter-download-actions__link">Image cache</a> page.
       </p>
+
+      <ChapterOrderDialog
+        open={pendingOrder !== null}
+        count={pendingOrder?.batch.length ?? 0}
+        batchLabel={pendingOrder?.label ?? 'chapters'}
+        chapters={pendingOrder?.batch ?? []}
+        onPick={handlePickOrder}
+        onCancel={() => setPendingOrder(null)}
+      />
 
       <ConfirmDialog
         open={confirmStop}

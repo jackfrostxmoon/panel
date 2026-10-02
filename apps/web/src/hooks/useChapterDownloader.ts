@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Chapter, PrefetchJob } from '@panel/shared';
 import { api, ApiClientError } from '../api/client';
 import { newBatchId } from '../download/batchId';
+import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 
 /**
  * Per-chapter download progress.
@@ -29,6 +30,13 @@ export interface ChapterDownloadProgress {
 export interface DownloadChaptersOptions {
   /** Pacing between chapters in the batch (worker honors, server-side). */
   chapterIntervalMs?: number;
+  /**
+   * Which end of the chapter list the batch starts from. Applied here rather
+   * than trusted from the caller so the enqueue order always matches the
+   * direction the user chose, regardless of which entry point started the run
+   * or what order the chapter list was displayed in.
+   */
+  order?: ChapterOrder;
   /** Hold the FIRST chapter back before it becomes claimable. Used by
    *  manual per-row clicks so they honour the same pacing setting as
    *  bulk runs. `0` (default) = start immediately. */
@@ -369,12 +377,16 @@ export function useChapterDownloader() {
       setIntervalRemainingMs(null);
       const intervalMs = Math.max(0, Math.trunc(options?.chapterIntervalMs ?? 0));
       const delayFirstMs = Math.max(0, Math.trunc(options?.delayFirstMs ?? 0));
+      // Sort BEFORE the waiter is built and before any enqueue, so the job
+      // ids, the `created_at` order the worker claims by, and the waiter's
+      // chapter list all agree on one sequence.
+      const ordered = sortChaptersForDownload(chapters, options?.order ?? 'oldest-first');
       // Never `window.crypto.randomUUID()` directly — it is undefined on
       // insecure origins (plain-LAN HTTP) and throws before any request
       // fires. `newBatchId` falls back to `getRandomValues`.
       const batchId = newBatchId();
       const waiter: Waiter = {
-        chapterIds: chapters.map((c) => c.id),
+        chapterIds: ordered.map((c) => c.id),
         done: 0,
         failed: 0,
         failedPages: 0,
@@ -389,8 +401,8 @@ export function useChapterDownloader() {
       // Enqueue sequentially so `created_at` order matches chapter order
       // (the worker claims the earliest-due job first). A single failure
       // marks just that chapter failed — the rest still enqueue.
-      for (let i = 0; i < chapters.length; i += 1) {
-        const chapter = chapters[i]!;
+      for (let i = 0; i < ordered.length; i += 1) {
+        const chapter = ordered[i]!;
         setProgress((p) => ({
           ...p,
           [chapter.id]: {
