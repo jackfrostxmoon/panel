@@ -683,6 +683,12 @@
 .search-filters__disclosure--open svg {
   transform: rotate(180deg);
 }
+/* Search toggle reuses the disclosure pill, but its magnifier must never
+   rotate — the open-state chevron flip above would flip the handle to the
+   top-left and read as a broken icon. */
+.search-filters__disclosure--search.search-filters__disclosure--open svg {
+  transform: none;
+}
 .search-filters__disclosure-count {
   display: inline-flex;
   align-items: center;

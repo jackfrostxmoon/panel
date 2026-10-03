@@ -591,7 +591,7 @@ export function BookmarksPage() {
               </button>
               <button
                 type="button"
-                className={`search-filters__disclosure${searchOpen || query.trim() !== '' ? ' search-filters__disclosure--open' : ''}`}
+                className={`search-filters__disclosure search-filters__disclosure--search${searchOpen || query.trim() !== '' ? ' search-filters__disclosure--open' : ''}`}
                 aria-expanded={searchOpen}
                 aria-label={searchOpen ? 'Hide search' : 'Show search'}
                 title={searchOpen ? 'Hide search' : 'Show search'}

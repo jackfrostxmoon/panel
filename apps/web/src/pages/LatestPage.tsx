@@ -527,7 +527,7 @@ export function LatestPage() {
             </button>
             <button
               type="button"
-              className={`search-filters__disclosure${searchOpen ? ' search-filters__disclosure--open' : ''}`}
+              className={`search-filters__disclosure search-filters__disclosure--search${searchOpen ? ' search-filters__disclosure--open' : ''}`}
               aria-expanded={searchOpen}
               aria-label={searchOpen ? 'Hide search' : 'Show search'}
               title={searchOpen ? 'Hide search' : 'Show search'}
