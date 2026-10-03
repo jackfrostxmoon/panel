@@ -644,6 +644,7 @@
   max-width: 100vw;
   height: auto;
   max-height: none;
+  background: #0a0b0e;
   border-left: 1px solid var(--border-strong);
   border-right: none;
   border-top: none;
@@ -681,6 +682,12 @@
   padding: var(--space-4);
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
+}
+
+/* Sidebar header/footer match the dark reading surface (#0a0b0e). */
+.reader-settings--sidebar .reader-settings__header,
+.reader-settings--sidebar .reader-settings__footer {
+  background: #0a0b0e;
 }
 
 .reader-settings__title {
@@ -1330,14 +1337,14 @@
 
 /* Light reader surface — panel follows the chosen reading background */
 .reader-settings--light {
-  background: #f8f6f0;
+  background: #f4f1ea;
   border-color: rgba(0, 0, 0, 0.14);
   color: #1c1e24;
 }
 
 .reader-settings--light .reader-settings__header,
 .reader-settings--light .reader-settings__footer {
-  background: #efece2;
+  background: #f4f1ea;
   border-color: rgba(0, 0, 0, 0.08);
 }
 
