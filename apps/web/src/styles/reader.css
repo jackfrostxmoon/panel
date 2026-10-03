@@ -679,7 +679,7 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: linear-gradient(180deg, var(--surface-2), transparent);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
