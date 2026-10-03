@@ -73,8 +73,6 @@ export function BookmarksPage() {
   const [pendingRemoval, setPendingRemoval] = useState<Bookmark | null>(null);
   const [sourceFilter, setSourceFilter] = useState('');
   const [query, setQuery] = useState('');
-  /** Dedicated search-bar visibility (independent of the Filters expander). */
-  const [searchOpen, setSearchOpen] = useState(false);
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
   /** Status / genre filters (mirror the latest page): narrow the shelf
@@ -427,14 +425,28 @@ export function BookmarksPage() {
     bookmarksSettingsQuery.isSuccess ||
     bookmarksSettingsQuery.isError;
 
+  /**
+   * Dedicated search-bar visibility, persisted server-side to
+   * `data/display/bookmarks.json` alongside the other toggles. Same
+   * pending-wins pattern so the button flips instantly.
+   */
+  const searchOpen: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.searchOpen ?? false)
+      : (bookmarksSettingsQuery.data?.searchOpen ?? false);
+
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed });
+    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen });
+  }
+
+  function handleSearchToggle() {
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen });
   }
 
   // --- Export / Import (.sql dump) --------------------------------------------
@@ -595,7 +607,7 @@ export function BookmarksPage() {
                 aria-expanded={searchOpen}
                 aria-label={searchOpen ? 'Hide search' : 'Show search'}
                 title={searchOpen ? 'Hide search' : 'Show search'}
-                onClick={() => setSearchOpen((open) => !open)}
+                onClick={handleSearchToggle}
               >
                 <svg
                   width="14"

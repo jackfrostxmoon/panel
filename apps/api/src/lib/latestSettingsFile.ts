@@ -24,6 +24,10 @@ export function loadLatestSettings(): LatestPageSettings {
         typeof parsed.filtersCollapsed === 'boolean'
           ? parsed.filtersCollapsed
           : DEFAULT_LATEST_PAGE_SETTINGS.filtersCollapsed,
+      searchOpen:
+        typeof parsed.searchOpen === 'boolean'
+          ? parsed.searchOpen
+          : DEFAULT_LATEST_PAGE_SETTINGS.searchOpen,
     };
   } catch {
     return { ...DEFAULT_LATEST_PAGE_SETTINGS };
@@ -36,6 +40,7 @@ export function saveLatestSettings(settings: LatestPageSettings): LatestPageSett
     infiniteScroll: settings.infiniteScroll === true,
     cardLayout: coerceCardLayout(settings.cardLayout),
     filtersCollapsed: settings.filtersCollapsed !== false,
+    searchOpen: settings.searchOpen === true,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

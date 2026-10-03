@@ -65,6 +65,8 @@ export interface LatestPageSettings {
   cardLayout: CardLayout;
   /** Collapse the refinement filter group (status/genre selects). */
   filtersCollapsed: boolean;
+  /** Show the toolbar search bar (dedicated toggle, independent of filters). */
+  searchOpen: boolean;
 }
 
 /** Default: classic Previous/Next pagination, cover cards, filters collapsed. */
@@ -72,6 +74,7 @@ export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
   infiniteScroll: false,
   cardLayout: DEFAULT_CARD_LAYOUT,
   filtersCollapsed: true,
+  searchOpen: false,
 };
 
 /**
@@ -104,12 +107,15 @@ export interface BookmarksPageSettings {
   cardLayout: CardLayout;
   /** Collapse the refinement filter group (status/genre/tag selects). */
   filtersCollapsed: boolean;
+  /** Show the toolbar search bar (dedicated toggle, independent of filters). */
+  searchOpen: boolean;
 }
 
 /** Default: cover cards, filters collapsed. */
 export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
   cardLayout: DEFAULT_CARD_LAYOUT,
   filtersCollapsed: true,
+  searchOpen: false,
 };
 
 /**

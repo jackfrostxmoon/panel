@@ -53,8 +53,6 @@ export function LatestPage() {
   /** Genres to hide: any result carrying ANY excluded genre is dropped,
       even if it also matches the include filter (exclude wins). */
   const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
-  /** Dedicated search-bar visibility (independent of the Filters expander). */
-  const [searchOpen, setSearchOpen] = useState(false);
 
   /**
    * Infinite-scroll preference, persisted server-side to
@@ -95,6 +93,16 @@ export function LatestPage() {
     (saveLatestSettings.isPending && saveLatestSettings.variables != null) ||
     latestSettingsQuery.isSuccess ||
     latestSettingsQuery.isError;
+
+  /**
+   * Dedicated search-bar visibility, persisted server-side to
+   * `data/display/latest.json` alongside the other toggles. Same
+   * pending-wins pattern so the button flips instantly.
+   */
+  const searchOpen: boolean =
+    saveLatestSettings.isPending && saveLatestSettings.variables
+      ? (saveLatestSettings.variables.searchOpen ?? false)
+      : (latestSettingsQuery.data?.searchOpen ?? false);
 
   // In infinite mode the base query is pinned to page 1 and extra pages
   // are appended below (fetched imperatively so the hook count stays
@@ -428,17 +436,21 @@ export function LatestPage() {
       else nextParams.delete('page');
       setParams(nextParams, { replace: true });
     }
-    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed });
+    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed, searchOpen });
   }
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed, searchOpen });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next, searchOpen });
+  }
+
+  function handleSearchToggle() {
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed, searchOpen: !searchOpen });
   }
 
   function changeSource(next: string) {
@@ -531,7 +543,7 @@ export function LatestPage() {
               aria-expanded={searchOpen}
               aria-label={searchOpen ? 'Hide search' : 'Show search'}
               title={searchOpen ? 'Hide search' : 'Show search'}
-              onClick={() => setSearchOpen((open) => !open)}
+              onClick={handleSearchToggle}
             >
               <svg
                 width="14"

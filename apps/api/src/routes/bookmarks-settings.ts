@@ -16,16 +16,17 @@ export function bookmarksSettingsRoutes(): Hono {
       !body ||
       typeof body !== 'object' ||
       !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
-      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean'
+      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
+      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean }.',
+        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean }.',
       );
     }
-    const typed = body as { cardLayout: CardLayout; filtersCollapsed: boolean };
+    const typed = body as { cardLayout: CardLayout; filtersCollapsed: boolean; searchOpen: boolean };
     return c.json(
-      ok(saveBookmarksSettings({ cardLayout: typed.cardLayout, filtersCollapsed: typed.filtersCollapsed })),
+      ok(saveBookmarksSettings({ cardLayout: typed.cardLayout, filtersCollapsed: typed.filtersCollapsed, searchOpen: typed.searchOpen })),
     );
   });
 

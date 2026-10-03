@@ -20,6 +20,10 @@ export function loadBookmarksSettings(): BookmarksPageSettings {
         typeof parsed.filtersCollapsed === 'boolean'
           ? parsed.filtersCollapsed
           : DEFAULT_BOOKMARKS_PAGE_SETTINGS.filtersCollapsed,
+      searchOpen:
+        typeof parsed.searchOpen === 'boolean'
+          ? parsed.searchOpen
+          : DEFAULT_BOOKMARKS_PAGE_SETTINGS.searchOpen,
     };
   } catch {
     return { ...DEFAULT_BOOKMARKS_PAGE_SETTINGS };
@@ -31,6 +35,7 @@ export function saveBookmarksSettings(settings: BookmarksPageSettings): Bookmark
   const clean: BookmarksPageSettings = {
     cardLayout: coerceCardLayout(settings.cardLayout),
     filtersCollapsed: settings.filtersCollapsed !== false,
+    searchOpen: settings.searchOpen === true,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

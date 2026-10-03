@@ -17,20 +17,22 @@ export function latestSettingsRoutes(): Hono {
       typeof body !== 'object' ||
       typeof (body as { infiniteScroll?: unknown }).infiniteScroll !== 'boolean' ||
       !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
-      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean'
+      typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
+      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list", filtersCollapsed: boolean }.',
+        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean }.',
       );
     }
-    const typed = body as { infiniteScroll: boolean; cardLayout: CardLayout; filtersCollapsed: boolean };
+    const typed = body as { infiniteScroll: boolean; cardLayout: CardLayout; filtersCollapsed: boolean; searchOpen: boolean };
     return c.json(
       ok(
         saveLatestSettings({
           infiniteScroll: typed.infiniteScroll,
           cardLayout: typed.cardLayout,
           filtersCollapsed: typed.filtersCollapsed,
+          searchOpen: typed.searchOpen,
         }),
       ),
     );
