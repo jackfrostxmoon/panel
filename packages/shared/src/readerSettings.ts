@@ -29,6 +29,8 @@ export interface ReaderSettings {
   doublePage: boolean;
   spreadOddPolicy: SpreadOddPolicy;
   autoScrollDelayMs: number | null;
+  /** Show the auto-scroll (hands-free playback) button in the reader toolbar. Hidden by default. */
+  showAutoScrollButton: boolean;
   wheelPagesPerNotch: number;
   keyPagesPress: number;
   zoomLevel: number;

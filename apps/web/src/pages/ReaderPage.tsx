@@ -1294,6 +1294,7 @@ export function ReaderPage() {
           settingsOpen={settingsOpen}
           autoScrollActive={autoScrollActive}
           autoScrollRunning={autoScrollRunning}
+          showAutoScrollButton={settings.showAutoScrollButton}
           onToggleFullscreen={toggleFullscreen}
           onToggleAutoScroll={toggleAutoScroll}
           onOpenSettings={() => setSettingsOpen((open) => !open)}

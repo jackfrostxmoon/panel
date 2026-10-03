@@ -959,6 +959,21 @@ export function ReaderSettingsPanel({
             title="Auto-scroll"
             hint="Hands-free page turning. Advances one page on a timer; pause at the last page instead of looping."
           >
+            <div className="reader-settings__row">
+              <span className="reader-settings__row-copy">
+                <span id="rs-showAutoScrollButton" className="reader-settings__row-title">
+                  Show auto-scroll button
+                </span>
+                <span className="reader-settings__row-hint">
+                  Show or hide the auto-scroll button in the toolbar.
+                </span>
+              </span>
+              <Switch
+                checked={settings.showAutoScrollButton}
+                labelledBy="rs-showAutoScrollButton"
+                onChange={(showAutoScrollButton) => onUpdate({ showAutoScrollButton })}
+              />
+            </div>
             <NumberField
               label="Delay per page (ms)"
               value={settings.autoScrollDelayMs}

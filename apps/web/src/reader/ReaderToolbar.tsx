@@ -21,6 +21,7 @@ export function ReaderToolbar({
   settingsOpen,
   autoScrollActive,
   autoScrollRunning,
+  showAutoScrollButton,
   onToggleFullscreen,
   onToggleAutoScroll,
   onOpenSettings,
@@ -37,6 +38,8 @@ export function ReaderToolbar({
   autoScrollActive: boolean;
   /** False when auto-scroll has paused at the last page (still "on" but stalled). */
   autoScrollRunning: boolean;
+  /** Whether the auto-scroll button is visible in the toolbar. Hidden by default. */
+  showAutoScrollButton: boolean;
   onToggleFullscreen: () => void;
   onToggleAutoScroll: () => void;
   onOpenSettings: () => void;
@@ -113,6 +116,7 @@ export function ReaderToolbar({
               <IconBookmark size={18} filled={isCurrentChapterBookmarked} />
             </span>
           </button>
+          {showAutoScrollButton && (
           <button
             type="button"
             className={`reader-toolbar__btn reader-toolbar__auto-scroll${autoScrollActive ? ' reader-toolbar__auto-scroll--on' : ''}`}
@@ -140,6 +144,7 @@ export function ReaderToolbar({
               )}
             </span>
           </button>
+          )}
           <button
             type="button"
             className="reader-toolbar__btn reader-toolbar__btn--fullscreen"

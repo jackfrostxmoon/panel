@@ -102,6 +102,7 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
       d.spreadOddPolicy,
     ),
     autoScrollDelayMs: nullableMs(raw['autoScrollDelayMs']),
+    showAutoScrollButton: bool(raw['showAutoScrollButton'], d.showAutoScrollButton),
     wheelPagesPerNotch: finiteNumber(raw['wheelPagesPerNotch'], d.wheelPagesPerNotch, 0, 3),
     keyPagesPress: finiteNumber(raw['keyPagesPress'], d.keyPagesPress, 0, 3),
     zoomLevel: finiteNumber(raw['zoomLevel'], d.zoomLevel, 0.5, 4),

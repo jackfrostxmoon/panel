@@ -5,10 +5,7 @@ const DATA_DIR = 'data/reader';
 const FILE_PATH = `${DATA_DIR}/panel.json`;
 
 export function loadReaderSettings(): ReaderSettings {
-  if (!existsSync(FILE_PATH)) {
-    // Return defaults by importing from web settings? We can't import web here easily.
-    // Let's construct defaults manually.
-    return {
+  const defaults: ReaderSettings = {
       mode: 'vertical',
       direction: 'ltr',
       background: 'dark',
@@ -26,6 +23,7 @@ export function loadReaderSettings(): ReaderSettings {
       doublePage: false,
       spreadOddPolicy: 'blank',
       autoScrollDelayMs: 3500,
+      showAutoScrollButton: false,
       wheelPagesPerNotch: 0,
       keyPagesPress: 0,
       zoomLevel: 1,
@@ -35,10 +33,15 @@ export function loadReaderSettings(): ReaderSettings {
       glidePreset: 'quick',
       showScrollbar: false,
       defaultFolderId: null,
-    };
+  };
+  if (!existsSync(FILE_PATH)) {
+    // Return defaults by importing from web settings? We can't import web here easily.
+    // Let's construct defaults manually.
+    return defaults;
   }
   const raw = readFileSync(FILE_PATH, 'utf-8');
-  return JSON.parse(raw) as ReaderSettings;
+  const parsed = JSON.parse(raw) as Partial<ReaderSettings>;
+  return { ...defaults, ...parsed };
 }
 
 export function saveReaderSettings(settings: ReaderSettings): void {

@@ -131,6 +131,8 @@ export interface ReaderSettings {
    * `autoScrollDelayMs` milliseconds. Null = off. Toggled from the toolbar.
    */
   autoScrollDelayMs: number | null;
+  /** Show the auto-scroll (hands-free playback) button in the reader toolbar. Hidden by default. */
+  showAutoScrollButton: boolean;
   /**
    * Mouse-wheel smooth scroll (vertical mode): how many pages the wheel
    * moves at once. Smaller = finer control. 0 = native (one page per notch).
@@ -224,6 +226,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   spreadOddPolicy: 'blank',
   /** 3.5s between page turns — a comfortable, near-cinema pace. */
   autoScrollDelayMs: 3500,
+  /** Hidden by default — opt in from Advanced → Auto-scroll. */
+  showAutoScrollButton: false,
   /** 0 = native wheel behaviour (one page per notch); 1 = one page per notch. */
   wheelPagesPerNotch: 0,
   /** 0 = native smooth scrolling (default); 1 = one page per keypress. */
