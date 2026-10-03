@@ -53,6 +53,8 @@ export function LatestPage() {
   /** Genres to hide: any result carrying ANY excluded genre is dropped,
       even if it also matches the include filter (exclude wins). */
   const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
+  /** Dedicated search-bar visibility (independent of the Filters expander). */
+  const [searchOpen, setSearchOpen] = useState(false);
 
   /**
    * Infinite-scroll preference, persisted server-side to
@@ -481,10 +483,10 @@ export function LatestPage() {
           `margin-left: auto` on the filters pin them right of the pills. */}
       <div className="latest-toolbar">
         <SourceFilter value={source} onChange={changeSource} />
-        {layoutReady && !filtersCollapsed && (
+        {layoutReady && searchOpen && (
           <div className="latest-toolbar__search">
             {/* Regular size to match the pill-strip height; submits navigate
-                to the search page. Hidden with the filters when collapsed. */}
+                to the search page. Toggled by the dedicated search button. */}
             <SearchBar showPasteButton />
           </div>
         )}
@@ -522,6 +524,30 @@ export function LatestPage() {
                 <span className="search-filters__disclosure-count">{activeFilterCount}</span>
               )}
               <IconChevronDown size={14} />
+            </button>
+            <button
+              type="button"
+              className={`search-filters__disclosure${searchOpen ? ' search-filters__disclosure--open' : ''}`}
+              aria-expanded={searchOpen}
+              aria-label={searchOpen ? 'Hide search' : 'Show search'}
+              title={searchOpen ? 'Hide search' : 'Show search'}
+              onClick={() => setSearchOpen((open) => !open)}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <span>Search</span>
             </button>
           </div>
             {!filtersCollapsed && (

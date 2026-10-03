@@ -73,6 +73,8 @@ export function BookmarksPage() {
   const [pendingRemoval, setPendingRemoval] = useState<Bookmark | null>(null);
   const [sourceFilter, setSourceFilter] = useState('');
   const [query, setQuery] = useState('');
+  /** Dedicated search-bar visibility (independent of the Filters expander). */
+  const [searchOpen, setSearchOpen] = useState(false);
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
   /** Status / genre filters (mirror the latest page): narrow the shelf
@@ -587,6 +589,30 @@ export function BookmarksPage() {
                 )}
                 <IconChevronDown size={14} />
               </button>
+              <button
+                type="button"
+                className={`search-filters__disclosure${searchOpen || query.trim() !== '' ? ' search-filters__disclosure--open' : ''}`}
+                aria-expanded={searchOpen}
+                aria-label={searchOpen ? 'Hide search' : 'Show search'}
+                title={searchOpen ? 'Hide search' : 'Show search'}
+                onClick={() => setSearchOpen((open) => !open)}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                <span>Search</span>
+              </button>
               <CardLayoutToggle
                 value={cardLayout}
                 onChange={handleLayoutChange}
@@ -642,7 +668,7 @@ export function BookmarksPage() {
               )}
             </div>
             )}
-            {!filtersCollapsed && (
+            {(searchOpen || query.trim() !== '') && (
               <FilterSearchBar
                 value={query}
                 onChange={setQuery}
