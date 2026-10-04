@@ -60,6 +60,16 @@ function sortBookmarks(bookmarks: Bookmark[]): Bookmark[] {
 }
 
 /**
+ * Initial + incremental render window for the shelf. The filter/sort above
+ * runs on the full array, but only this many cards are mounted (and only
+ * their covers fetched) until the scroll sentinel appends more — the same
+ * scroll-to-load-more feel as the latest page's infinite scroll, except
+ * client-side (the shelf arrives as one payload, so there is no next page
+ * to fetch).
+ */
+const PAGE_SIZE = 30;
+
+/**
  * Bookmarks screen: every bookmarked panel as a modern card grid with
  * continue-reading badges, a source filter, and hover-revealed actions.
  */
@@ -87,32 +97,12 @@ export function BookmarksPage() {
    *  promoted via "Set as default"). `'__all__'` = every bookmark
    *  across every folder (the legacy "show everything" view). */
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  /** User-chosen default folder id (localStorage). Null until the
-   *  folders query resolves or the user picks one — the system Reading
-   *  list is the implicit default until then. */
+  /** User-chosen default folder id (localStorage only). Null until the
+   *  folders query resolves or the user picks one — the system default
+   *  folder is the implicit default until then. */
   const [userDefaultFolderId, setUserDefaultFolderId] = useState<string | null>(() =>
     readDefaultFolderId(),
   );
-
-  /** Load saved default folder from panel.json on mount (after server restart). */
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const settings = await api.getReaderSettings();
-        if (!cancelled && settings.defaultFolderId != null) {
-          setUserDefaultFolderId(settings.defaultFolderId);
-          writeDefaultFolderId(settings.defaultFolderId);
-        }
-      } catch {
-        // Fall back to localStorage; don't surface errors.
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   /** All folders + system default id — used by the per-card picker,
    *  drag/drop overlay, and the selector. */
@@ -144,24 +134,9 @@ export function BookmarksPage() {
     viewingAll ? null : activeFolderQueryId,
   );
 
-  /** Sync user-chosen default folder to panel.json (direct file sync). */
-  useEffect(() => {
-    const cancelled = false;
-    async function sync() {
-      try {
-        const current = await api.getReaderSettings();
-        if (!cancelled) {
-          await api.saveReaderSettings({ ...current, defaultFolderId: userDefaultFolderId });
-        }
-      } catch {
-        // Best-effort sync; don't surface file-sync errors.
-      }
-    }
-    void sync();
-  }, [userDefaultFolderId]);
-
   /** Helper for "Set as default" — also clears the value if the user
-   *  passes null (reset to All bookmarks). */
+   *  passes null (reset to All bookmarks). Local-only: no reader-settings
+   *  round trip, so switching the default never blocks the grid. */
   const setAsDefault = useCallback((folderId: string | null) => {
     writeDefaultFolderId(folderId);
     setUserDefaultFolderId(folderId);
@@ -233,6 +208,57 @@ export function BookmarksPage() {
     );
     return sortBookmarks(filtered);
   }, [sourceData, sourceFilter, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data]);
+
+  /** Render window into `sorted` (see PAGE_SIZE): only these cards are
+   *  mounted, so a 200-title shelf issues ~30 cover fetches up front and
+   *  appends more as the sentinel scrolls into view. */
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Fresh result identity (folder / filters / search) — rewind to the
+  // first window so page 2 of the old filter never leaks in. Data
+  // refetches alone don't reset (that would yank the scroll position).
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [
+    viewingAll,
+    activeFolderQueryId,
+    sourceFilter,
+    query,
+    tagFilter,
+    statusFilter,
+    genreFilter,
+    excludedGenre,
+  ]);
+
+  const rendered = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
+  const hasMoreToShow = visibleCount < sorted.length;
+
+  // Scroll sentinel (mirrors the latest page): when the marker scrolls
+  // into view, widen the window. Idle until at least one card renders so
+  // the observer never fires against an empty grid.
+  useEffect(() => {
+    if (!hasMoreToShow || rendered.length === 0) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((count) => Math.min(count + PAGE_SIZE, sorted.length));
+        }
+      },
+      { rootMargin: '600px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreToShow, rendered.length, sorted.length]);
+
+  /** Folder id → name for the per-card folder pills (one map lookup per
+   *  card instead of an `allFolders.find` scan). */
+  const folderNameById = useMemo(
+    () => new Map(allFolders.map((f) => [f.id, f.name] as const)),
+    [allFolders],
+  );
 
   /** Any narrowing filter active (drives the no-matches empty state). */
   const filtersActive =
@@ -751,16 +777,19 @@ export function BookmarksPage() {
         />
       )}
 
-      {sourceData.length > 0 && sorted.length > 0 && layoutReady && (
+      {/* The grid paints without waiting for the persisted layout choice
+          (which resolves a beat later) — only the toolbar toggles wait for
+          `layoutReady`, so first paint isn't blocked on settings I/O. */}
+      {sourceData.length > 0 && sorted.length > 0 && rendered.length > 0 && (
         <>
           {cardLayout === 'list' ? (
             <PanelList className="panel-list--bookmarks">
-              {sorted.map((bookmark) => {
+              {rendered.map((bookmark) => {
                 const progressLabel = bookmark.progress
                   ? (bookmark.progress.chapterTitle ?? 'Chapter')
                   : 'Not started yet';
                 const folderNames = (bookmark.folderIds ?? [])
-                  .map((id) => allFolders.find((f) => f.id === id)?.name)
+                  .map((id) => folderNameById.get(id))
                   .filter((name): name is string => Boolean(name));
                 const isDragging = draggingId === bookmark.id;
                 return (
@@ -918,12 +947,12 @@ export function BookmarksPage() {
             className={`bookmark-grid${manageMode ? ' bookmark-grid--manage' : ''}`}
             role="list"
           >
-            {sorted.map((bookmark) => {
+            {rendered.map((bookmark, index) => {
               const progressLabel = bookmark.progress
                 ? (bookmark.progress.chapterTitle ?? 'Chapter')
                 : 'Not started yet';
               const folderNames = (bookmark.folderIds ?? [])
-                .map((id) => allFolders.find((f) => f.id === id)?.name)
+                .map((id) => folderNameById.get(id))
                 .filter((name): name is string => Boolean(name));
               const isDragging = draggingId === bookmark.id;
               return (
@@ -945,6 +974,7 @@ export function BookmarksPage() {
                     coverUrl={bookmark.coverUrl}
                     panelId={bookmark.panelId}
                     title={bookmark.title}
+                    eager={index < 6}
                     fallbackClassName="bookmark-card__fallback"
                   />
 
@@ -1098,6 +1128,14 @@ export function BookmarksPage() {
               );
             })}
         </ul>
+          )}
+          {/* Scroll window: pulls the next PAGE_SIZE cards into view (same
+              marker pattern as the latest page's infinite scroll). */}
+          <div ref={sentinelRef} aria-hidden="true" />
+          {!hasMoreToShow && sorted.length > PAGE_SIZE && (
+            <p className="pagination__page" aria-live="polite">
+              You&apos;re all caught up
+            </p>
           )}
         </>
       )}

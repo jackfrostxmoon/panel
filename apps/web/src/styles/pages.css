@@ -3433,6 +3433,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
+  /* Skip layout/paint for off-screen cards (pairs with the scroll
+     window in BookmarksPage, which keeps most cards unmounted anyway). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 460px;
 }
 
 /* Stretched link (BookmarksPage): an invisible anchor covering the entire

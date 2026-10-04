@@ -496,6 +496,9 @@ export function useBookmarks(opts?: QueryOpts<Bookmark[]>) {
   return useQuery<Bookmark[], ApiClientError>({
     queryKey: queryKeys.bookmarks(),
     queryFn: () => api.getBookmarks(),
+    // Shelf data changes rarely (mutations invalidate explicitly) — avoid
+    // refetching the whole library on every bookmarks-page visit.
+    staleTime: 60_000,
     ...opts,
   });
 }
