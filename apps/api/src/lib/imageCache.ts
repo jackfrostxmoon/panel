@@ -153,6 +153,24 @@ export class ImageCache {
   private writesSinceEvict = 0;
 
   /**
+   * `sizeInfo` memo: a full kind sizing walks the whole cache dir + stats
+   * every file (~500ms on a warm multi-GB cache), and the home badge polls
+   * it on a timer — without a memo every poll pays the full walk. Cached
+   * per kind for SIZE_TTL_MS; overlapping callers share one in-flight walk.
+   * Explicit deletes (`clear*`/`pruneLegacy`) invalidate immediately so the
+   * cache-settings page never shows a stale post-clear total. New writes
+   * just ride the TTL (the badge undercounts for a few seconds — fine).
+   */
+  private static readonly SIZE_TTL_MS = 10_000;
+  private readonly sizeMemo = new Map<ImageKind, { at: number; info: ImageCacheSizeInfo }>();
+  private readonly sizeInflight = new Map<ImageKind, Promise<ImageCacheSizeInfo>>();
+
+  /** Drop memoized kind sizes (called after explicit deletes). */
+  private invalidateSizeMemo(): void {
+    this.sizeMemo.clear();
+  }
+
+  /**
    * In-memory index of every cached file's stem → relative path.
    *
    * Tagged entries (8-hex tag prefix + 56-hex suffix, total 64 hex after
@@ -1190,6 +1208,27 @@ export class ImageCache {
   }
 
   async sizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
+    const now = Date.now();
+    const memo = this.sizeMemo.get(kind);
+    if (memo && now - memo.at < ImageCache.SIZE_TTL_MS) return memo.info;
+    const inflight = this.sizeInflight.get(kind);
+    if (inflight) return inflight;
+    const work = this.computeSizeInfo(kind).then(
+      (info) => {
+        this.sizeMemo.set(kind, { at: Date.now(), info });
+        this.sizeInflight.delete(kind);
+        return info;
+      },
+      (error: unknown) => {
+        this.sizeInflight.delete(kind);
+        throw error;
+      },
+    );
+    this.sizeInflight.set(kind, work);
+    return work;
+  }
+
+  private async computeSizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
     const matching: string[] = [];
     for (const rel of await this.listFiles()) {
@@ -1321,6 +1360,7 @@ export class ImageCache {
     try {
       const deleted = await this.rmParallel(matching);
       this.indexRemoveMany(deleted);
+      this.invalidateSizeMemo();
       await this.pruneParentsOf(deleted);
     } catch {
       // Clearing is best-effort — a transient error shouldn't fail the call.
@@ -1374,6 +1414,7 @@ export class ImageCache {
     try {
       const deleted = await this.rmParallel(matching);
       this.indexRemoveMany(deleted);
+      this.invalidateSizeMemo();
       await this.pruneParentsOf(deleted);
     } catch {
       // Clearing is best-effort — a transient error shouldn't fail the call.
@@ -1413,6 +1454,7 @@ export class ImageCache {
     try {
       const deleted = await this.rmParallel(matching);
       this.indexRemoveMany(deleted);
+      this.invalidateSizeMemo();
       await this.pruneParentsOf(deleted);
       return { entryCount: deleted.length, totalBytes: info.totalBytes };
     } catch {

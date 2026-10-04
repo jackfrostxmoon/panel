@@ -106,6 +106,21 @@ export type ChaptersByPanelsResolver = (
  *   GET    /api/source-image?source=<name>&u=…  (legacy adapter form; chapter cache default)
  *   DELETE /api/source-image/cache?what=cover|chapter|both
  */
+/**
+ * Size both cache kinds concurrently — one poll pays one walk latency
+ * instead of two back-to-back (the walks themselves are memoized too).
+ */
+async function imageCacheSizeBoth(imageCache: ImageCache): Promise<{
+  cover: ImageCacheSizeInfo;
+  chapter: ImageCacheSizeInfo;
+}> {
+  const [cover, chapter] = await Promise.all([
+    imageCache.sizeInfo('cover'),
+    imageCache.sizeInfo('chapter'),
+  ]);
+  return { cover, chapter };
+}
+
 export function sourceImageRoutes(
   registry: SourceRegistry,
   imageCache: ImageCache,
@@ -361,9 +376,12 @@ return new Response(Bun.file(entry.path), {
         'Parameter "what" must be one of: cover, chapter, both.',
       );
     }
-    const info = what === 'both'
-      ? { cover: await imageCache.sizeInfo('cover'), chapter: await imageCache.sizeInfo('chapter') }
-      : { [what]: await imageCache.sizeInfo(what) };
+    // The two kind walks run concurrently so one poll pays one walk
+    // latency instead of two back-to-back (plus the cache's own memo).
+    const info =
+      what === 'both'
+        ? await imageCacheSizeBoth(imageCache)
+        : { [what]: await imageCache.sizeInfo(what) };
     // Flat shape the client can read directly: total across all kinds.
     const cover = info.cover ?? { entryCount: 0, totalBytes: 0 };
     const chapter = info.chapter ?? { entryCount: 0, totalBytes: 0 };

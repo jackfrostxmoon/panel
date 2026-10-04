@@ -264,11 +264,12 @@ export function healthRoutes(
     });
 
     const memory = process.memoryUsage();
+    // Sized concurrently (same memo as the cache endpoint) so a health
+    // probe pays one walk latency instead of two back-to-back.
     const imageCacheInfo = imageCache
-      ? {
-          cover: await imageCache.sizeInfo('cover'),
-          chapter: await imageCache.sizeInfo('chapter'),
-        }
+      ? await Promise.all([imageCache.sizeInfo('cover'), imageCache.sizeInfo('chapter')]).then(
+          ([cover, chapter]) => ({ cover, chapter }),
+        )
       : null;
 
     return c.json(

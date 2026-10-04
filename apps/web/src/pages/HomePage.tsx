@@ -12,10 +12,14 @@ import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { formatBytes } from '../utils/format';
 import { loadRecentlyViewed, clearRecentlyViewed, replaceRecentlyViewed, type RecentlyViewedEntry } from '../utils/recentlyViewed';
 
-/** How often the cache-size badge re-reads from the server. Covers are
-    pre-warmed in the background on app mount, so a one-shot read at page
-    mount would show 0 B until the next navigation — polling keeps it live. */
-const SIZE_POLL_MS = 2_000;
+/** Base cadence for the cache-size badge re-read. The badge is
+ *  informational, so a slow poll is fine — and the poll stops entirely
+ *  once the size settles (see SIZE_SETTLE_READS), resuming on focus. */
+const SIZE_POLL_MS = 15_000;
+/** Consecutive identical size reads after which polling stops (warm-up
+ *  done — nothing is being cached anymore). A focus/visibility return
+ *  re-reads once and restarts the poll if the size moved again. */
+const SIZE_SETTLE_READS = 2;
 
 /**
  * Home: search-engine-style landing — a badge, oversized wordmark, quiet
@@ -250,11 +254,16 @@ export function HomePage() {
     };
   }, [recent.length, updateRailEdges]);
 
-  // Show how many cached images are already on disk (best-effort; never
-  // blocks the page). Re-reads on a timer so the badge tracks the
-  // background warm-up and any caching that happens while the page is open.
+  // Cache-size badge (best-effort; never blocks the page). Polls slowly
+  // while the tab is visible, then stops once the size settles — a settled
+  // cache means no background warm-up is running, so further polls just
+  // burn requests. Returning to the tab (focus/visible) re-reads once and
+  // restarts the poll if the size moved again.
   useEffect(() => {
     let alive = true;
+    let timer = 0;
+    let sameCount = 0;
+    let lastBytes: number | null = null;
 
     const read = () =>
       api
@@ -263,16 +272,43 @@ export function HomePage() {
           if (!alive) return;
           setCacheSize(info.totalBytes);
           setCapBytes(info.capBytes);
+          if (info.totalBytes === lastBytes) {
+            sameCount += 1;
+            if (sameCount >= SIZE_SETTLE_READS && timer !== 0) {
+              window.clearInterval(timer);
+              timer = 0;
+            }
+          } else {
+            sameCount = 0;
+            lastBytes = info.totalBytes;
+          }
         })
         .catch(() => {
           // The size endpoint is best-effort — a failure just hides the badge.
         });
 
-    read();
-    const id = window.setInterval(read, SIZE_POLL_MS);
+    const start = () => {
+      if (!alive || timer !== 0 || document.hidden) return;
+      timer = window.setInterval(() => {
+        if (document.hidden) return;
+        void read();
+      }, SIZE_POLL_MS);
+    };
+
+    void read();
+    start();
+    const onReturn = () => {
+      if (!alive || document.hidden) return;
+      void read();
+      start();
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
     };
   }, []);
 
