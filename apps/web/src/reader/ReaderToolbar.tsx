@@ -1,9 +1,76 @@
 import { Link } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { Chapter } from '@panel/shared';
 import { useAddChapterBookmark, useChapterBookmarks, useRemoveChapterBookmark } from '../api/hooks';
 import { useToast } from '../components/Toast';
 import { IconArrowLeft, IconBookmark, IconCompress, IconExpand, IconGear, IconX } from '../components/icons';
+
+/**
+ * Shared chapter-bookmark toggle for the reader: the toolbar button and the
+ * `V` keyboard shortcut (handled in `ReaderPage`) run the same mutation with
+ * the same toasts, so the two can never drift apart.
+ */
+// oxlint-disable-next-line react/only-export-components -- shared toggle hook co-located with its toolbar
+export function useChapterBookmarkToggle({
+  panelId,
+  chapterTitle,
+  chapterId,
+  chapters,
+}: {
+  panelId: string;
+  chapterTitle: string | null;
+  chapterId: string;
+  chapters: Chapter[];
+}) {
+  const chapterBookmarks = useChapterBookmarks(panelId);
+  const addBookmark = useAddChapterBookmark();
+  const removeBookmark = useRemoveChapterBookmark();
+  const { toast } = useToast();
+
+  const bookmarkedChapterIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const bookmark of chapterBookmarks.data ?? []) {
+      ids.add(bookmark.chapterId);
+    }
+    return ids;
+  }, [chapterBookmarks.data]);
+
+  const isCurrentChapterBookmarked = bookmarkedChapterIds.has(chapterId);
+
+  const toggleBookmark = useCallback(async () => {
+    // Guard the loading window: the page-level `V` shortcut exists before
+    // the chapter payload arrives (the toolbar only mounts once it has).
+    if (!panelId || !chapterId) return;
+    try {
+      if (isCurrentChapterBookmarked) {
+        await removeBookmark.mutateAsync({ panelId, chapterId });
+        toast(`Removed bookmark from "${chapterTitle ?? 'Chapter'}"`, 'success');
+      } else {
+        await addBookmark.mutateAsync({
+          panelId,
+          chapterId,
+          title:
+            chapters.find((c) => c.id === chapterId)?.title ?? chapterTitle ?? 'Unknown Chapter',
+          chapterNumber: chapters.find((c) => c.id === chapterId)?.chapterNumber ?? null,
+          sourceUrl: chapters.find((c) => c.id === chapterId)?.sourceUrl ?? '',
+          publishedAt: chapters.find((c) => c.id === chapterId)?.publishedAt ?? null,
+        });
+        toast(`Bookmarked "${chapterTitle ?? 'Chapter'}"`, 'success');
+      }
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : 'Could not update chapter bookmark.',
+        'error',
+      );
+    }
+  }, [panelId, chapterId, chapterTitle, chapters, isCurrentChapterBookmarked, addBookmark, removeBookmark, toast]);
+
+  return {
+    isCurrentChapterBookmarked,
+    toggleBookmark,
+    isBookmarkPending: addBookmark.isPending || removeBookmark.isPending,
+  };
+}
 
 /**
  * Reader top toolbar: navigation back to the panel, chapter context,
@@ -44,45 +111,8 @@ export function ReaderToolbar({
   onToggleAutoScroll: () => void;
   onOpenSettings: () => void;
 }) {
-  const chapterBookmarks = useChapterBookmarks(panelId);
-  const addBookmark = useAddChapterBookmark();
-  const removeBookmark = useRemoveChapterBookmark();
-  const { toast } = useToast();
-
-  const bookmarkedChapterIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const bookmark of chapterBookmarks.data ?? []) {
-      ids.add(bookmark.chapterId);
-    }
-    return ids;
-  }, [chapterBookmarks.data]);
-
-  const isCurrentChapterBookmarked = bookmarkedChapterIds.has(chapterId);
-
-  const handleBookmarkClick = async () => {
-    try {
-      if (isCurrentChapterBookmarked) {
-        await removeBookmark.mutateAsync({ panelId, chapterId });
-        toast(`Removed bookmark from "${chapterTitle ?? 'Chapter'}"`, 'success');
-      } else {
-        await addBookmark.mutateAsync({
-          panelId,
-          chapterId,
-          title:
-            chapters.find((c) => c.id === chapterId)?.title ?? chapterTitle ?? 'Unknown Chapter',
-          chapterNumber: chapters.find((c) => c.id === chapterId)?.chapterNumber ?? null,
-          sourceUrl: chapters.find((c) => c.id === chapterId)?.sourceUrl ?? '',
-          publishedAt: chapters.find((c) => c.id === chapterId)?.publishedAt ?? null,
-        });
-        toast(`Bookmarked "${chapterTitle ?? 'Chapter'}"`, 'success');
-      }
-    } catch (error) {
-      toast(
-        error instanceof Error ? error.message : 'Could not update chapter bookmark.',
-        'error',
-      );
-    }
-  };
+  const { isCurrentChapterBookmarked, toggleBookmark, isBookmarkPending } =
+    useChapterBookmarkToggle({ panelId, chapterTitle, chapterId, chapters });
 
   return (
     <>
@@ -106,11 +136,12 @@ export function ReaderToolbar({
           <button
             type="button"
             className={`reader-toolbar__btn chapter-bookmark-toolbar-btn${isCurrentChapterBookmarked ? ' chapter-bookmark-toolbar-btn--active' : ''}`}
-            onClick={handleBookmarkClick}
+            onClick={() => void toggleBookmark()}
             aria-label={isCurrentChapterBookmarked ? 'Remove bookmark from this chapter' : 'Bookmark this chapter'}
-            title={isCurrentChapterBookmarked ? 'Remove bookmark' : 'Bookmark chapter'}
+            title={isCurrentChapterBookmarked ? 'Remove bookmark (V)' : 'Bookmark chapter (V)'}
             aria-pressed={isCurrentChapterBookmarked}
-            disabled={addBookmark.isPending || removeBookmark.isPending}
+            aria-keyshortcuts="v"
+            disabled={isBookmarkPending}
           >
             <span aria-hidden="true" className="chapter-bookmark-toolbar-btn__icon">
               <IconBookmark size={18} filled={isCurrentChapterBookmarked} />

@@ -82,6 +82,8 @@ export function isEditableKeyTarget(
  *                             gallery: smooth step scroll up)
  *   S / ↓   → "stepDown"     (vertical: next page; gallery: step scroll down)
  *   G      → "toggleGap"     (toggle breathing room between images)
+ *   V      → "toggleBookmark" (bookmark / unbookmark the current chapter)
+ *   C      → "toggleFitHeight" (paged mode only: fit the page to the viewport height)
  *
  * When `smoothScrollKeys` is on, plain W / ↑ and S / ↓ in vertical mode act
  * like their Shift-held variants ("scrollUp"/"scrollDown" — hold to glide at
@@ -115,11 +117,15 @@ export function intentForKey(
   | 'chapterForward'
   | 'chapterBackward'
   | 'toggleGap'
+  | 'toggleBookmark'
+  | 'toggleFitHeight'
   | null {
-  // Modeless reader-control toggle — checked before the mode-specific
-  // navigation keys so it works in every reading mode (the caller gates
-  // which modes actually render the gap).
+  // Modeless reader-control toggles — checked before the mode-specific
+  // navigation keys so they work in every reading mode (the caller gates
+  // which modes actually render the effect, e.g. fit-to-height is paged-only).
   if (key === 'g' || key === 'G') return 'toggleGap';
+  if (key === 'v' || key === 'V') return 'toggleBookmark';
+  if (key === 'c' || key === 'C') return 'toggleFitHeight';
 
   if (shiftKey && (key === 'ArrowUp' || key === 'w' || key === 'W')) return 'scrollUp';
   if (shiftKey && (key === 'ArrowDown' || key === 's' || key === 'S')) return 'scrollDown';

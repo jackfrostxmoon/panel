@@ -19,7 +19,7 @@ import { IconPause, IconPlay } from '../components/icons';
 import { PagedReader } from '../reader/PagedReader';
 import { GalleryReader, type GalleryReaderHandle } from '../reader/GalleryReader';
 import { ReaderSettingsPanel } from '../reader/ReaderSettingsPanel';
-import { ReaderToolbar } from '../reader/ReaderToolbar';
+import { ReaderToolbar, useChapterBookmarkToggle } from '../reader/ReaderToolbar';
 import { nextReadingMode, scrollSpeedPx, DEFAULT_READER_SETTINGS, type ReaderSettings, type ReadingMode, type GlidePreset } from '../reader/settings';
 import { VerticalReader, type VerticalReaderHandle } from '../reader/VerticalReader';
 import { proxiedPageUrl } from '../utils/format';
@@ -152,6 +152,22 @@ export function ReaderPage() {
   const chapters = useChapters(panelId, { enabled: panelId.length > 0 });
   const progress = useProgress(panelId, chapterId, { enabled: panelId.length > 0 });
   const saveProgress = useSaveProgress();
+  /**
+   * Chapter bookmark state shared with the toolbar button — the `V` shortcut
+   * below runs the same toggle (same mutations, same toasts). The title
+   * mirrors the toolbar's header fallback: chapter-list title first, then the
+   * chapter payload's label while the list is still loading.
+   */
+  const bookmarkChapters = chapters.data ?? [];
+  const { toggleBookmark } = useChapterBookmarkToggle({
+    panelId,
+    chapterTitle:
+      bookmarkChapters.find((c) => c.id === chapterId)?.title
+      ?? chapterPages.data?.chapterTitle
+      ?? null,
+    chapterId,
+    chapters: bookmarkChapters,
+  });
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
 
   /** Reload settings from the server file (cross-tab sync target). */
@@ -656,6 +672,23 @@ export function ReaderPage() {
         return;
       }
       const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys);
+      if (intent === 'toggleBookmark') {
+        // Bookmark / unbookmark the current chapter — same toggle (and
+        // toasts) as the toolbar button.
+        event.preventDefault();
+        void toggleBookmark();
+        return;
+      }
+      if (intent === 'toggleFitHeight') {
+        // Paged mode only, mirroring the settings switch (disabled elsewhere).
+        if (settings.mode !== 'paged') {
+          toast('Only available in page reading mode.', 'info');
+          return;
+        }
+        event.preventDefault();
+        update({ fitToHeight: !settings.fitToHeight });
+        return;
+      }
       if (intent === 'toggleGap') {
         // Breathing room between pages: vertical + gallery stack pages,
         // paged pairs the two sheets of a spread. All three modes honor
@@ -776,7 +809,7 @@ export function ReaderPage() {
       window.removeEventListener('keyup', stopScroll);
       window.removeEventListener('resize', onResize);
     };
-  }, [settings.direction, settings.mode, settings.imageGap, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
+  }, [settings.direction, settings.mode, settings.imageGap, settings.fitToHeight, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, toggleBookmark, panelId, navigate, update, switchMode, toast]);
 
   /* Auto-hide controls: hide on scroll down, reveal on scroll up, hide after
      idle, and stay visible while hovering the toolbar. Pointer movement

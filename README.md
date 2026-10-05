@@ -643,6 +643,8 @@ resolves itself for the active reading direction (LTR/RTL).
 | `Q`   | Toggle reading settings     |
 | `F`   | Cycle reading mode          |
 | `E`   | Toggle fullscreen           |
+| `V`   | Bookmark this chapter       |
+| `C`   | Toggle fit to height (paged mode only; shows an info toast elsewhere) |
 
 Arrow and letter keys swap between left-to-right and right-to-left (panel)
 reading directions; `Space` always advances (to the next page in paged/gallery
