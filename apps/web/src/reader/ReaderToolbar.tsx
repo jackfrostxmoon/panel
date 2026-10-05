@@ -41,6 +41,12 @@ export function useChapterBookmarkToggle({
     // Guard the loading window: the page-level `V` shortcut exists before
     // the chapter payload arrives (the toolbar only mounts once it has).
     if (!panelId || !chapterId) return;
+    // The chapter list loads after the chapter payload (it needs panelId
+    // from it) and may fail while the source is down — so the current
+    // chapter is often absent here. Send best-effort metadata with an
+    // empty sourceUrl; the server backfills the canonical URL from cache
+    // or the source registry instead of rejecting the payload.
+    const currentChapter = chapters.find((c) => c.id === chapterId);
     try {
       if (isCurrentChapterBookmarked) {
         await removeBookmark.mutateAsync({ panelId, chapterId });
@@ -49,11 +55,10 @@ export function useChapterBookmarkToggle({
         await addBookmark.mutateAsync({
           panelId,
           chapterId,
-          title:
-            chapters.find((c) => c.id === chapterId)?.title ?? chapterTitle ?? 'Unknown Chapter',
-          chapterNumber: chapters.find((c) => c.id === chapterId)?.chapterNumber ?? null,
-          sourceUrl: chapters.find((c) => c.id === chapterId)?.sourceUrl ?? '',
-          publishedAt: chapters.find((c) => c.id === chapterId)?.publishedAt ?? null,
+          title: currentChapter?.title || chapterTitle || 'Unknown Chapter',
+          chapterNumber: currentChapter?.chapterNumber ?? null,
+          sourceUrl: currentChapter?.sourceUrl ?? '',
+          publishedAt: currentChapter?.publishedAt ?? null,
         });
         toast(`Bookmarked "${chapterTitle ?? 'Chapter'}"`, 'success');
       }

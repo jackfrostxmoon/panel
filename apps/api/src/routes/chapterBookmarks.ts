@@ -4,12 +4,30 @@ import { BULK_CHAPTER_LIMIT, ErrorCodes, ok, type CreateChapterBookmarkInput, ty
 import { AppError } from '../lib/errors.js';
 import type { ChapterBookmarkService } from '../services/chapterBookmarkService.js';
 
+const sourceUrlField = z
+  .string()
+  .max(2000)
+  // The reader bookmarks from a chapter payload that may arrive before the
+  // chapter list (or while the source is down), so it can only send an empty
+  // string. Accept it here — the service backfills a canonical URL from the
+  // chapter cache or the source registry instead of 400ing.
+  .refine((v) => v === '' || isHttpUrl(v), { message: 'Invalid url' });
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const createChapterBookmarkSchema = z.object({
   panelId: z.string().min(1).max(500),
   chapterId: z.string().min(1).max(500),
   title: z.string().min(1).max(500),
   chapterNumber: z.number().nullable(),
-  sourceUrl: z.string().url().min(1).max(2000),
+  sourceUrl: sourceUrlField,
   publishedAt: z.string().datetime().nullable(),
 });
 
@@ -22,7 +40,7 @@ const createChapterBookmarksSchema = z.object({
     chapterId: z.string().min(1).max(500),
     title: z.string().min(1).max(500),
     chapterNumber: z.number().nullable(),
-    sourceUrl: z.string().url().min(1).max(2000),
+    sourceUrl: sourceUrlField,
     publishedAt: z.string().datetime().nullable(),
   })).min(1).max(BULK_CHAPTER_LIMIT),
 });

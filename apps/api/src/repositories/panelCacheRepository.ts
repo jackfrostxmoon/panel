@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import type { PanelPage, SourceSearchResult } from '@panel/shared';
 import { parseGlobalId, splitNativeChapterId } from '@panel/shared';
@@ -133,19 +133,32 @@ export class PanelCacheRepository {
       .where(eq(chapters.globalId, data.globalId))
       .limit(1);
     if (byGlobalId) {
+      // Never clobber a good cached URL with an empty bookmark fallback —
+      // the reader bookmarks before the chapter list loads and sends ''.
+      const sourceUrl = data.sourceUrl || byGlobalId.sourceUrl;
       const [row] = await db
         .update(chapters)
         .set({
           sourceId: data.sourceId,
           title: data.title,
           chapterNumber: data.chapterNumber ?? null,
-          sourceUrl: data.sourceUrl,
+          sourceUrl,
           cachedAt: new Date(),
         })
         .where(eq(chapters.id, byGlobalId.id))
         .returning();
       if (!row) throw new Error('Failed to update chapter row.');
       return row;
+    }
+
+    let insertSourceUrl = data.sourceUrl;
+    if (!insertSourceUrl) {
+      const [bySourceId] = await db
+        .select({ sourceUrl: chapters.sourceUrl })
+        .from(chapters)
+        .where(and(eq(chapters.source, data.source), eq(chapters.sourceId, data.sourceId)))
+        .limit(1);
+      if (bySourceId?.sourceUrl) insertSourceUrl = bySourceId.sourceUrl;
     }
 
     const [row] = await db
@@ -157,7 +170,7 @@ export class PanelCacheRepository {
         globalId: data.globalId,
         title: data.title,
         chapterNumber: data.chapterNumber ?? null,
-        sourceUrl: data.sourceUrl,
+        sourceUrl: insertSourceUrl,
         publishedAt: data.publishedAt ?? null,
         cachedAt: new Date(),
       })
@@ -166,7 +179,7 @@ export class PanelCacheRepository {
         set: {
           title: data.title,
           chapterNumber: data.chapterNumber ?? null,
-          sourceUrl: data.sourceUrl,
+          sourceUrl: insertSourceUrl,
           cachedAt: new Date(),
         },
       })

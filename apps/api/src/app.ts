@@ -93,7 +93,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   const bookmarkFolderService = new BookmarkFolderService(bookmarkFolderRepo, bookmarkRepo, panelCacheRepo);
   const panelRatingService = new PanelRatingService(panelRatingRepo, panelCacheRepo);
   const tagService = new TagService(tagRepo, panelCacheRepo);
-  const chapterBookmarkService = new ChapterBookmarkService(chapterBookmarkRepo, panelCacheRepo);
+  const chapterBookmarkService = new ChapterBookmarkService(chapterBookmarkRepo, panelCacheRepo, registry);
   const progressService = new ProgressService(progressRepo, panelCacheRepo, registry);
   const readingListService = new ReadingListService(readingListRepo, panelCacheRepo, registry);
   const recentlyViewedService = new RecentlyViewedService(
