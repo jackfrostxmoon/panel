@@ -709,6 +709,28 @@ export function ReaderPage() {
         event.preventDefault();
         if (intent === 'scrollUp') markNavScroll(50);
         else clearNavScroll();
+        // Instant first response: a tap (or a press killed by an early
+        // keyup) never survives to the loop's first rAF tick, so move one
+        // frame's worth synchronously — every press visibly moves in the
+        // same task. Skipped while the loop already runs so key repeats
+        // can't inflate the speed.
+        if (!isScrollingRef.current) {
+          const scroller = containerRef.current?.querySelector(
+            '.reader-content',
+          ) as HTMLElement | null;
+          if (scroller) {
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            if (max > 0) {
+              // Read via the ref (synced every render) so this handler needs
+              // no scrollSpeed dependency of its own.
+              const step = scrollSpeedRef.current / 60;
+              const target = intent === 'scrollUp'
+                ? scroller.scrollTop - step
+                : scroller.scrollTop + step;
+              scroller.scrollTop = Math.max(0, Math.min(max, target));
+            }
+          }
+        }
         setScrollDir(intent === 'scrollUp' ? 'up' : 'down');
         return;
       }
@@ -1033,7 +1055,11 @@ export function ReaderPage() {
       return;
     }
 
-    let last = performance.now();
+    // Anchor the first frame to effect time: rAF timestamps lag
+    // performance.now(), so without this the first frame always computes a
+    // negative dt and is skipped.
+    const effectAt = performance.now();
+    let last = effectAt;
     let raf = 0;
 
     const tick = (now: number) => {
