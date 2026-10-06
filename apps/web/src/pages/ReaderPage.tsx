@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -158,7 +159,7 @@ export function ReaderPage() {
    * mirrors the toolbar's header fallback: chapter-list title first, then the
    * chapter payload's label while the list is still loading.
    */
-  const bookmarkChapters = chapters.data ?? [];
+  const bookmarkChapters = useMemo(() => chapters.data ?? [], [chapters.data]);
   const { toggleBookmark } = useChapterBookmarkToggle({
     panelId,
     chapterTitle:
@@ -168,6 +169,17 @@ export function ReaderPage() {
     chapterId,
     chapters: bookmarkChapters,
   });
+  /**
+   * Stable mirror of the bookmark toggle for the keyboard handler below.
+   * `toggleBookmark` is recreated whenever the bookmark query settles, and
+   * the keydown effect must NOT re-subscribe its window listeners on those
+   * (or any other) re-renders: during a Shift+↑/↓ hold the page re-renders
+   * on every scroll frame, and per-frame listener teardown/setup is what
+   * made the hold-to-scroll feel slow to react. The ref always serves the
+   * latest closure without ever invalidating the effect.
+   */
+  const toggleBookmarkRef = useRef(toggleBookmark);
+  toggleBookmarkRef.current = toggleBookmark;
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
 
   /** Reload settings from the server file (cross-tab sync target). */
@@ -654,29 +666,35 @@ export function ReaderPage() {
         navScrollUntilRef.current = 0;
       };
 
-      if (event.key === 'q' || event.key === 'Q') {
+      // Single-letter shortcuts never fire with Ctrl/Cmd/Alt held, so
+      // browser chords (find, copy, paste) keep working inside the reader.
+      const systemModifier = event.ctrlKey || event.metaKey || event.altKey;
+      if (!systemModifier && (event.key === 'q' || event.key === 'Q')) {
         setSettingsOpen((open) => !open);
         return;
       }
-      if (event.key === 'f' || event.key === 'F') {
+      if (!systemModifier && (event.key === 'f' || event.key === 'F')) {
         // Rotate the reading mode: vertical -> paged -> gallery -> vertical.
         // Per-mode settings memory (T2-9) restores each mode's last values.
         event.preventDefault();
         switchMode(nextReadingMode(settings.mode));
         return;
       }
-      if (event.key === 'e' || event.key === 'E') {
+      if (!systemModifier && (event.key === 'e' || event.key === 'E')) {
         // Toggle fullscreen — available in every reading mode.
         event.preventDefault();
         toggleFullscreen();
         return;
       }
-      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys);
+      // Pass the event itself as the modifiers bag (`ctrlKey`/`metaKey`/
+      // `altKey`) so bare-press toggles (G/V/C) can't hijack browser chords.
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys, event);
       if (intent === 'toggleBookmark') {
         // Bookmark / unbookmark the current chapter — same toggle (and
-        // toasts) as the toolbar button.
+        // toasts) as the toolbar button. Served via the ref so this hot
+        // effect never re-subscribes when the toggle identity changes.
         event.preventDefault();
-        void toggleBookmark();
+        void toggleBookmarkRef.current();
         return;
       }
       if (intent === 'toggleFitHeight') {
@@ -831,7 +849,7 @@ export function ReaderPage() {
       window.removeEventListener('keyup', stopScroll);
       window.removeEventListener('resize', onResize);
     };
-  }, [settings.direction, settings.mode, settings.imageGap, settings.fitToHeight, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, toggleBookmark, panelId, navigate, update, switchMode, toast]);
+  }, [settings.direction, settings.mode, settings.imageGap, settings.fitToHeight, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
 
   /* Auto-hide controls: hide on scroll down, reveal on scroll up, hide after
      idle, and stay visible while hovering the toolbar. Pointer movement
@@ -954,7 +972,7 @@ export function ReaderPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (isEditableKeyTarget(target)) return;
-      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys);
+      const intent = intentForKey(event.key, settings.direction, event.shiftKey, settings.mode, settings.smoothScrollKeys, event);
       if (settings.mode === 'paged' && (intent === 'forward' || intent === 'backward')) {
         hideNow();
         return;

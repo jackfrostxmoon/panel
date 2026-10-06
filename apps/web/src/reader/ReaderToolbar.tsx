@@ -37,6 +37,13 @@ export function useChapterBookmarkToggle({
 
   const isCurrentChapterBookmarked = bookmarkedChapterIds.has(chapterId);
 
+  // Destructure the bound mutate fns: the whole `useMutation` result object
+  // is a fresh literal every render, but `mutateAsync` is the observer's
+  // bound method (stable) — depending on the objects would churn
+  // `toggleBookmark` (and every effect that consumes it) on each render.
+  const { mutateAsync: addChapterBookmark } = addBookmark;
+  const { mutateAsync: removeChapterBookmark } = removeBookmark;
+
   const toggleBookmark = useCallback(async () => {
     // Guard the loading window: the page-level `V` shortcut exists before
     // the chapter payload arrives (the toolbar only mounts once it has).
@@ -49,10 +56,10 @@ export function useChapterBookmarkToggle({
     const currentChapter = chapters.find((c) => c.id === chapterId);
     try {
       if (isCurrentChapterBookmarked) {
-        await removeBookmark.mutateAsync({ panelId, chapterId });
+        await removeChapterBookmark({ panelId, chapterId });
         toast(`Removed bookmark from "${chapterTitle ?? 'Chapter'}"`, 'success');
       } else {
-        await addBookmark.mutateAsync({
+        await addChapterBookmark({
           panelId,
           chapterId,
           title: currentChapter?.title || chapterTitle || 'Unknown Chapter',
@@ -68,7 +75,7 @@ export function useChapterBookmarkToggle({
         'error',
       );
     }
-  }, [panelId, chapterId, chapterTitle, chapters, isCurrentChapterBookmarked, addBookmark, removeBookmark, toast]);
+  }, [panelId, chapterId, chapterTitle, chapters, isCurrentChapterBookmarked, addChapterBookmark, removeChapterBookmark, toast]);
 
   return {
     isCurrentChapterBookmarked,

@@ -81,9 +81,14 @@ export function isEditableKeyTarget(
  *   W / ↑   → "stepUp"       (vertical: previous page, like one wheel notch;
  *                             gallery: smooth step scroll up)
  *   S / ↓   → "stepDown"     (vertical: next page; gallery: step scroll down)
- *   G      → "toggleGap"     (toggle breathing room between images)
- *   V      → "toggleBookmark" (bookmark / unbookmark the current chapter)
- *   C      → "toggleFitHeight" (paged mode only: fit the page to the viewport height)
+ *   G      → "toggleGap"     (bare press only — toggle breathing room between images)
+ *   V      → "toggleBookmark" (bare press only — bookmark / unbookmark the current chapter)
+ *   C      → "toggleFitHeight" (bare press only — paged mode only: fit the page to the viewport height)
+ *
+ * The single-letter toggles require a bare press (no Shift/Ctrl/Meta/Alt):
+ * Shift is reserved for the smooth-scroll chords (Shift+W/S, Shift+↑/↓),
+ * and Ctrl/Meta/Alt guard browser shortcuts (copy/paste/find) from being
+ * hijacked — e.g. Ctrl+C must keep copying, Shift+V must not bookmark.
  *
  * When `smoothScrollKeys` is on, plain W / ↑ and S / ↓ in vertical mode act
  * like their Shift-held variants ("scrollUp"/"scrollDown" — hold to glide at
@@ -106,6 +111,7 @@ export function intentForKey(
   shiftKey = false,
   mode?: 'vertical' | 'paged' | 'gallery',
   smoothScrollKeys = false,
+  modifiers: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
 ):
   | 'forward'
   | 'backward'
@@ -120,12 +126,16 @@ export function intentForKey(
   | 'toggleBookmark'
   | 'toggleFitHeight'
   | null {
-  // Modeless reader-control toggles — checked before the mode-specific
+  // Bare-press reader toggles — checked before the mode-specific
   // navigation keys so they work in every reading mode (the caller gates
   // which modes actually render the effect, e.g. fit-to-height is paged-only).
-  if (key === 'g' || key === 'G') return 'toggleGap';
-  if (key === 'v' || key === 'V') return 'toggleBookmark';
-  if (key === 'c' || key === 'C') return 'toggleFitHeight';
+  // A bare press means no modifier is held: Shift is reserved for the
+  // smooth-scroll chords above, and Ctrl/Meta/Alt guard browser shortcuts
+  // (copy/paste/find) from being hijacked by a same-letter toggle.
+  const barePress = !shiftKey && !modifiers.ctrlKey && !modifiers.metaKey && !modifiers.altKey;
+  if (barePress && (key === 'g' || key === 'G')) return 'toggleGap';
+  if (barePress && (key === 'v' || key === 'V')) return 'toggleBookmark';
+  if (barePress && (key === 'c' || key === 'C')) return 'toggleFitHeight';
 
   if (shiftKey && (key === 'ArrowUp' || key === 'w' || key === 'W')) return 'scrollUp';
   if (shiftKey && (key === 'ArrowDown' || key === 's' || key === 'S')) return 'scrollDown';
