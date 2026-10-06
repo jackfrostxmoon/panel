@@ -3,9 +3,15 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from '
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout } from './components/AppLayout';
 import { ToastProvider } from './components/Toast';
-import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { useWarmCovers } from './utils/imageCache';
+
+// Route-level code splitting: the reader (heaviest screen) and secondary
+// pages load on demand. Home stays on its own chunk too so `/read/*` never
+// pays for the landing hero, search bar, and rails.
+const HomePage = lazy(() =>
+  import('./pages/HomePage').then((m) => ({ default: m.HomePage })),
+);
 
 // Route-level code splitting: the reader (heaviest screen) and secondary
 // pages load on demand.
@@ -88,7 +94,14 @@ function AppContent() {
           }
         />
         <Route element={<AppLayout />}>
-          <Route index element={<HomePage />} />
+          <Route
+            index
+            element={
+              <Suspense fallback={null}>
+                <HomePage />
+              </Suspense>
+            }
+          />
           <Route
             path="search"
             element={

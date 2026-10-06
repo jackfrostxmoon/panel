@@ -132,12 +132,34 @@ if (backupTimer !== undefined) {
 const here = dirname(fileURLToPath(import.meta.url));
 const webDist = resolve(here, '../../web/dist');
 if (existsSync(webDist)) {
+  // Plain-text robots.txt so crawlers (and Lighthouse) don't parse index.html
+  // as a robots file. Registered before the static + SPA fallback below.
+  app.get('/robots.txt', (c) =>
+    c.text('User-agent: *\nDisallow:\n', 200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+    }),
+  );
+  /**
+   * Hashed Vite assets (`assets/index-<hash>.js`) are content-addressed: the
+   * URL changes on every build, so the file never goes stale. Cache them
+   * immutably for a year; everything else (index.html, favicon) stays short.
+   */
+  const cacheControlFor = (filePath: string): string => {
+    if (/\/assets\/[^/]*-[A-Za-z0-9_-]{6,}\.(js|css|woff2?)$/.test(filePath)) {
+      return 'public, max-age=31536000, immutable';
+    }
+    return 'public, max-age=3600';
+  };
   app.use(
     '/*',
     serveStatic({
       root: webDist,
       rewriteRequestPath: (path) => path,
       onNotFound: () => {},
+      onFound: (path, c) => {
+        c.header('Cache-Control', cacheControlFor(path));
+      },
     }),
   );
   // SPA fallback: unknown non-API paths serve index.html.
@@ -147,7 +169,18 @@ if (existsSync(webDist)) {
   // `path` silently fails to resolve on Linux (Bun.file resolves relative to the
   // module dir, not the process cwd). Rewriting to a root-relative name keeps the
   // final path absolute on every platform.
-  app.get('*', serveStatic({ root: webDist, rewriteRequestPath: () => 'index.html' }));
+  app.get(
+    '*',
+    serveStatic({
+      root: webDist,
+      rewriteRequestPath: () => 'index.html',
+      onFound: (_path, c) => {
+        // Entry HTML references hashed assets by name — never cache it long
+        // or a deploy keeps serving stale chunk filenames.
+        c.header('Cache-Control', 'no-cache');
+      },
+    }),
+  );
   logger.info('Serving built frontend', { webDist });
 }
 

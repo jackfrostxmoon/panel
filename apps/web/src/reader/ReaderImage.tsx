@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { PanelPage } from '@panel/shared';
 import { proxiedPageUrl } from '../utils/format';
+import { getCachedAspectRatio, getCachedDimensions, setCachedDimensions } from './dimensions';
 
 /**
  * Reserved box for pages whose real dimensions are unknown (some sources
- * don't report them). Without this every wrapper collapses to ~0px tall, so
- * ALL pages sit "near" the viewport and native lazy loading fetches the
- * whole chapter even in sequential mode.
+ * don't report them). Without a reserve every wrapper collapses to ~0px
+ * tall, so ALL pages sit "near" the viewport and native lazy loading fetches
+ * the whole chapter even in sequential mode.
+ *
+ * Tall default: unmeasured pages in the wild are ~900x6000 (ratio ~0.15),
+ * so a 2/3 portrait box reserves ~4x too little height and every load shifts
+ * the pages below it (CLS). 3/20 matches the observed average; repeat visits
+ * do better still via the measured-dimension cache below.
  */
-const FALLBACK_ASPECT_RATIO = '2 / 3';
+const FALLBACK_ASPECT_RATIO = '3 / 20';
 
 /** Number of automatic retries before surfacing the manual reload control. */
 const MAX_AUTO_RETRIES = 5;
@@ -79,9 +85,17 @@ export function ReaderImage({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
+  const cachedRatio = useMemo(() => getCachedAspectRatio(page.url), [page.url]);
+  const cachedDims = useMemo(() => getCachedDimensions(page.url), [page.url]);
+
   const aspectRatio = page.width && page.height
     ? `${page.width} / ${page.height}`
-    : measuredRatio ?? FALLBACK_ASPECT_RATIO;
+    : measuredRatio ?? cachedRatio ?? FALLBACK_ASPECT_RATIO;
+
+  /** Numeric dims for the <img> width/height attrs (unsized-image CLS fix).
+   *  Prefer source dims, fall back to dims measured on a previous visit. */
+  const resolvedDims =
+    page.width && page.height ? { width: page.width, height: page.height } : cachedDims;
 
   const hasWidth = typeof widthPx === 'number';
   const hasHeight = typeof heightPx === 'number';
@@ -184,6 +198,7 @@ const isLoaded = status === 'loaded';
     if (!img || !img.complete) return;
     if (img.naturalWidth > 0 && img.naturalHeight > 0) {
       setMeasuredRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
+      setCachedDimensions(page.url, img.naturalWidth, img.naturalHeight);
     }
     // Report outside the state updater: updaters must stay pure (StrictMode
     // invokes them twice, which would fire the load report twice).
@@ -256,6 +271,10 @@ const isLoaded = status === 'loaded';
             src={src}
             alt={`Page ${page.index + 1}`}
             decoding="async"
+            loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : 'low'}
+            width={resolvedDims?.width}
+            height={resolvedDims?.height}
             referrerPolicy="no-referrer"
             style={imgStyle}
             className={`reader-image__img${isLoaded ? ' reader-image__img--loaded' : ''}`}
@@ -264,6 +283,7 @@ const isLoaded = status === 'loaded';
               const el = e.currentTarget;
               if (el.naturalWidth > 0 && el.naturalHeight > 0) {
                 setMeasuredRatio(`${el.naturalWidth} / ${el.naturalHeight}`);
+                setCachedDimensions(page.url, el.naturalWidth, el.naturalHeight);
               }
               setStatus('loaded');
               onLoadRef.current?.(page);
