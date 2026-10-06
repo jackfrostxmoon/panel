@@ -158,7 +158,15 @@ export function chapterRefFromUrl(url: string): { panelId: string; token: string
   const match = /\/serie\/([^/?#]+)\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(url);
   if (!match?.[1] || !match[2]) return null;
   if (/^(?:page|feed|amp)(?:$|\/)/i.test(match[2])) return null; // not chapters
-  return { panelId: match[1], token: match[2] };
+  return { panelId: safeDecode(match[1]), token: safeDecode(match[2]) };
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**

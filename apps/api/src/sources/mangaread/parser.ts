@@ -146,7 +146,15 @@ export function panelNativeIdFromUrl(url: string): string | null {
 export function chapterRefFromUrl(url: string): { panelId: string; token: string } | null {
   const match = /\/manga\/([^/?#]+)\/(chapter-[^/?#]+)/i.exec(url);
   if (!match?.[1] || !match[2]) return null;
-  return { panelId: match[1], token: match[2].replace(/\/+$/, '') };
+  return { panelId: safeDecode(match[1]), token: safeDecode(match[2].replace(/\/+$/, '')) };
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**

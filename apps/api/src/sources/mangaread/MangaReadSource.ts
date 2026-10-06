@@ -113,7 +113,7 @@ export class MangaReadSource implements PanelSource {
   }
 
   buildPanelUrl(nativePanelId: string): string {
-    return `${this.baseUrl}/manga/${encodeURIComponent(nativePanelId)}/`;
+    return `${this.baseUrl}/manga/${encodeURIComponent(normalizeNativeSegment(nativePanelId))}/`;
   }
 
   buildChapterUrl(nativeChapterId: string): string {
@@ -124,7 +124,7 @@ export class MangaReadSource implements PanelSource {
       });
     }
     // e.g. .../one-piece/chapter-1014
-    return `${this.baseUrl}/manga/${encodeURIComponent(parts.panelId)}/${encodeURIComponent(parts.chapterToken)}/`;
+    return `${this.baseUrl}/manga/${encodeURIComponent(normalizeNativeSegment(parts.panelId))}/${encodeURIComponent(normalizeNativeSegment(parts.chapterToken))}/`;
   }
 
   /** "one-piece" from a mangaread.org/manga/… url (own host only). */
@@ -445,5 +445,21 @@ export class MangaReadSource implements PanelSource {
       latestChapter: raw.latestChapterLabel,
       updatedAt: raw.updatedAt,
     };
+  }
+}
+
+/**
+ * Backward compat for ids persisted before `chapterRefFromUrl` decoded
+ * percent-encoding (e.g. "...-%ef%bd%9e-...~chapter-1-1"). Those native ids
+ * still contain literal "%XX" — decode once so `encodeURIComponent` below
+ * single-encodes instead of producing "%25XX" 404s. New (already-decoded)
+ * ids pass through untouched; malformed "%" passes through as-is.
+ */
+function normalizeNativeSegment(value: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(value)) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
 }

@@ -125,7 +125,7 @@ export class ToonilySource implements PanelSource {
   }
 
   buildPanelUrl(nativePanelId: string): string {
-    return `${this.baseUrl}/serie/${encodeURIComponent(nativePanelId)}/`;
+    return `${this.baseUrl}/serie/${encodeURIComponent(normalizeNativeSegment(nativePanelId))}/`;
   }
 
   buildChapterUrl(nativeChapterId: string): string {
@@ -136,8 +136,8 @@ export class ToonilySource implements PanelSource {
       });
     }
     // e.g. .../the-beginning-after-the-end-ea2130e6/chapter-249/
-    return `${this.baseUrl}/serie/${encodeURIComponent(parts.panelId)}/${encodeURIComponent(
-      parts.chapterToken,
+    return `${this.baseUrl}/serie/${encodeURIComponent(normalizeNativeSegment(parts.panelId))}/${encodeURIComponent(
+      normalizeNativeSegment(parts.chapterToken),
     )}/`;
   }
 
@@ -500,5 +500,19 @@ export class ToonilySource implements PanelSource {
       Referer: `${this.baseUrl}/`,
     }, opts?.signal);
     return { bytes, contentType };
+  }
+}
+
+/**
+ * Backward compat for ids persisted before `chapterRefFromUrl` decoded
+ * percent-encoding. Decodes once so `encodeURIComponent` single-encodes
+ * instead of producing "%25XX" 404s. Already-decoded ids pass through.
+ */
+function normalizeNativeSegment(value: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(value)) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
 }
