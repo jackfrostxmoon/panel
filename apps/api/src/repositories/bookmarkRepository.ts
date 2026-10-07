@@ -19,7 +19,6 @@ import {
   type BookmarkFolderItemRow,
   type BookmarkFolderRow,
   type BookmarkRow,
-  type ChapterRow,
   type PanelRatingRow,
   type PanelRow,
   type TagRow,
@@ -479,5 +478,3 @@ export class TagRepository {
     return deleted.length;
   }
 }
-
-export type { ChapterRow };

@@ -86,6 +86,3 @@ export function removeSearchHistoryEntry(
 export function clearSearchHistory(): SearchHistoryEntry[] {
   return [];
 }
-
-/** The maximum number of entries the history stores. */
-export const SEARCH_HISTORY_MAX = MAX_ENTRIES;

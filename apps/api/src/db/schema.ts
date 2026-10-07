@@ -295,7 +295,6 @@ export type BookmarkFolderRow = typeof bookmarkFolders.$inferSelect;
 export type BookmarkFolderItemRow = typeof bookmarkFolderItems.$inferSelect;
 export type PanelRatingRow = typeof panelRatings.$inferSelect;
 export type TagRow = typeof tags.$inferSelect;
-export type PanelTagRow = typeof panelTags.$inferSelect;
 
 /**
  * Persisted reader payload for a chapter: the ordered image URLs and the
@@ -330,8 +329,6 @@ export const chapterPages = pgTable(
     index('chapter_pages_panel_id_idx').on(t.panelId),
   ],
 );
-
-export type ChapterPagesRow = typeof chapterPages.$inferSelect;
 
 /**
  * Persisted search / latest result lists. Keyed by the exact query so an

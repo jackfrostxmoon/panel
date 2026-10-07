@@ -26,13 +26,6 @@
   gap: var(--space-4);
 }
 
-.page-header__controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
 /* Stack split headers on phones so full-width controls (e.g. the source
  * filter chip strip) get their own row instead of squeezing the title. */
 @media (max-width: 640px) {
@@ -209,39 +202,6 @@
   width: min(560px, 100%);
 }
 
-.home-hero__cache-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.home-hero__cache-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: 0;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  padding: 2px 0;
-  transition: color var(--duration-fast) var(--ease-out);
-}
-.home-hero__cache-toggle:hover,
-.home-hero__cache-toggle:focus-visible {
-  color: var(--text-primary);
-  outline: none;
-}
-.home-hero__chevron {
-  display: inline-flex;
-  transition: transform var(--duration-fast) var(--ease-out);
-  transform: rotate(-90deg);
-}
-.home-hero__cache-toggle[aria-expanded="true"] .home-hero__chevron {
-  transform: rotate(0deg);
-}
-
 .home-hero__cache-label {
   color: var(--text-dim);
 }
@@ -272,33 +232,6 @@
   background: var(--accent);
   transition: width var(--duration-medium) var(--ease-out);
 }
-.home-hero__cache-bar__label {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 9px;
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
-  line-height: 1;
-}
-
-.home-hero__cache-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-}
-.home-hero__cache-actions .btn--sm {
-  flex: 0 1 auto;
-}
-
-.home-hero__cache-toast {
-  font-size: var(--font-size-xs);
-  color: var(--text-dim);
-}
-
 /* Recently-viewed rail (T2-4): a single horizontal carousel of cover cards
    that auto-advances and can be slid manually (arrows / swipe / scroll). */
 .home-recent {
@@ -397,10 +330,6 @@
   .app-shell--wide .home-recent__rail > * {
     flex-basis: calc((100% - var(--space-3) * 2) / 3);
   }
-}
-
-.latest-header {
-  margin-bottom: var(--space-3);
 }
 
 /* Source filter row on the latest page. */
@@ -873,9 +802,6 @@
 
 /* Bookmark folder selector (T2-8): a hamburger trigger in the bookmarks
    toolbar that opens a dropdown panel with the folder list. */
-.bookmarks-header {
-  gap: var(--space-4);
-}
 .bookmark-folder-selector {
   position: relative;
   flex: 0 0 auto;
@@ -1204,45 +1130,6 @@
   }
 }
 
-.home-section {
-  margin-top: var(--space-7);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.home-section__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.home-section__header h2 {
-  font-size: var(--font-size-xl);
-  letter-spacing: -0.01em;
-}
-
-.home-section__more {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-dim);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  transition: color var(--duration-fast) var(--ease-out);
-}
-
-.home-section__more:hover {
-  color: var(--accent-hover);
-}
-
-.home-section__error {
-  color: var(--text-dim);
-  font-size: var(--font-size-sm);
-  padding: var(--space-4) 0;
-}
-
 @media (max-width: 480px) {
   .home-hero {
     min-height: calc(100dvh - var(--header-height) - var(--space-5) - var(--space-8) - 3.5rem);
@@ -1435,52 +1322,6 @@
 
 .panel-details__cover .cover-image.loading {
   opacity: 0;
-}
-
-/* Status badge on cover */
-.panel-details__status-badge {
-  position: absolute;
-  bottom: var(--space-4);
-  left: var(--space-4);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(8px);
-  z-index: 2;
-}
-
-.panel-details__status-badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.8;
-}
-
-.panel-details__status-badge--completed {
-  background: rgba(70, 167, 88, 0.95);
-  color: #fff;
-  border: 1px solid rgba(70, 167, 88, 0.3);
-}
-
-.panel-details__status-badge--ongoing {
-  background: rgba(82, 169, 255, 0.95);
-  color: #fff;
-  border: 1px solid rgba(82, 169, 255, 0.3);
-}
-
-.panel-details__status-badge--hiatus {
-  background: rgba(240, 180, 41, 0.95);
-  color: #000;
-  border: 1px solid rgba(240, 180, 41, 0.3);
 }
 
 /* Cover gradient overlay for depth */
@@ -2156,30 +1997,6 @@
 /* Variant: section title + result-count chip on the left, filter input on
    the right. Used by the "Your panel" section on /settings/cache so a search
    bar can sit inline with the heading on desktop and wrap below it on phones. */
-.section-header__title {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.section-header--with-search {
-  align-items: center;
-}
-.section-header--with-search .filter-search-bar {
-  flex: 1 1 220px;
-  max-width: 360px;
-  /* `align-self: center` keeps the input vertically centered when the title
-     row above wraps to two lines on very narrow screens. */
-  align-self: center;
-}
-@media (max-width: 640px) {
-  .section-header--with-search .filter-search-bar {
-    flex-basis: 100%;
-    max-width: none;
-  }
-}
-
 .section-title {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
@@ -2203,14 +2020,6 @@
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
   white-space: nowrap;
-}
-
-.section-count__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* --- Synopsis ------------------------------------------------------------- */
@@ -2319,38 +2128,6 @@
   box-shadow: var(--shadow-focus);
 }
 
-.view-mode-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 2px;
-}
-
-.view-mode-toggle .btn--icon-only {
-  background: transparent;
-  border: none;
-  padding: 8px;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-sm);
-  color: var(--text-faint);
-  transition: all var(--duration-fast);
-}
-
-.view-mode-toggle .btn--icon-only.active {
-  background: var(--surface-3);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
-}
-
-.view-mode-toggle .btn--icon-only:not(.active):hover {
-  color: var(--text-dim);
-  background: var(--surface-3);
-}
-
 .chapter-filter-wrapper {
   flex: 1;
   min-width: 200px;
@@ -2439,16 +2216,11 @@
   overflow: hidden;
 }
 
-.chapter-list-container.grid-view {
-  padding: var(--space-4);
-}
-
 /* ============================================================================
    VOLUME-BASED CHAPTER LIST � Modern Professional UI
    ============================================================================ */
 
-.chapter-list,
-.chapter-grid {
+.chapter-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -2510,20 +2282,6 @@
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-}
-
-.chapter-list__progress-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  text-transform: none;
-  letter-spacing: normal;
 }
 
 .chapter-list__meta {
@@ -2693,452 +2451,6 @@
   background: var(--surface-2);
 }
 
-/* --- Volume Section ------------------------------------------------------- */
-.chapter-volume {
-  border-bottom: 1px solid var(--border);
-}
-
-.chapter-volume:last-child {
-  border-bottom: none;
-}
-
-.chapter-volume--grid {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-/* Volume Header (List View) */
-.chapter-volume__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-  padding: var(--space-4);
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--duration-fast);
-}
-
-.chapter-volume__header:hover {
-  background: var(--surface-2);
-}
-
-.chapter-volume__header:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.chapter-volume__toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--duration-fast);
-}
-
-.chapter-volume__toggle:hover {
-  background: var(--surface-2);
-}
-
-.chapter-volume__toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.chapter-volume__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  color: var(--text-faint);
-  border-radius: var(--radius-sm);
-  transition:
-    transform var(--duration-fast),
-    color var(--duration-fast);
-}
-
-.chapter-volume__icon svg {
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-
-.chapter-volume__info {
-  flex: 1;
-  min-width: 0;
-}
-
-.chapter-volume__title {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text);
-  margin: 0 0 var(--space-1);
-}
-
-.chapter-volume__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-xs);
-  color: var(--text-dim);
-}
-
-.chapter-volume__divider {
-  color: var(--text-faint);
-}
-
-.chapter-volume__progress-text {
-  color: var(--info);
-  font-weight: var(--font-weight-medium);
-}
-
-.chapter-volume__progress {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  min-width: 100px;
-}
-
-.chapter-volume__progress-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--surface-3);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.chapter-volume__progress-bar::before {
-  content: '';
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
-  border-radius: var(--radius-full);
-  transition: width var(--duration-med) var(--ease-out);
-}
-
-.chapter-volume__progress-pct {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  min-width: 36px;
-  text-align: right;
-}
-
-/* Volume Chapters List */
-.chapter-volume__chapters {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
-  transition:
-    max-height var(--duration-med) var(--ease-out),
-    opacity var(--duration-fast);
-}
-
-.chapter-volume__chapters.collapsed {
-  max-height: 0;
-  opacity: 0;
-  padding: 0;
-}
-
-/* Grid View Chapters Inner */
-.chapter-volume__chapters .chapter-grid__inner {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
-
-@media (max-width: 480px) {
-  .chapter-volume__chapters .chapter-grid__inner {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* --- Chapter Item (List View) --------------------------------------------- */
-.chapter-volume__item-wrapper:not(:last-child) .chapter-volume__item {
-  border-bottom: 1px solid var(--border);
-}
-
-.chapter-volume__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: transparent;
-  border: none;
-  text-decoration: none;
-  color: inherit;
-  transition: background var(--duration-fast);
-}
-
-.chapter-volume__item:hover {
-  background: var(--surface-2);
-}
-
-.chapter-volume__item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  border-radius: var(--radius-sm);
-}
-
-.chapter-volume__content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-}
-
-.chapter-volume__title-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.chapter-volume__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-faint);
-  padding: 4px 10px;
-  white-space: nowrap;
-  transition: all var(--duration-fast);
-}
-
-.chapter-volume__item:hover .chapter-volume__badge {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.chapter-volume__title {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.chapter-volume__item--read {
-  opacity: 0.7;
-}
-
-.chapter-volume__item--read .chapter-volume__badge {
-  background: var(--success);
-  color: #fff;
-  border-color: var(--success);
-}
-
-.chapter-volume__item--read .chapter-volume__title {
-  color: var(--text-dim);
-}
-
-.chapter-volume__progress-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.chapter-volume__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-xs);
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
-.chapter-volume__date {
-  font-variant-numeric: tabular-nums;
-}
-
-.chapter-volume__chevron {
-  color: var(--text-faint);
-  flex-shrink: 0;
-  transition:
-    transform var(--duration-fast),
-    color var(--duration-fast);
-}
-
-.chapter-volume__item:hover .chapter-volume__chevron {
-  transform: translateX(4px);
-  color: var(--text-dim);
-}
-
-/* --- Chapter Card (Grid View) --------------------------------------------- */
-.chapter-card {
-  display: flex;
-  flex-direction: column;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  overflow: hidden;
-  transition: all var(--duration-fast);
-}
-
-.chapter-card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
-}
-
-.chapter-card--read {
-  opacity: 0.7;
-  border-color: var(--success);
-}
-
-.chapter-card__link {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: var(--space-4);
-  text-decoration: none;
-  color: inherit;
-}
-
-.chapter-card__header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.chapter-card__title-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.chapter-card__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-faint);
-  padding: 4px 10px;
-  white-space: nowrap;
-  transition: all var(--duration-fast);
-}
-
-.chapter-card:hover .chapter-card__badge {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.chapter-card__title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text);
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.chapter-card__progress-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  align-self: flex-start;
-}
-
-.chapter-card__meta {
-  margin-top: auto;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-}
-
-.chapter-card__date {
-  font-size: var(--font-size-xs);
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- Chapter Grid (Legacy fallback) --------------------------------------- */
-.chapter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-3);
-  padding: 0;
-}
-
-@media (max-width: 480px) {
-  .chapter-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* --- Empty State --------------------------------------------------------- */
-.empty-state {
-  text-align: center;
-  padding: var(--space-10) var(--space-5);
-  color: var(--text-faint);
-}
-
-.empty-state svg {
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--space-4);
-  opacity: 0.4;
-}
-
-.empty-state h3 {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-dim);
-  margin: 0 0 var(--space-2);
-}
-
-.empty-state p {
-  font-size: var(--font-size-sm);
-  margin: 0;
-  max-width: 300px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
 /* --- Responsive ----------------------------------------------------------- */
 @media (max-width: 768px) {
   .panel-details__hero {
@@ -3159,16 +2471,9 @@
     flex-direction: column;
     align-items: stretch;
   }
-  .view-mode-toggle {
-    width: fit-content;
-    margin: 0 auto;
-  }
   .chapter-filter-wrapper {
     width: 100%;
     max-width: none;
-  }
-  .chapter-list--grid {
-    grid-template-columns: 1fr;
   }
   .breadcrumb {
     display: none;
@@ -3176,9 +2481,6 @@
 }
 
 @media (max-width: 480px) {
-  .view-mode-toggle {
-    display: none;
-  }
   .sort-toggle {
     width: 100%;
   }
@@ -3197,10 +2499,6 @@
 }
 
 /* --- Bookmarks (card grid) ----------------------------------------------- */
-
-.bookmarks-header {
-  margin-bottom: var(--space-3);
-}
 
 /* Unified filter toolbar: folder chips + source/tag filters + search, all on
    one wrapping row under the page title. */
@@ -3384,13 +2682,6 @@
   }
 }
 
-/* Title + mobile edit-mode toggle on one line. */
-.bookmarks-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 /* Mobile edit-mode toggle: desktop keeps hover-revealed actions, so the
    button itself is meaningless there. */
 .bookmark-manage-toggle {
@@ -3399,21 +2690,6 @@
 .bookmark-manage-toggle--active {
   background: var(--surface-3);
   color: var(--text);
-}
-
-@media (max-width: 560px) {
-  /* Header stacking (title above controls) comes from the shared
-     .page-header--split rule at 640px � do NOT re-align to flex-start here,
-     or the full-width source-filter strip inside the controls row gets
-     shrink-wrapped and loses its swipe room. */
-  .bookmarks-header .sort-toggle {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .bookmarks-header .sort-toggle__option {
-    justify-content: center;
-  }
 }
 
 /* Grid layout (columns/gap) lives with the shared card grid in
@@ -3742,22 +3018,6 @@
 .drag-folder-overlay__name {
   word-break: break-word;
 }
-.drag-folder-overlay__cancel {
-  pointer-events: auto;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--text-soft);
-  font-size: var(--font-size-sm);
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-.drag-folder-overlay__cancel:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
 @keyframes drag-folder-overlay-fade {
   from {
     opacity: 0;
@@ -3902,11 +3162,6 @@
 /* The unused collapse/toast styles from the previous design are kept here as
    dead code-pending removal; they no longer have any JSX counterpart on the
    home page but are harmless if reintroduced. */
-.home-hero__cache-toggle,
-.home-hero__cache-actions,
-.home-hero__cache-toast {
-  display: none;
-}
 
 /* --- Cache settings page (/settings/cache) ------------------------------- */
 .cache-settings {
@@ -4698,58 +3953,6 @@
 }
 
 /* --- Tag index (collapsible raw view) --- */
-.cache-settings__tags-details {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  overflow: hidden;
-}
-.cache-settings__tags-summary {
-  padding: var(--space-3) var(--space-4);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  color: var(--text-dim);
-  font-weight: var(--font-weight-medium);
-  list-style: none;
-  user-select: none;
-}
-.cache-settings__tags-summary::-webkit-details-marker {
-  display: none;
-}
-.cache-settings__tags-summary::before {
-  content: '\25B8  ';
-  display: inline-block;
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-details[open] > .cache-settings__tags-summary::before {
-  content: '\25BE  ';
-}
-.cache-settings__tags-summary:hover {
-  color: var(--text);
-}
-.cache-settings__tags-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-.cache-settings__tags-subtitle {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-faint);
-  font-weight: var(--font-weight-semibold);
-}
-.cache-settings__tags-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
 .cache-settings__tag-list {
   list-style: none;
   padding: 0;

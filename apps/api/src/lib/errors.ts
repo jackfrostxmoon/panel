@@ -77,7 +77,3 @@ export class SourceError extends AppError {
     );
   }
 }
-
-export function httpStatusFor(code: ApiErrorCode): number {
-  return HTTP_STATUS_BY_CODE[code] ?? 500;
-}

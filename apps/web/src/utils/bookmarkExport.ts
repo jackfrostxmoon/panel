@@ -1,4 +1,4 @@
-import type { BackupExportScope, Bookmark } from '@panel/shared';
+import type { BackupExportScope } from '@panel/shared';
 
 /**
  * Bookmark backup as a .sql dump.
@@ -24,21 +24,6 @@ export interface BookmarkExportFile {
     source: string;
     sourceUrl: string;
   }>;
-}
-
-export function toExportFile(bookmarks: Bookmark[]): BookmarkExportFile {
-  return {
-    format: 'panel-viewer-bookmarks',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    bookmarks: bookmarks.map((b) => ({
-      panelId: b.panelId,
-      title: b.title,
-      coverUrl: b.coverUrl,
-      source: b.source,
-      sourceUrl: b.sourceUrl,
-    })),
-  };
 }
 
 /** True when the uploaded text looks like a .sql dump (not legacy JSON). */

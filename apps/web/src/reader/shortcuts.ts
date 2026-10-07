@@ -232,11 +232,6 @@ function swapReversiblePairs(clones: Shortcut[], prevId: string, nextId: string)
   next.keys = [...reversibleFromPrev, ...stickyNext];
 }
 
-/** Looks up a single shortcut by id (mainly for tests and integration). */
-export function getShortcut(id: string): Shortcut | undefined {
-  return SHORTCUTS.find((s) => s.id === id);
-}
-
 function cloneShortcut(shortcut: Shortcut): Shortcut {
   return {
     ...shortcut,

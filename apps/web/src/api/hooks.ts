@@ -45,7 +45,6 @@ import {
   type SourceBenchmarkResult,
   type ImageCacheSizeInfo,
   type ImageConcurrencyInfo,
-  type ImageCacheKindInfo,
   type ImageCacheClearResult,
   type ImageCacheLimitInfo,
   type ImageCacheTagSummary,
@@ -712,18 +711,6 @@ export function useSaveProgress() {
 /* Reading list (T1-5)                                                     */
 /* ---------------------------------------------------------------------- */
 
-export function useReadingList(
-  status?: 'want_to_read' | 'reading' | 'completed',
-  opts?: QueryOpts<ReadingListEntry[]>,
-) {
-  return useQuery<ReadingListEntry[], ApiClientError>({
-    queryKey: queryKeys.readingList(status),
-    queryFn: () => api.getReadingList(status),
-    staleTime: 60_000,
-    ...opts,
-  });
-}
-
 export function useReadingListByPanel(panelId: string, opts?: QueryOpts<ReadingListEntry | null>) {
   return useQuery<ReadingListEntry | null, ApiClientError>({
     queryKey: queryKeys.readingListByPanel(panelId),
@@ -1144,20 +1131,6 @@ export function useChaptersDiskState(
       ),
     enabled: requests.length > 0,
     staleTime: 15_000,
-  });
-}
-
-/**
- * Size of one provenance tag (file count + bytes). Used by the chapter
- * drill-in modal to show "this chapter is X MB / Y pages" before clear.
- * Fetched once per selection — the modal refetches as you drill.
- */
-export function useImageCacheTagSize(kind: 'cover' | 'chapter', tag: string | null) {
-  return useQuery<ImageCacheKindInfo, ApiClientError>({
-    queryKey: ['imageCache', 'tagSize', kind, tag],
-    queryFn: () => api.getImageCacheTagSize(kind, tag!),
-    enabled: Boolean(tag),
-    staleTime: 5_000,
   });
 }
 

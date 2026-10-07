@@ -7,7 +7,6 @@
 :root {
   /* Color: surfaces (cool charcoal with a slight blue bias) */
   --bg: #0e1014;
-  --bg-soft: #13161c;
   --surface: #171a21;
   --surface-2: #1e222b;
   --surface-3: #262b36;
@@ -28,7 +27,6 @@
   --accent-soft: rgba(229, 72, 77, 0.14);
   --accent-contrast: #ffffff;
   --success: #46a758;
-  --success-soft: rgba(70, 167, 88, 0.14);
   --warning: #f0b429;
   --danger: #e5484d;
   --info: #52a9ff;
@@ -57,7 +55,6 @@
   --font-size-lg: 1.1rem;
   --font-size-xl: 1.45rem;
   --font-size-2xl: 2rem;
-  --font-size-3xl: 2.6rem;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -105,7 +102,6 @@
 [data-theme='light'] {
   /* Surfaces: soft neutral paper with a slight cool bias */
   --bg: #f5f6f9;
-  --bg-soft: #edeff4;
   --surface: #ffffff;
   --surface-2: #f0f2f7;
   --surface-3: #e3e7ef;
@@ -119,7 +115,6 @@
 
   /* Brand + semantics keep their hues; soft tints rebalanced for light bg */
   --accent-soft: rgba(229, 72, 77, 0.12);
-  --success-soft: rgba(70, 167, 88, 0.14);
   --bookmark-single-soft: rgba(240, 180, 41, 0.16);
   --bookmark-multi-soft: rgba(177, 138, 255, 0.16);
 

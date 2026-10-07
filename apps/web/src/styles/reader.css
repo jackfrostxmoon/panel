@@ -72,10 +72,6 @@
   min-width: 0;
 }
 
-.reader-toolbar__group--center {
-  flex-shrink: 0;
-}
-
 .reader-toolbar__titles {
   display: flex;
   flex-direction: column;
@@ -100,15 +96,6 @@
   max-width: 34vw;
 }
 
-.reader-toolbar__counter {
-  font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-sm);
-  opacity: 0.85;
-  background: rgba(127, 127, 127, 0.16);
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-}
-
 .reader-toolbar__btn {
   display: inline-flex;
   align-items: center;
@@ -129,10 +116,6 @@
   .reader-toolbar__btn:hover {
     background: rgba(127, 127, 127, 0.2);
   }
-}
-
-.reader-toolbar__btn--disabled {
-  opacity: 0.3;
 }
 
 .reader-toolbar__btn--active {
@@ -325,22 +308,6 @@
 
 .reader-image__img--loaded {
   opacity: 1;
-}
-
-.reader-image__progress {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 120px;
-  height: auto;
-  opacity: 1;
-  transition: opacity var(--duration-med) var(--ease-out);
-}
-
-.reader-image__progress--hidden {
-  opacity: 0;
-  pointer-events: none;
 }
 
 .reader-image__error {
@@ -661,17 +628,6 @@
      the open animation. Scoped to the open state so a closed sidebar
      doesn't hold a permanent compositor layer. */
   will-change: transform;
-}
-
-/* ShortcutsDialog: floating card anchored under the toolbar (pop-up). */
-.reader-settings--popover {
-  position: fixed;
-  top: calc(var(--reader-toolbar-height) + var(--space-2));
-  right: var(--space-3);
-  z-index: 60;
-  width: min(336px, calc(100vw - 2 * var(--space-3)));
-  max-height: calc(100dvh - var(--reader-toolbar-height) - 2 * var(--space-3));
-  animation: page-in var(--duration-fast) var(--ease-out);
 }
 
 .reader-settings__header {
@@ -1291,45 +1247,6 @@
   width: 100%;
 }
 
-/* Auto-save status indicator (shared server save, shown in settings footer) */
-.reader-settings__save-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--font-size-xs);
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.reader-settings__save-state--saving::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  animation: save-state-pulse 1.2s ease-in-out infinite;
-}
-.reader-settings__save-state--saved::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success, #34a853);
-  flex-shrink: 0;
-}
-.reader-settings__save-state--error {
-  color: var(--danger, #e5484d);
-}
-.reader-settings__save-state--error::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--danger, #e5484d);
-  flex-shrink: 0;
-}
 @keyframes save-state-pulse {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 1; }

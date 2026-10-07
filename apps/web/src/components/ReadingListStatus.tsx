@@ -1,5 +1,5 @@
 import { useCallback, type ReactElement } from 'react';
-import type { ReadingListEntry, ReadingListStatus } from '@panel/shared';
+import type { ReadingListStatus } from '@panel/shared';
 import { IconBookOpen, IconCheckCircle, IconClipboard, IconX } from './icons';
 
 const STATUSES: ReadingListStatus[] = ['want_to_read', 'reading', 'completed'];
@@ -74,19 +74,5 @@ export function ReadingListStatusControl({
         </button>
       )}
     </div>
-  );
-}
-
-/** A small colored pill showing the current reading-list status. */
-export function ReadingListStatusPill({ entry }: { entry: ReadingListEntry | null }) {
-  if (!entry) return null;
-  return (
-    <span
-      className={`reading-list-pill reading-list-pill--${entry.status}`}
-      title={STATUS_LABEL[entry.status]}
-      aria-label={STATUS_LABEL[entry.status]}
-    >
-      {STATUS_ICON[entry.status]} {STATUS_LABEL[entry.status]}
-    </span>
   );
 }

@@ -65,24 +65,6 @@ export function IconEye({ size = 16, className, style }: IconProps) {
   );
 }
 
-export function IconPlus({ size = 16, className, style }: IconProps) {
-  return (
-    <svg {...base(size, className, style)}>
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-export function IconClock({ size = 16, className, style }: IconProps) {
-  return (
-    <svg {...base(size, className, style)}>
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" />
-    </svg>
-  );
-}
-
 export function IconChevronDown({ size = 16, className, style }: IconProps) {
   return (
     <svg {...base(size, className, style)}>
@@ -116,29 +98,11 @@ export function IconArrowLeft({ size = 16, className, style }: IconProps) {
   );
 }
 
-export function IconArrowUp({ size = 16, className, style }: IconProps) {
-  return (
-    <svg {...base(size, className, style)}>
-      <line x1="12" y1="19" x2="12" y2="5" />
-      <polyline points="5 12 12 5 19 12" />
-    </svg>
-  );
-}
-
 export function IconArrowRight({ size = 16, className, style }: IconProps) {
   return (
     <svg {...base(size, className, style)}>
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
-    </svg>
-  );
-}
-
-export function IconArrowDown({ size = 16, className, style }: IconProps) {
-  return (
-    <svg {...base(size, className, style)}>
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <polyline points="19 12 12 19 5 12" />
     </svg>
   );
 }

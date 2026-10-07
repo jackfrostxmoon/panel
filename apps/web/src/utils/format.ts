@@ -170,13 +170,6 @@ export const SOURCE_OPTIONS: SourceOption[] = Object.entries(SOURCE_LABELS).map(
 );
 
 /**
- * Source used whenever none is explicitly chosen. There is deliberately no
- * "all sources" mode for upstream queries — fanning one request out to every
- * site at once looks like bot traffic and gets rate-limited/blocked.
- */
-export const DEFAULT_SOURCE: string = SOURCE_OPTIONS[0]!.code;
-
-/**
  * Sources in the user's preferred order (the Sources page editor writes it
  * to `data/display/sources.json`). Unknown codes are ignored; known codes
  * missing from the list keep their canonical relative order at the end —

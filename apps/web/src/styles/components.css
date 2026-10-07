@@ -89,19 +89,6 @@
   margin-top: 2px;
 }
 
-/* Visually hidden utility for accessibility */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 .bookmark-btn {
   background: var(--surface-2);
   border-color: var(--border);
@@ -165,11 +152,6 @@ select:focus {
 
 input::placeholder {
   color: var(--text-faint);
-}
-
-.input--sm {
-  padding: 6px 12px;
-  font-size: var(--font-size-sm);
 }
 
 /* --- App shell ------------------------------------------------------------ */
@@ -1498,29 +1480,6 @@ input::placeholder {
 
 /* Calm indeterminate progress bar — the loader for full-screen loading states.
    A gradient bar with a glowing fill slides back and forth continuously. */
-.loader-bar {
-  position: relative;
-  width: 100%;
-  max-width: 320px;
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--surface-3);
-  overflow: hidden;
-}
-
-.loader-bar__fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 30%;
-  border-radius: var(--radius-full);
-  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
-  box-shadow:
-    0 0 8px var(--accent),
-    0 0 14px var(--accent);
-  animation: loader-shimmer 3s ease-in-out infinite;
-}
-
 @keyframes loader-shimmer {
   0% {
     left: -40%;
@@ -1537,27 +1496,6 @@ input::placeholder {
 }
 
 /* --- Loading GIF --------------------------------------------------------------- */
-
-.loading-gif {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1000;
-}
-
-.loading-gif--fullpage {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: var(--overlay);
-  backdrop-filter: blur(2px);
-}
 
 /* --- Dialog + toasts --------------------------------------------------------- */
 
@@ -2384,16 +2322,6 @@ input::placeholder {
 
 /* --- Bookmark type color coding ---------------------------------------------
    Gold star = bookmark a single chapter. Violet layers = batch bookmarks. */
-
-.btn--bookmark-single {
-  background: var(--bookmark-single);
-  border-color: var(--bookmark-single);
-  color: #241c04;
-}
-.btn--bookmark-single:hover:not(:disabled) {
-  background: #f7c65a;
-  border-color: #f7c65a;
-}
 
 .btn--bookmark-multi {
   background: var(--accent);

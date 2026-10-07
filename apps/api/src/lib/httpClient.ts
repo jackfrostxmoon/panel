@@ -225,10 +225,6 @@ export class SourceHttpClient {
     );
   }
 
-  isAllowedUrl(rawUrl: string): boolean {
-    return this.isAllowedUrlHost(rawUrl);
-  }
-
   /** Like isAllowedUrl but against the source's image-CDN host list. */
   isAllowedImageUrl(rawUrl: string): boolean {
     return this.isAllowedUrlHost(rawUrl, this.imageHosts);

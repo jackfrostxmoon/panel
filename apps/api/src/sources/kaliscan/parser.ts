@@ -346,34 +346,6 @@ export function parsePanelPage(html: string, sourceUrl: string, baseUrl: string)
   };
 }
 
-export function parseChapterList(html: string, baseUrl: string): RawChapterItem[] {
-  const root = parseHtml(html);
-  const chapters: RawChapterItem[] = [];
-
-  for (const link of root.querySelectorAll('.latest-chapters a, .chapter-list a')) {
-    const sourceUrl = absoluteUrl(link.getAttribute('href'), baseUrl);
-    const title = textOf(link);
-    if (!sourceUrl || !title) continue;
-
-    const ref = chapterRefFromUrl(sourceUrl);
-    if (!ref) continue;
-
-    const chapterNumber = chapterNumberFromToken(ref.token);
-
-    chapters.push({
-      nativeId: `${ref.panelId}~${ref.token}`,
-      panelNativeId: ref.panelId,
-      chapterToken: ref.token,
-      title,
-      chapterNumber,
-      sourceUrl,
-      publishedAt: null,
-    });
-  }
-
-  return chapters;
-}
-
 export function parseChapterListFromApi(html: string, baseUrl: string): ChapterListApiItem[] {
   const root = parseHtml(html);
   const chapters: ChapterListApiItem[] = [];
