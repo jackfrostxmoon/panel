@@ -1131,14 +1131,16 @@ export class ImageCache {
 
   private async persistSettings(): Promise<void> {
     await mkdir(dirname(this.settingsPath), { recursive: true });
+    const tmpPath = this.settingsPath + '.tmp';
     await writeFile(
-      this.settingsPath,
+      tmpPath,
       JSON.stringify(
         { maxBytes: this.customCapBytes, maxUpstreamConcurrency: this.customUpstreamConcurrency },
         null,
         2,
       ) + '\n',
     );
+    await rename(tmpPath, this.settingsPath);
   }
 
   private computeCap(): number {
