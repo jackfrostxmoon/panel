@@ -529,13 +529,20 @@ const [panelQuery, setPanelQuery] = useState('');
                 step={20}
                 value={thresholdInput}
                 onChange={(e) => setThresholdInput(e.target.value)}
-                onBlur={() => void saveThreshold()}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveThreshold(); } }}
                 className="cache-settings__limit-input"
                 style={{ width: '5rem', padding: '0.15rem 0.25rem', fontSize: '0.85rem' }}
                 aria-describedby="memory-threshold-meta"
               />
               <span id="memory-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => void saveThreshold()}
+                disabled={saveCacheSettings.isPending}
+                style={{ marginLeft: '0.25rem' }}
+              >
+                {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
+              </button>
             </span>
           )}
         </div>
