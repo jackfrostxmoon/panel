@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A production-quality, full-stack panel image viewer (Bun + Vite + React + Hono + PostgreSQL).",
+  "description": "A production-quality, full-stack panel image viewer (Bun + Vite + React + Hono + SQLite).",
   "workspaces": [
     "apps/*",
     "packages/*"
