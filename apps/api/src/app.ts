@@ -43,7 +43,6 @@ import { searchSettingsRoutes } from './routes/search-settings.js';
 import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
 import { cacheSettingsRoutes } from './routes/cache-settings.js';
 import { sourceOrderRoutes } from './routes/source-order.js';
-import { restartRoutes } from './routes/restart.js';
 import { memoryFlushRoutes } from './routes/memory-flush.js';
 import { ImageCache } from './lib/imageCache.js';
 import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
@@ -207,7 +206,6 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/source-order', sourceOrderRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));
   app.route('/api/memory-flush', memoryFlushRoutes(panelService, imageCache));
-  app.route('/api/restart', restartRoutes());
 
   return { app, prefetchWorker, panelService, imageCache };
 }
