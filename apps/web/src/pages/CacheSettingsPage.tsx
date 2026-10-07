@@ -107,14 +107,14 @@ export function CacheSettingsPage() {
 
   const reliefThresholdMb =
     saveCacheSettings.isPending && saveCacheSettings.variables
-      ? Math.max(50, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefThresholdMb || 20)))
-      : Math.max(50, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefThresholdMb || 20)));
+      ? Math.max(20, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefThresholdMb || 20)))
+      : Math.max(20, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefThresholdMb || 20)));
   const [thresholdInput, setThresholdInput] = useState<string>(String(reliefThresholdMb));
 
   async function saveThreshold() {
     const mb = Math.round(Number(thresholdInput) || 20);
-    if (!Number.isFinite(mb) || mb < 50 || mb > 20000) {
-      toast('Threshold must be between 50 MB and 20,000 MB.', 'error');
+    if (!Number.isFinite(mb) || mb < 20 || mb > 20000) {
+      toast('Threshold must be between 20 MB and 20,000 MB.', 'error');
       return;
     }
     try {
@@ -524,9 +524,9 @@ const [panelQuery, setPanelQuery] = useState('');
               <input
                 id="memory-threshold-mb"
                 type="number"
-                min={50}
+                min={20}
                 max={20000}
-                step={50}
+                step={20}
                 value={thresholdInput}
                 onChange={(e) => setThresholdInput(e.target.value)}
                 onBlur={() => void saveThreshold()}

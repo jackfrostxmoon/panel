@@ -140,7 +140,7 @@ const autoReliefTimer = setInterval(() => {
     const settings = loadCacheSettings();
     if (!settings.autoMemoryRelief) return;
     const mem = process.memoryUsage();
-    const thresholdMb = Math.max(50, Math.round(settings.autoMemoryReliefThresholdMb || 250));
+    const thresholdMb = Math.max(20, Math.round(settings.autoMemoryReliefThresholdMb || 20));
     const thresholdBytes = thresholdMb * 1024 * 1024;
     if (mem.heapUsed > thresholdBytes) {
       logger.info('Auto memory relief triggered', {
