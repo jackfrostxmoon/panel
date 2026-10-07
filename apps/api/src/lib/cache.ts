@@ -93,4 +93,8 @@ export class InFlight<V> {
     this.pending.set(key, promise);
     return promise;
   }
+
+  clear(): void {
+    this.pending.clear();
+  }
 }

@@ -150,6 +150,9 @@ const autoReliefTimer = setInterval(() => {
       });
       panelService.clearCache();
       imageCache.dropMemoryIndex();
+      if (typeof (globalThis as { Bun?: { gc?: () => void } }).Bun?.gc === 'function') {
+        (globalThis as { Bun: { gc: () => void } }).Bun.gc();
+      }
     }
   } catch {
     // Best-effort; never crash the server for a settings-file read error.

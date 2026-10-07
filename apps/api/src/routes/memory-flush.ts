@@ -26,6 +26,11 @@ export function memoryFlushRoutes(
       panelService.clearCache();
       imageCache.dropMemoryIndex();
 
+      // Force GC so freed ArrayBuffer images and index entries are reclaimed.
+      if (typeof (globalThis as { Bun?: { gc?: () => void } }).Bun?.gc === 'function') {
+        (globalThis as { Bun: { gc: () => void } }).Bun.gc();
+      }
+
       const after = process.memoryUsage();
       logger.info('Memory flush executed', {
         heapBeforeBytes: beforeHeap,

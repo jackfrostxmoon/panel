@@ -1481,5 +1481,10 @@ export class ImageCache {
     this.sizeInflight.clear();
     this.folderCache.clear();
     this.invalidateSizeMemo();
+    // Drop in-flight upstream fetch promises and queued waiters so the
+    // heap buffers (ArrayBuffer images) can be GC'd immediately.
+    this.inFlight.clear();
+    this.upstreamQueue.length = 0;
+    this.upstreamActive = 0;
   }
 }

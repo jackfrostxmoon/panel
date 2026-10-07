@@ -108,12 +108,13 @@ export class PanelService {
     );
   }
 
-  /** Flush the in-memory TTL cache and cancel any in-flight deduplicated requests. */
+  /** Flush the in-memory TTL cache, drop in-flight dedup state, and trigger GC. */
   clearCache(): void {
     this.cache.clear();
-    // In-flight promises complete naturally; clearing the cache means the
-    // next request will miss and load fresh (the in-flight result still writes
-    // to the now-empty cache, which is harmless).
+    this.inFlight.clear();
+    if (typeof (globalThis as { Bun?: { gc?: () => void } }).Bun?.gc === 'function') {
+      (globalThis as { Bun: { gc: () => void } }).Bun.gc();
+    }
   }
 
   /** Rough heap size of a cache value (JSON length — cheap, miss path only). */
