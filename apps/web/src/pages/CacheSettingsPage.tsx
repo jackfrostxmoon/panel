@@ -19,6 +19,7 @@ import {
   useImageCacheLimit,
   useSetImageCacheLimit,
   useFlushMemory,
+  useRestartServer,
   usePruneLegacyImageCache,
   useCachedChapterIds,
   useChapters,
@@ -104,6 +105,7 @@ export function CacheSettingsPage() {
   }
 
   const flushMemoryMutation = useFlushMemory();
+  const restartMutation = useRestartServer();
 
   const reliefThresholdMb =
     saveCacheSettings.isPending && saveCacheSettings.variables
@@ -738,6 +740,30 @@ const [panelQuery, setPanelQuery] = useState('');
                 </span>
                 <span className="cache-settings__action-meta">
                   {flushMemoryMutation.isPending ? 'Flushing…' : 'Free server RAM'}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="cache-settings__action cache-settings__action--danger"
+                disabled={restartMutation.isPending}
+                onClick={async () => {
+                  if (!window.confirm('Restart the server? This will drop the process footprint (free ~300+ MB RAM). Cached images stay on disk.')) return;
+                  toast('Restarting server — refresh the page in a few seconds.', 'info');
+                  try {
+                    await restartMutation.mutateAsync();
+                  } catch {
+                    // Expected: the server exits before the HTTP response completes.
+                  }
+                }}
+                aria-label="Restart the server to fully reclaim RAM"
+                title="Triggers graceful shutdown (SIGTERM) then exits. Use bun run dev / lan.bat to relaunch."
+              >
+                <span className="cache-settings__action-head">
+                  <span className="cache-settings__action-title">Restart server</span>
+                  <IconTrash size={16} aria-hidden="true" />
+                </span>
+                <span className="cache-settings__action-meta">
+                  {restartMutation.isPending ? 'Restarting…' : 'Full RAM reset (~300 MB)'}
                 </span>
               </button>
             </div>

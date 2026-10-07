@@ -364,6 +364,13 @@ export function useFlushMemory() {
   });
 }
 
+/** Graceful server restart (triggers SIGTERM). */
+export function useRestartServer() {
+  return useMutation<{ restarting: boolean; message: string }, ApiClientError, void>({
+    mutationFn: () => api.restartServer(),
+  });
+}
+
 /**
  * Source display order (`data/display/sources.json` on the server).
  * Canonical order by default — the Sources page editor writes here.
