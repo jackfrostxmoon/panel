@@ -36,7 +36,7 @@ export function saveCacheSettings(settings: CachePageSettings): CachePageSetting
   const clean: CachePageSettings = {
     liveRefresh: settings.liveRefresh === true,
     autoMemoryRelief: settings.autoMemoryRelief === true,
-    autoMemoryReliefThresholdMb: Math.max(50, Math.round(Number(settings.autoMemoryReliefThresholdMb) || 250)),
+    autoMemoryReliefThresholdMb: Math.max(50, Math.round(Number(settings.autoMemoryReliefThresholdMb) || 20)),
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

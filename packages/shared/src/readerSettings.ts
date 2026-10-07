@@ -127,15 +127,15 @@ export interface CachePageSettings {
   liveRefresh: boolean;
   /** When true, the server automatically flushes the in-memory TTL cache and image index when heap usage exceeds a threshold. */
   autoMemoryRelief: boolean;
-  /** Memory relief threshold in MB (default 250). Only used when autoMemoryRelief is true. */
+  /** Memory relief threshold in MB (default 20). Only used when autoMemoryRelief is true. */
   autoMemoryReliefThresholdMb: number;
 }
 
-/** Default: manual refresh only, no auto memory relief, 250 MB threshold. */
+/** Default: manual refresh only, no auto memory relief, 20 MB threshold. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
   autoMemoryRelief: false,
-  autoMemoryReliefThresholdMb: 250,
+  autoMemoryReliefThresholdMb: 20,
 };
 
 /**
