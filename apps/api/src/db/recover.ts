@@ -4,11 +4,12 @@ import { gunzipSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
-import { Database } from 'bun:sqlite';
+import { Database as BunDatabase } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { loadConfig } from '../config.js';
 import { logger } from '../lib/logger.js';
+import { openDatabase } from './client.js';
 
 /**
  * Recovery script for a wedged embedded database.
@@ -65,10 +66,10 @@ async function isApiAlive(port: number): Promise<boolean> {
 }
 
 async function probeOpen(dbFile: string): Promise<boolean> {
-  let client: Database | undefined;
+  let client: BunDatabase | undefined;
   try {
     // Read-only without create: a missing file fails instead of booting empty.
-    client = new Database(dbFile, { readonly: true });
+    client = new BunDatabase(dbFile, { readonly: true });
     client.query('select 1').get();
     return true;
   } catch {
@@ -227,10 +228,7 @@ async function main(): Promise<void> {
 
   // Rebuild: fresh file + migrations (same as `bun run db:migrate`).
   await mkdir(dirname(dbFile), { recursive: true });
-  const client = new Database(dbFile, { create: true });
-  client.run('PRAGMA journal_mode = WAL;');
-  client.run('PRAGMA busy_timeout = 5000;');
-  client.run('PRAGMA foreign_keys = ON;');
+  const client = openDatabase(dbFile);
   try {
     migrate(drizzle({ client }), { migrationsFolder });
     logger.info('Migrations applied successfully');

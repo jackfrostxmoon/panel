@@ -2,11 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { Database } from 'bun:sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { loadConfig } from '../config.js';
 import { logger } from '../lib/logger.js';
+import { openDatabase } from './client.js';
 
 /**
  * Read a dump file, transparently decompressing `.sql.gz` backups (the
@@ -237,10 +237,7 @@ async function main(): Promise<void> {
 
   // Ensure the parent directory exists on fresh clones.
   await mkdir(dirname(config.databaseUrl), { recursive: true });
-  const client = new Database(config.databaseUrl, { create: true });
-  client.run('PRAGMA journal_mode = WAL;');
-  client.run('PRAGMA busy_timeout = 5000;');
-  client.run('PRAGMA foreign_keys = ON;');
+  const client = openDatabase(config.databaseUrl);
   const db = drizzle({ client });
   try {
     migrate(db, { migrationsFolder });
