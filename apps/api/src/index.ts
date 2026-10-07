@@ -135,18 +135,18 @@ if (backupTimer !== undefined) {
 // growing unbounded after long browsing sessions.
 import { loadCacheSettings } from './lib/cacheSettingsFile.js';
 const AUTO_RELIEF_CHECK_MS = 30_000;
-const AUTO_RELIEF_HEAP_RATIO = 0.6;
 const autoReliefTimer = setInterval(() => {
   try {
     const settings = loadCacheSettings();
     if (!settings.autoMemoryRelief) return;
     const mem = process.memoryUsage();
-    const budget = Math.max(1024 * 1024, Math.floor(config.cache.maxBytes));
-    const threshold = budget * AUTO_RELIEF_HEAP_RATIO;
-    if (mem.heapUsed > threshold) {
+    const thresholdMb = Math.max(50, Math.round(settings.autoMemoryReliefThresholdMb || 250));
+    const thresholdBytes = thresholdMb * 1024 * 1024;
+    if (mem.heapUsed > thresholdBytes) {
       logger.info('Auto memory relief triggered', {
         heapUsedBytes: mem.heapUsed,
-        thresholdBytes: threshold,
+        thresholdBytes: thresholdBytes,
+        thresholdMb,
       });
       panelService.clearCache();
       imageCache.dropMemoryIndex();

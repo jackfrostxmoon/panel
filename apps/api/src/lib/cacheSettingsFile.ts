@@ -21,6 +21,10 @@ export function loadCacheSettings(): CachePageSettings {
         typeof parsed.autoMemoryRelief === 'boolean'
           ? parsed.autoMemoryRelief
           : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryRelief,
+      autoMemoryReliefThresholdMb:
+        typeof parsed.autoMemoryReliefThresholdMb === 'number' && !Number.isNaN(parsed.autoMemoryReliefThresholdMb)
+          ? parsed.autoMemoryReliefThresholdMb
+          : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryReliefThresholdMb,
     };
   } catch {
     return { ...DEFAULT_CACHE_PAGE_SETTINGS };
@@ -32,6 +36,7 @@ export function saveCacheSettings(settings: CachePageSettings): CachePageSetting
   const clean: CachePageSettings = {
     liveRefresh: settings.liveRefresh === true,
     autoMemoryRelief: settings.autoMemoryRelief === true,
+    autoMemoryReliefThresholdMb: Math.max(50, Math.round(Number(settings.autoMemoryReliefThresholdMb) || 250)),
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

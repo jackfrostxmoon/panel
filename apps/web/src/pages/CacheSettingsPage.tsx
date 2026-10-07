@@ -89,7 +89,7 @@ export function CacheSettingsPage() {
 
   function handleLiveToggle(next: boolean) {
     if (next === liveRefresh) return;
-    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief });
+    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb });
     if (next) refetchAllRef.current();
   }
 
@@ -100,10 +100,35 @@ export function CacheSettingsPage() {
 
   function handleAutoMemoryReliefToggle(next: boolean) {
     if (next === autoMemoryRelief) return;
-    saveCacheSettings.mutate({ liveRefresh: liveRefresh, autoMemoryRelief: next });
+    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb });
   }
 
   const flushMemoryMutation = useFlushMemory();
+
+  const reliefThresholdMb =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? Math.max(50, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefThresholdMb || 250)))
+      : Math.max(50, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefThresholdMb || 250)));
+  const [thresholdInput, setThresholdInput] = useState<string>(String(reliefThresholdMb));
+
+  async function saveThreshold() {
+    const mb = Math.round(Number(thresholdInput) || 250);
+    if (!Number.isFinite(mb) || mb < 50 || mb > 20000) {
+      toast('Threshold must be between 50 MB and 20,000 MB.', 'error');
+      return;
+    }
+    try {
+      await saveCacheSettings.mutateAsync({
+        liveRefresh,
+        autoMemoryRelief,
+        autoMemoryReliefThresholdMb: mb,
+      });
+      setThresholdInput(String(mb));
+      toast(`Memory relief threshold set to ${mb} MB.`, 'success');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not save threshold.', 'error');
+    }
+  }
 
   /**
    * Latest refetch-all closure for the live interval below. Kept in a ref
@@ -128,6 +153,10 @@ export function CacheSettingsPage() {
     const id = window.setInterval(() => refetchAllRef.current(), LIVE_REFRESH_MS);
     return () => window.clearInterval(id);
   }, [liveRefresh]);
+  useEffect(() => {
+    setThresholdInput(String(reliefThresholdMb));
+  }, [reliefThresholdMb]);
+
   const clearMutation = useClearImageCache();
   const clearByTagMutation = useClearImageCacheByTag();
   const clearRecentlyViewedMutation = useClearRecentlyViewed();
@@ -487,6 +516,28 @@ const [panelQuery, setPanelQuery] = useState('');
               size="sm"
             />
           </span>
+          {autoMemoryRelief && (
+            <span className="search-filters__switch" style={{ marginLeft: '1rem', alignItems: 'center', gap: '0.5rem' }}>
+              <label htmlFor="memory-threshold-mb" className="search-filters__label" style={{ fontSize: '0.85rem' }}>
+                Threshold
+              </label>
+              <input
+                id="memory-threshold-mb"
+                type="number"
+                min={50}
+                max={20000}
+                step={50}
+                value={thresholdInput}
+                onChange={(e) => setThresholdInput(e.target.value)}
+                onBlur={() => void saveThreshold()}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveThreshold(); } }}
+                className="cache-settings__limit-input"
+                style={{ width: '5rem', padding: '0.15rem 0.25rem', fontSize: '0.85rem' }}
+                aria-describedby="memory-threshold-meta"
+              />
+              <span id="memory-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
+            </span>
+          )}
         </div>
       </header>
 
