@@ -73,7 +73,7 @@ const registry = createSourceRegistry(config, {
   // instance over the same db is safe).
   findGenres: (ids) => panelCacheForSources.findGenresByGlobalIds(ids),
 });
-const { app, prefetchWorker } = createApp({ config, db, registry });
+const { app, prefetchWorker, panelService, imageCache } = createApp({ config, db, registry });
 
 // One-time, best-effort organization of pre-existing flat cache files
 // into per-panel folders (runs before the prefetch worker starts so no
@@ -128,6 +128,33 @@ if (backupTimer !== undefined) {
     scope: config.backupScope,
   });
 }
+
+// Auto memory relief: when enabled in cache settings, periodically check
+// heap usage and flush the in-memory TTL cache + image index if memory
+// pressure exceeds a threshold (60% of the byte budget). Keeps RAM from
+// growing unbounded after long browsing sessions.
+import { loadCacheSettings } from './lib/cacheSettingsFile.js';
+const AUTO_RELIEF_CHECK_MS = 30_000;
+const AUTO_RELIEF_HEAP_RATIO = 0.6;
+const autoReliefTimer = setInterval(() => {
+  try {
+    const settings = loadCacheSettings();
+    if (!settings.autoMemoryRelief) return;
+    const mem = process.memoryUsage();
+    const budget = Math.max(1024 * 1024, Math.floor(config.cache.maxBytes));
+    const threshold = budget * AUTO_RELIEF_HEAP_RATIO;
+    if (mem.heapUsed > threshold) {
+      logger.info('Auto memory relief triggered', {
+        heapUsedBytes: mem.heapUsed,
+        thresholdBytes: threshold,
+      });
+      panelService.clearCache();
+      imageCache.dropMemoryIndex();
+    }
+  } catch {
+    // Best-effort; never crash the server for a settings-file read error.
+  }
+}, AUTO_RELIEF_CHECK_MS);
 
 // Optional: serve the built web app (production / all-in-one Docker image).
 const here = dirname(fileURLToPath(import.meta.url));
@@ -222,6 +249,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   logger.info(`Received ${signal} — shutting down`);
   clearInterval(prefetchTimer);
+  clearInterval(autoReliefTimer);
   if (backupTimer !== undefined) clearInterval(backupTimer);
   await prefetchWorker.stop();
   if (config.backupDir) {

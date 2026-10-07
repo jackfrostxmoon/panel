@@ -348,6 +348,22 @@ export function useSaveCacheSettings() {
   });
 }
 
+/** Flush server memory (TTL cache + image index). */
+export function useFlushMemory() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { flushed: boolean; panelCacheCleared: boolean; imageIndexDropped: boolean; memoryBeforeBytes?: number; memoryAfterBytes?: number },
+    ApiClientError,
+    void
+  >({
+    mutationFn: () => api.flushMemory(),
+    onSuccess: () => {
+      // After a flush, refresh stats so the UI reflects the cleared state.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.imageCacheStats() });
+    },
+  });
+}
+
 /**
  * Source display order (`data/display/sources.json` on the server).
  * Canonical order by default — the Sources page editor writes here.

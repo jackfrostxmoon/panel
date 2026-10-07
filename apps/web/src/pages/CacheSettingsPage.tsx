@@ -18,6 +18,7 @@ import {
   useImageCacheStats,
   useImageCacheLimit,
   useSetImageCacheLimit,
+  useFlushMemory,
   usePruneLegacyImageCache,
   useCachedChapterIds,
   useChapters,
@@ -88,11 +89,21 @@ export function CacheSettingsPage() {
 
   function handleLiveToggle(next: boolean) {
     if (next === liveRefresh) return;
-    saveCacheSettings.mutate({ liveRefresh: next });
-    // Refresh immediately on opting in — otherwise the first poll lands
-    // a full interval later and the toggle feels dead.
+    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief });
     if (next) refetchAllRef.current();
   }
+
+  const autoMemoryRelief =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? (saveCacheSettings.variables.autoMemoryRelief ?? false)
+      : (cacheSettingsQuery.data?.autoMemoryRelief ?? false);
+
+  function handleAutoMemoryReliefToggle(next: boolean) {
+    if (next === autoMemoryRelief) return;
+    saveCacheSettings.mutate({ liveRefresh: liveRefresh, autoMemoryRelief: next });
+  }
+
+  const flushMemoryMutation = useFlushMemory();
 
   /**
    * Latest refetch-all closure for the live interval below. Kept in a ref
@@ -358,6 +369,21 @@ const [panelQuery, setPanelQuery] = useState('');
     }
   }
 
+  async function doFlushMemory() {
+    try {
+      const result = await flushMemoryMutation.mutateAsync();
+      const freed = result.memoryBeforeBytes && result.memoryAfterBytes
+        ? result.memoryBeforeBytes - result.memoryAfterBytes
+        : 0;
+      toast(
+        `Memory flushed (${formatBytes(result.memoryBeforeBytes ?? 0)} → ${formatBytes(result.memoryAfterBytes ?? 0)}). ${freed > 0 ? `Freed ~${formatBytes(Math.abs(freed))}.` : ''}`,
+        'success',
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not flush server memory.', 'error');
+    }
+  }
+
   async function doClearByTag(what: 'cover' | 'chapter' | 'both', tag: string, label: string) {
     try {
       const result = await clearByTagMutation.mutateAsync({ what, tag });
@@ -447,6 +473,17 @@ const [panelQuery, setPanelQuery] = useState('');
               checked={liveRefresh}
               onChange={handleLiveToggle}
               labelledBy="cache-live-refresh-label"
+              size="sm"
+            />
+          </span>
+          <span className="search-filters__switch" style={{ marginLeft: '1rem' }}>
+            <span className="search-filters__label" id="cache-auto-memory-label">
+              Auto memory relief
+            </span>
+            <Switch
+              checked={autoMemoryRelief}
+              onChange={handleAutoMemoryReliefToggle}
+              labelledBy="cache-auto-memory-label"
               size="sm"
             />
           </span>
@@ -627,6 +664,22 @@ const [panelQuery, setPanelQuery] = useState('');
                 </span>
                 <span className="cache-settings__action-meta">
                   {totalEntries.toLocaleString()} files · {formatBytes(total)}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="cache-settings__action"
+                disabled={flushMemoryMutation.isPending}
+                onClick={() => void doFlushMemory()}
+                aria-label="Flush server memory (in-memory cache and image index)"
+                title="Reset RAM usage by clearing the server's in-memory caches. Cached images on disk are kept."
+              >
+                <span className="cache-settings__action-head">
+                  <span className="cache-settings__action-title">Flush memory</span>
+                  <IconTrash size={16} aria-hidden="true" />
+                </span>
+                <span className="cache-settings__action-meta">
+                  {flushMemoryMutation.isPending ? 'Flushing…' : 'Free server RAM'}
                 </span>
               </button>
             </div>

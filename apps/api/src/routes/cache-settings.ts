@@ -12,14 +12,18 @@ export function cacheSettingsRoutes(): Hono {
 
   app.put('/', async (c) => {
     const body = (await c.req.json()) as unknown;
-    if (!body || typeof body !== 'object' || typeof (body as { liveRefresh?: unknown }).liveRefresh !== 'boolean') {
+    const bodyObj = body as { liveRefresh?: unknown; autoMemoryRelief?: unknown };
+    if (!body || typeof body !== 'object' || typeof bodyObj.liveRefresh !== 'boolean' || typeof bodyObj.autoMemoryRelief !== 'boolean') {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { liveRefresh: boolean }.',
+        'Request body must be { liveRefresh: boolean, autoMemoryRelief: boolean }.',
       );
     }
     return c.json(
-      ok(saveCacheSettings({ liveRefresh: (body as { liveRefresh: boolean }).liveRefresh })),
+      ok(saveCacheSettings({
+        liveRefresh: bodyObj.liveRefresh,
+        autoMemoryRelief: bodyObj.autoMemoryRelief,
+      })),
     );
   });
 

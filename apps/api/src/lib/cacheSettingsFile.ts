@@ -17,6 +17,10 @@ export function loadCacheSettings(): CachePageSettings {
         typeof parsed.liveRefresh === 'boolean'
           ? parsed.liveRefresh
           : DEFAULT_CACHE_PAGE_SETTINGS.liveRefresh,
+      autoMemoryRelief:
+        typeof parsed.autoMemoryRelief === 'boolean'
+          ? parsed.autoMemoryRelief
+          : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryRelief,
     };
   } catch {
     return { ...DEFAULT_CACHE_PAGE_SETTINGS };
@@ -25,7 +29,10 @@ export function loadCacheSettings(): CachePageSettings {
 
 /** Replace the stored cache-page settings (already validated by the route). */
 export function saveCacheSettings(settings: CachePageSettings): CachePageSettings {
-  const clean: CachePageSettings = { liveRefresh: settings.liveRefresh === true };
+  const clean: CachePageSettings = {
+    liveRefresh: settings.liveRefresh === true,
+    autoMemoryRelief: settings.autoMemoryRelief === true,
+  };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
   }

@@ -1470,4 +1470,16 @@ export class ImageCache {
       return info;
     }
   }
+
+  /** Drop in-memory indexes and memos without deleting on-disk files.
+   *  Used by the memory-relief flush to free heap without losing cached
+   *  images. The next read rebuilds the index lazily. */
+  dropMemoryIndex(): void {
+    this.indexStems = null;
+    this.legacyIndex = null;
+    this.sizeMemo.clear();
+    this.sizeInflight.clear();
+    this.folderCache.clear();
+    this.invalidateSizeMemo();
+  }
 }

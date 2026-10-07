@@ -125,11 +125,14 @@ export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
 export interface CachePageSettings {
   /** Poll cache stats/sizes in the background instead of manual refreshes. */
   liveRefresh: boolean;
+  /** When true, the server automatically flushes the in-memory TTL cache and image index when heap usage exceeds a threshold. */
+  autoMemoryRelief: boolean;
 }
 
-/** Default: manual refresh only. */
+/** Default: manual refresh only, no auto memory relief. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
+  autoMemoryRelief: false,
 };
 
 /**

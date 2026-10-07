@@ -43,6 +43,7 @@ import { searchSettingsRoutes } from './routes/search-settings.js';
 import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
 import { cacheSettingsRoutes } from './routes/cache-settings.js';
 import { sourceOrderRoutes } from './routes/source-order.js';
+import { memoryFlushRoutes } from './routes/memory-flush.js';
 import { ImageCache } from './lib/imageCache.js';
 import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
 import { PrefetchWorker } from './lib/prefetchWorker.js';
@@ -64,6 +65,8 @@ export interface BuiltApp {
    * apps simply ignore it.
    */
   prefetchWorker: PrefetchWorker;
+  panelService: PanelService;
+  imageCache: ImageCache;
 }
 
 /**
@@ -202,6 +205,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/cache-settings', cacheSettingsRoutes());
   app.route('/api/source-order', sourceOrderRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));
+  app.route('/api/memory-flush', memoryFlushRoutes(panelService, imageCache));
 
-  return { app, prefetchWorker };
+  return { app, prefetchWorker, panelService, imageCache };
 }

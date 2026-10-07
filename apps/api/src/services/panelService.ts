@@ -108,6 +108,14 @@ export class PanelService {
     );
   }
 
+  /** Flush the in-memory TTL cache and cancel any in-flight deduplicated requests. */
+  clearCache(): void {
+    this.cache.clear();
+    // In-flight promises complete naturally; clearing the cache means the
+    // next request will miss and load fresh (the in-flight result still writes
+    // to the now-empty cache, which is harmless).
+  }
+
   /** Rough heap size of a cache value (JSON length — cheap, miss path only). */
   private static sizeOf(value: unknown): number {
     try {

@@ -903,6 +903,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
+  /** Manual flush of the in-memory TTL cache and image index. */
+  flushMemory: () =>
+    request<{ flushed: boolean; panelCacheCleared: boolean; imageIndexDropped: boolean; memoryBeforeBytes?: number; memoryAfterBytes?: number }>('/api/memory-flush', { method: 'POST' }),
   /**
    * Source display order, persisted server-side as a JSON file
    * (`data/display/sources.json`) — survives cache clears and follows
