@@ -100,9 +100,22 @@ export class PanelService {
     private readonly cacheConfig: CacheConfig,
     private readonly panelCache: PanelCacheRepository,
   ) {
-    // Bounded so a long browse can't pin hundreds of MB of listing/page
-    // payloads in heap (see CACHE_MAX_ENTRIES).
-    this.cache = new TtlCache<unknown>(Math.max(16, Math.floor(cacheConfig.maxEntries)));
+    // Bounded by count AND bytes so a long browse can't pin hundreds of MB
+    // of listing/page payloads in heap (see CACHE_MAX_ENTRIES/BYTES).
+    this.cache = new TtlCache<unknown>(
+      Math.max(16, Math.floor(cacheConfig.maxEntries)),
+      Math.max(1024 * 1024, Math.floor(cacheConfig.maxBytes)),
+    );
+  }
+
+  /** Rough heap size of a cache value (JSON length — cheap, miss path only). */
+  private static sizeOf(value: unknown): number {
+    try {
+      const text = JSON.stringify(value);
+      return text ? text.length : 0;
+    } catch {
+      return 0;
+    }
   }
 
   private async cached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
@@ -114,7 +127,7 @@ export class PanelService {
     recordSourceCacheMiss();
     return (await this.inFlight.dedupe(key, async () => {
       const value = await loader();
-      this.cache.set(key, value, ttlMs);
+      this.cache.set(key, value, ttlMs, PanelService.sizeOf(value));
       return value;
     })) as T;
   }
@@ -381,7 +394,7 @@ export class PanelService {
       ...panel,
       genres: panel.genres.map((g) => cleanGenreLabel(g)).filter(Boolean),
     };
-    this.cache.set(`panel:${globalId}`, cleanedPanel, this.cacheConfig.panelMs);
+    this.cache.set(`panel:${globalId}`, cleanedPanel, this.cacheConfig.panelMs, PanelService.sizeOf(cleanedPanel));
     await this.panelCache
       .upsertPanel({
         source: cleanedPanel.source,
@@ -460,7 +473,7 @@ export class PanelService {
   private async refreshChapters(globalId: string): Promise<void> {
     const { source, nativeId } = this.registry.forGlobalId(globalId);
     const chapters = await source.getChapters(nativeId);
-    this.cache.set(`chapters:${globalId}`, chapters, this.cacheConfig.chaptersMs);
+    this.cache.set(`chapters:${globalId}`, chapters, this.cacheConfig.chaptersMs, PanelService.sizeOf(chapters));
     const panelRow = await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined);
     if (!panelRow) return;
     await this.panelCache
@@ -529,7 +542,7 @@ export class PanelService {
   private async refreshChapterPages(globalChapterId: string): Promise<void> {
     const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
     const pages = await source.getChapterPages(nativeId);
-    this.cache.set(`pages:${globalChapterId}`, pages, this.cacheConfig.pagesMs);
+    this.cache.set(`pages:${globalChapterId}`, pages, this.cacheConfig.pagesMs, PanelService.sizeOf(pages));
     const panelGlobalId = globalChapterId.slice(0, globalChapterId.lastIndexOf('~'));
     const panelRow = panelGlobalId
       ? await this.panelCache.findPanelByGlobalId(panelGlobalId).catch(() => undefined)
@@ -598,7 +611,7 @@ export class PanelService {
     }).then((result) => {
       // See GENRE_LIST_EMPTY_TTL_MS: revalidate empties quickly so a
       // transient outage doesn't blank the dropdown for a full day.
-      if (result.length === 0) this.cache.set(key, result, GENRE_LIST_EMPTY_TTL_MS);
+      if (result.length === 0) this.cache.set(key, result, GENRE_LIST_EMPTY_TTL_MS, PanelService.sizeOf(result));
       return result;
     });
   }

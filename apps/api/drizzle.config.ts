@@ -9,21 +9,20 @@ import { defineConfig } from 'drizzle-kit';
  *  - `bun run db:migrate`   → apply them (src/db/migrate.ts)
  *  - `bun run db:studio`    → open Drizzle Studio for inspection
  *
- * The database is PGlite (embedded PostgreSQL), so the dialect stays
- * `postgresql` with the `pglite` driver and the credentials are a local
- * folder path — resolved against the repo root, matching config.ts.
+ * The database is SQLite (embedded via `bun:sqlite`), so the dialect is
+ * `sqlite` and the credentials are a local file path — resolved against the
+ * repo root, matching config.ts. Generation is offline (schema → SQL only).
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dataDirInput = process.env.DATABASE_URL ?? 'data/pglite';
+const dataFileInput = process.env.DATABASE_URL ?? 'data/panel.db';
 
 export default defineConfig({
-  dialect: 'postgresql',
-  driver: 'pglite',
+  dialect: 'sqlite',
   schema: './src/db/schema.ts',
   out: '../../database/migrations',
   dbCredentials: {
-    url: isAbsolute(dataDirInput) ? dataDirInput : resolve(here, '..', '..', dataDirInput),
+    url: isAbsolute(dataFileInput) ? dataFileInput : resolve(here, '..', '..', dataFileInput),
   },
   verbose: true,
 });

@@ -20,24 +20,25 @@ import { PanelCacheRepository } from './repositories/panelCacheRepository.js';
  * (apps/web/dist — e.g. inside the all-in-one Docker image), it is served
  * as static files with an SPA fallback, so one container can serve both.
  *
- * The database is embedded (PGlite — PostgreSQL in-process): it lives in
- * a local directory (DATABASE_URL, e.g. `data/pglite`), created on first
- * start. No server, no Docker. If the directory can't be opened the
+ * The database is embedded (SQLite via Bun's built-in `bun:sqlite`): it lives in
+ * a single local file (DATABASE_URL, e.g. `data/panel.db`), created on first
+ * start. No server, no Docker. If the file can't be opened the
  * process exits with a helpful message instead of hanging.
  */
 
 const config = loadConfig();
 
 // Single-instance guard: refuse to boot while another API process holds
-// the embedded database (PGlite allows one opener — a second one risks
-// torn reads and WASM aborts instead of a clean refusal). Exits here when
-// taken; stale locks (dead owner) are adopted automatically.
+// the embedded database (SQLite allows concurrent readers, but a second
+// writer risks SQLITE_BUSY churn and torn backups instead of a clean
+// refusal). Exits here when taken; stale locks (dead owner) are adopted
+// automatically.
 const releaseInstanceLock = await acquireInstanceLock(config.databaseUrl, config.port);
 
 // Fail fast when the local database can't be opened (locked by another
-// process, missing permissions, or a corrupted data directory — e.g. an
-// unclean shutdown that tore the WAL). Without this guard a PGlite open
-// failure surfaces as an bare WASM abort and `bun --hot` just crash-loops
+// process, missing permissions, or a corrupted file — e.g. an
+// unclean shutdown that tore the WAL). Without this guard an open
+// failure surfaces as a bare driver error and `bun --hot` just crash-loops
 // with the API port never listening.
 let db: Awaited<ReturnType<typeof createDb>>;
 try {
@@ -45,23 +46,23 @@ try {
 } catch (error) {
   logger.error('Local database could not be opened', {
     error: error instanceof Error ? error.message : String(error),
-    databaseDir: config.databaseUrl,
+    databaseFile: config.databaseUrl,
   });
   logger.error(
-    'If another API process is running, stop it first (the embedded database allows a single opener). ' +
-      'If the directory is corrupted, back it up, delete it, then run `bun run db:migrate` + `bun run db:import`.',
+    'If another API process is running, stop it first (the embedded database allows a single writer). ' +
+      'If the file is corrupted, back it up, delete it, then run `bun run db:migrate` + `bun run db:import`.',
   );
   process.exit(1);
 }
 try {
-  await db.execute(sql`select 1`);
+  await db.run(sql`select 1`);
 } catch (error) {
   logger.error('Local database could not be opened', {
     error: error instanceof Error ? error.message : String(error),
-    databaseDir: config.databaseUrl,
+    databaseFile: config.databaseUrl,
   });
   logger.error(
-    'Check that DATABASE_URL points at a writable folder (default "data/pglite"), e.g. `bun run db:migrate`',
+    'Check that DATABASE_URL points at a writable file (default "data/panel.db"), e.g. `bun run db:migrate`',
   );
   process.exit(1);
 }

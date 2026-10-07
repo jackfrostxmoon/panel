@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
   chapters,
@@ -22,6 +22,16 @@ export interface ReadingListEntry {
 }
 
 /**
+ * Timestamps flowing through a CTE come back as raw driver values (integer
+ * ms) instead of mapped Dates — normalize at the boundary.
+ */
+function toDate(value: unknown, fallback: Date): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value);
+  return fallback;
+}
+
+/**
  * Reading-list repository (T1-5). One row per panel with a user-chosen
  * status; progress is joined from the progress table for the "continue"
  * affordance.
@@ -29,17 +39,28 @@ export interface ReadingListEntry {
 export class ReadingListRepository {
   constructor(private readonly db: Database) {}
 
-  /** Latest progress row per panel (DISTINCT ON is Postgres-specific). */
+  /** Latest progress row per panel (window function — SQLite has no DISTINCT ON). */
   private latestProgress() {
+    const ranked = this.db
+      .select({
+        panelId: readingProgress.panelId,
+        chapterId: readingProgress.chapterId,
+        updatedAt: readingProgress.updatedAt,
+        rn: sql<number>`row_number() over (partition by ${readingProgress.panelId} order by ${readingProgress.updatedAt} desc)`.as(
+          'rn',
+        ),
+      })
+      .from(readingProgress)
+      .as('ranked');
     return this.db.$with('latest_progress').as(
       this.db
-        .selectDistinctOn([readingProgress.panelId], {
-          panelId: readingProgress.panelId,
-          chapterId: readingProgress.chapterId,
-          updatedAt: readingProgress.updatedAt,
+        .select({
+          panelId: ranked.panelId,
+          chapterId: ranked.chapterId,
+          updatedAt: ranked.updatedAt,
         })
-        .from(readingProgress)
-        .orderBy(readingProgress.panelId, desc(readingProgress.updatedAt)),
+        .from(ranked)
+        .where(sql`"rn" = 1`),
     );
   }
 
@@ -73,7 +94,7 @@ export class ReadingListRepository {
               chapterId: row.chapterGlobalId,
               chapterGlobalId: row.chapterGlobalId,
               chapterTitle: row.chapterTitle,
-              updatedAt: row.progressUpdatedAt ?? new Date(0),
+              updatedAt: toDate(row.progressUpdatedAt, new Date(0)),
             }
           : null,
     }));

@@ -17,13 +17,14 @@ const boolFromString = (fallback: boolean) =>
 
 const envSchema = z.object({
   /**
-   * Local directory holding the PGlite (embedded PostgreSQL) data files.
+   * Local SQLite file holding the embedded database (Bun's built-in
+   * `bun:sqlite` — no server, no install).
    * Relative paths resolve against the repo root, so every entry point
-   * (`bun run dev`, `bun run db:migrate`, …) uses the same directory no
-   * matter which working directory it was launched from. The directory is
-   * created on first start; back it up or delete it like any folder.
+   * (`bun run dev`, `bun run db:migrate`, …) uses the same file no
+   * matter which working directory it was launched from. The parent
+   * directory is created on first start; back it up or delete it like any file.
    */
-  DATABASE_URL: z.string().default('data/pglite'),
+  DATABASE_URL: z.string().default('data/panel.db'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -85,6 +86,14 @@ const envSchema = z.object({
    */
   CACHE_MAX_ENTRIES: z.coerce.number().int().min(16).max(5000).default(200),
 
+  /**
+   * Bound on the in-memory source-response cache in bytes (PanelService
+   * TtlCache). Entries are sized by JSON length; the oldest entries are
+   * evicted past either this or CACHE_MAX_ENTRIES, so one huge chapter
+   * payload can't pin the heap.
+   */
+  CACHE_MAX_BYTES: z.coerce.number().int().min(1024 * 1024).max(1024 * 1024 * 1024).default(64 * 1024 * 1024),
+
   // On-disk cache for proxied cover / chapter images. Sized relative to the
   // host's available disk at runtime (see ImageCache.computeCap): we
   // use at most IMAGE_CACHE_MAX_FRACTION of currently-available space, clamped
@@ -120,7 +129,7 @@ const envSchema = z.object({
   SOURCE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
 
   /**
-   * Path to the `pg_dump` export used by `bun run db:import`. Relative paths
+   * Path to the COPY-block export used by `bun run db:import`. Relative paths
    * resolve against the repo root. The file is not committed, so set this in
    * your local `.env` (or pass it as the first CLI argument) to point at your
    * own export.
@@ -131,7 +140,7 @@ const envSchema = z.object({
    * Where the on-exit auto-backup is written (a folder, created on demand).
    * Relative paths resolve against the repo root. Defaults to `data/.backup`
    * next to the embedded database, so a single `data/` tree holds the live
-   * PGlite + every historical backup. Disabled entirely when empty.
+   * SQLite file + every historical backup. Disabled entirely when empty.
    */
   BACKUP_DIR: z.string().default('data/.backup'),
 
@@ -162,6 +171,7 @@ export interface CacheConfig {
   readonly chaptersMs: number;
   readonly pagesMs: number;
   readonly maxEntries: number;
+  readonly maxBytes: number;
 }
 
 /**
@@ -180,14 +190,14 @@ export interface ImageCacheConfig {
 
 export interface AppConfig {
   /**
-   * Absolute path of the local PGlite data directory (resolved from
-   * DATABASE_URL — see `resolveDatabaseDir`). This is a folder, not a
+   * Absolute path of the local SQLite database file (resolved from
+   * DATABASE_URL — see `resolveDatabaseFile`). This is a file, not a
    * connection string: the database is embedded and needs no server.
    */
   readonly databaseUrl: string;
   readonly port: number;
   /**
-   * Absolute path of the `pg_dump` export used by `bun run db:import`
+   * Absolute path of the COPY-block export used by `bun run db:import`
    * (resolved from DUMP_PATH — see `resolveRepoDir`).
    */
   readonly dumpPath: string;
@@ -255,17 +265,17 @@ export function resolveRepoDir(input: string): string {
 }
 
 /**
- * Resolve the DATABASE_URL value to an absolute local directory.
+ * Resolve the DATABASE_URL value to an absolute local file path.
  *
- * A leftover `postgres://…` value from the Docker era is rejected with
+ * A leftover `postgres://…` value from the PostgreSQL era is rejected with
  * a clear message instead of being misread as a relative path.
  */
-export function resolveDatabaseDir(input: string): string {
+export function resolveDatabaseFile(input: string): string {
   if (/^postgres(ql)?:\/\//i.test(input)) {
     throw new Error(
       'Invalid environment configuration:\n' +
         '  - DATABASE_URL: looks like a PostgreSQL connection string — this app now uses ' +
-        'an embedded local database. Set DATABASE_URL to a folder path instead, e.g. "data/pglite".',
+        'an embedded SQLite file. Set DATABASE_URL to a file path instead, e.g. "data/panel.db".',
     );
   }
   return resolveRepoDir(input);
@@ -301,7 +311,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     .filter(Boolean);
 
   return {
-    databaseUrl: resolveDatabaseDir(e.DATABASE_URL),
+    databaseUrl: resolveDatabaseFile(e.DATABASE_URL),
     dumpPath: resolveRepoDir(e.DUMP_PATH),
     backupDir: resolveRepoDir(e.BACKUP_DIR),
     backupScope: e.BACKUP_SCOPE,
@@ -441,6 +451,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       chaptersMs: e.CACHE_TTL_CHAPTERS_MS,
       pagesMs: e.CACHE_TTL_PAGES_MS,
       maxEntries: e.CACHE_MAX_ENTRIES,
+      maxBytes: e.CACHE_MAX_BYTES,
     },
     imageCache: {
       dir: resolveRepoDir(e.IMAGE_CACHE_DIR),

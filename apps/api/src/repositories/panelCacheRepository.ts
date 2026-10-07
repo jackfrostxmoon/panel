@@ -109,18 +109,32 @@ export class PanelCacheRepository {
    * Used by the detail background writer so a 500-chapter list doesn't pay
    * 1000 sequential round-trips + commits on (or behind) the request path.
    * Best-effort like the single-row form — callers swallow errors.
+   *
+   * NOTE: the bun-sqlite driver runs `db.transaction()` callbacks
+   * synchronously, so an async callback would commit before its queries run.
+   * The transaction is driven explicitly (BEGIN/COMMIT) around the awaited
+   * queries instead — safe on this single-threaded, single-writer process.
    */
   async upsertChapters(panelRowId: string, items: readonly UpsertChapterData[]): Promise<void> {
     if (items.length === 0) return;
-    await this.db.transaction(async (tx) => {
+    this.db.$client.exec('BEGIN');
+    try {
       for (const data of items) {
-        await this.upsertChapterWith(tx, panelRowId, data);
+        await this.upsertChapterWith(this.db, panelRowId, data);
       }
-    });
+      this.db.$client.exec('COMMIT');
+    } catch (error) {
+      try {
+        this.db.$client.exec('ROLLBACK');
+      } catch {
+        // Already rolled back / no transaction — surface the original error.
+      }
+      throw error;
+    }
   }
 
   private async upsertChapterWith(
-    db: Database | Parameters<Parameters<Database['transaction']>[0]>[0],
+    db: Database,
     panelRowId: string,
     data: UpsertChapterData,
   ): Promise<ChapterRow> {
@@ -430,10 +444,12 @@ export class PanelCacheRepository {
       .select()
       .from(listCache)
       .where(
-        eq(listCache.kind, kind) &&
-          eq(listCache.key, key) &&
-          eq(listCache.source, source) &&
+        and(
+          eq(listCache.kind, kind),
+          eq(listCache.key, key),
+          eq(listCache.source, source),
           eq(listCache.page, page),
+        ),
       )
       .limit(1);
     return row;

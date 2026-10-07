@@ -16,7 +16,7 @@ const exportQuerySchema = z.object({
 const MAX_DUMP_BYTES = 200_000_000;
 
 /**
- * Full-database backup as a pg_dump-compatible .sql dump.
+ * Full-database backup as a COPY-block .sql dump.
  *
  *   GET  /api/backup/export — raw `application/sql` download (NOT the JSON
  *          envelope: dumps are tens of MB, and JSON-escaping the payload

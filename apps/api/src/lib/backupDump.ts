@@ -1,9 +1,8 @@
-import { sql } from 'drizzle-orm';
 import type { BackupExportScope } from '@panel/shared';
 import type { Database } from '../db/client.js';
 
 /**
- * Full-database SQL dump in pg_dump COPY format, shared by the
+ * Full-database SQL dump in COPY-block format, shared by the
  * GET /api/backup/export route (and compatible with the `bun run db:import`
  * CLI, which parses the same COPY blocks).
  *
@@ -11,6 +10,11 @@ import type { Database } from '../db/client.js';
  * table; import parses those blocks back and INSERTs them with
  * ON CONFLICT DO NOTHING, so restoring the same file twice never duplicates
  * anything.
+ *
+ * The on-disk format is unchanged from the PostgreSQL era (`COPY
+ * public.<table> (...) FROM stdin;` + tab-separated `t`/`f` booleans, ISO
+ * dates, JSON text), so every file already sitting in `data/.backup`
+ * restores 1:1 on the new SQLite engine.
  */
 
 /** Tables in an order that satisfies every foreign key. */
@@ -42,6 +46,27 @@ const INT_COLUMNS = new Set([
 ]);
 const FLOAT_COLUMNS = new Set(['chapter_number']);
 const BOOL_COLUMNS = new Set(['has_more', 'is_default', 'only_missing']);
+/** Integer-millisecond timestamps (mapped to Date by the schema). */
+const DATE_COLUMNS = new Set([
+  'cached_at',
+  'created_at',
+  'updated_at',
+  'published_at',
+  'viewed_at',
+  'run_after',
+  'started_at',
+  'finished_at',
+]);
+/** JSON-text columns (stored as TEXT, exported verbatim). */
+const JSON_COLUMNS = new Set([
+  'alt_titles',
+  'authors',
+  'artists',
+  'genres',
+  'pages',
+  'results',
+  'failed',
+]);
 
 const BATCH_SIZE = 200;
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/;
@@ -76,8 +101,10 @@ async function collectReferencedIds(
   for (const table of tables) {
     if (!IDENTIFIER_RE.test(table) || !IDENTIFIER_RE.test(column)) continue;
     try {
-      const result = await db.execute(sql.raw(`SELECT "${column}" AS "id" FROM "${table}"`));
-      for (const row of result.rows as Record<string, unknown>[]) {
+      const rows = db.$client.query(`SELECT "${column}" AS "id" FROM "${table}"`).all() as Array<{
+        id: unknown;
+      }>;
+      for (const row of rows) {
         if (typeof row['id'] === 'string') ids.add(row['id']);
       }
     } catch {
@@ -87,7 +114,7 @@ async function collectReferencedIds(
   return ids;
 }
 
-/** Escape a text value for PostgreSQL COPY TEXT format. */
+/** Escape a text value for COPY TEXT format. */
 function escapeCopyField(value: string): string {
   let out = String();
   for (const ch of value) {
@@ -105,9 +132,19 @@ function escapeCopyField(value: string): string {
   return out;
 }
 
-/** Render one cell of a COPY data line. */
-function formatCopyValue(value: unknown): string {
+/**
+ * Render one driver-level cell as COPY text. Raw SQLite values: integers for
+ * timestamps (ms) and booleans (0/1), JSON text for json columns.
+ */
+function formatCopyValue(column: string, value: unknown): string {
   if (value === null || value === undefined) return '\\N';
+  if (DATE_COLUMNS.has(column) && typeof value === 'number') {
+    return escapeCopyField(new Date(value).toISOString());
+  }
+  if (BOOL_COLUMNS.has(column)) {
+    if (value === 1 || value === true) return 't';
+    if (value === 0 || value === false) return 'f';
+  }
   if (typeof value === 'boolean') return value ? 't' : 'f';
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '\\N';
   if (value instanceof Date) return escapeCopyField(value.toISOString());
@@ -116,7 +153,7 @@ function formatCopyValue(value: unknown): string {
 }
 
 /**
- * Dump every table as pg_dump-style COPY blocks. Empty tables are skipped
+ * Dump every table as COPY blocks. Empty tables are skipped
  * (the importer treats a missing block as zero rows).
  *
  * `minimal` exports bookmark data only: the cache tables (`chapter_pages`,
@@ -133,7 +170,7 @@ export async function buildSqlDump(
   const chunks: string[] = [
     '-- Panel Viewer database dump',
     `-- Exported at ${exportedAt}`,
-    '-- Format: PostgreSQL COPY blocks. Restore via the Bookmarks page Import',
+    '-- Format: COPY blocks. Restore via the Bookmarks page Import',
     '-- action (POST /api/backup/import) or `bun run db:import --force <file>`.',
   ];
   if (scope === 'minimal') {
@@ -145,10 +182,7 @@ export async function buildSqlDump(
   const keepChapterIds =
     scope === 'minimal' ? await collectReferencedIds(db, CHAPTER_REF_TABLES, 'chapter_id') : null;
   for (const table of BACKUP_TABLE_ORDER) {
-    const columnsResult = await db.execute<{ column_name: string }>(
-      sql`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${table} ORDER BY ordinal_position`,
-    );
-    const columns = columnsResult.rows.map((r) => r.column_name);
+    const columns = tableColumns(db, table);
     if (columns.length === 0) {
       tables[table] = 0;
       continue;
@@ -157,8 +191,14 @@ export async function buildSqlDump(
       tables[table] = 0;
       continue;
     }
-    const data = await db.execute(sql.raw(`SELECT * FROM "${table}"`));
-    let rows = data.rows as Record<string, unknown>[];
+    let rows: Record<string, unknown>[];
+    try {
+      rows = db.$client.query(`SELECT * FROM "${table}"`).all() as Record<string, unknown>[];
+    } catch {
+      // Missing table on an older database — treat as zero rows.
+      tables[table] = 0;
+      continue;
+    }
     if (scope === 'minimal' && table === 'panel' && keepPanelIds) {
       rows = rows.filter((row) => typeof row['id'] === 'string' && keepPanelIds.has(row['id']));
     } else if (scope === 'minimal' && table === 'chapters' && keepChapterIds) {
@@ -174,11 +214,24 @@ export async function buildSqlDump(
     if (rows.length === 0) continue;
     chunks.push(`COPY public.${table} (${columns.join(', ')}) FROM stdin;`);
     for (const row of rows) {
-      chunks.push(columns.map((c) => formatCopyValue(row[c])).join('\t'));
+      chunks.push(columns.map((c) => formatCopyValue(c, row[c])).join('\t'));
     }
     chunks.push('\\.');
   }
   return { dump: `${chunks.join('\n')}\n`, tables };
+}
+
+/** Ordered column names for a table (empty when the table doesn't exist). */
+function tableColumns(db: Database, table: string): string[] {
+  if (!IDENTIFIER_RE.test(table)) return [];
+  try {
+    const rows = db.$client
+      .query(`SELECT name FROM pragma_table_info("${table}") ORDER BY cid`)
+      .all() as Array<{ name: unknown }>;
+    return rows.map((r) => String(r.name));
+  } catch {
+    return [];
+  }
 }
 
 function unescapeCopyField(field: string): string | null {
@@ -210,6 +263,32 @@ function convertValue(column: string, value: string | null): string | number | b
   if (INT_COLUMNS.has(column)) return Number.parseInt(value, 10);
   if (FLOAT_COLUMNS.has(column)) return Number.parseFloat(value);
   if (BOOL_COLUMNS.has(column)) return value === 't';
+  return value;
+}
+
+/**
+ * Map a parsed COPY text value to its SQLite driver value: booleans → 0/1,
+ * ISO dates → integer milliseconds, JSON stays text (validated).
+ */
+function toDriverValue(
+  column: string,
+  value: string | number | boolean | null,
+): string | number | null {
+  if (value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (DATE_COLUMNS.has(column) && typeof value === 'string') {
+    const ms = Date.parse(value);
+    if (!Number.isFinite(ms)) throw new Error(`Invalid date value for column "${column}"`);
+    return ms;
+  }
+  if (JSON_COLUMNS.has(column) && typeof value === 'string') {
+    JSON.parse(value);
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Invalid numeric value for column "${column}"`);
+    return value;
+  }
   return value;
 }
 
@@ -250,17 +329,6 @@ function parseDump(text: string): Map<string, CopyBlock> {
   return blocks;
 }
 
-/** Render one INSERT literal (values arrive pre-validated from parseDump). */
-function toLiteral(column: string, value: string | number | boolean | null): string {
-  if (value === null) return 'NULL';
-  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error(`Invalid numeric value for column "${column}"`);
-    return String(value);
-  }
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
 /**
  * Restore a dump produced by buildSqlDump. Inserts run in FK-safe table
  * order with ON CONFLICT DO NOTHING, so re-importing is idempotent.
@@ -294,16 +362,18 @@ export async function restoreSqlDump(
     const colList = block.columns.map((c) => `"${c}"`).join(', ');
     for (let i = 0; i < block.rows.length; i += BATCH_SIZE) {
       const batch = block.rows.slice(i, i + BATCH_SIZE);
+      const params: Array<string | number | null> = [];
       const tuples = batch.map((row) => {
-        const literals = row.map((field, colIdx) => {
+        const placeholders = row.map((field, colIdx) => {
           const column = block.columns[colIdx]!;
-          return toLiteral(column, convertValue(column, unescapeCopyField(field)));
+          params.push(toDriverValue(column, convertValue(column, unescapeCopyField(field))));
+          return '?';
         });
-        return `(${literals.join(', ')})`;
+        return `(${placeholders.join(', ')})`;
       });
-      await db.execute(
-        sql.raw(`INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(', ')} ON CONFLICT DO NOTHING`),
-      );
+      db.$client
+        .query(`INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(', ')} ON CONFLICT DO NOTHING`)
+        .run(...params);
     }
     counts[table] = block.rows.length;
   }

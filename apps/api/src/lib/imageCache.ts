@@ -220,6 +220,8 @@ export class ImageCache {
    * through the recursive index until the cap evicts them.
    */
   private folderCache = new Map<string, ImageFolderInfo | null>();
+  /** Cap for folderCache — misses just recompute via the DB resolver. */
+  private static readonly MAX_FOLDER_CACHE_ENTRIES = 2000;
   /** Dirs already created on disk this process (skips repeat mkdirs). */
   private foldersEnsured = new Set<string>();
 
@@ -312,7 +314,13 @@ export class ImageCache {
       const chapterFolder = panelFolder ? validSegment(info.chapterFolder) : null;
       info = panelFolder || chapterFolder ? { panelFolder, chapterFolder } : null;
     }
+    this.folderCache.delete(tag);
     this.folderCache.set(tag, info);
+    while (this.folderCache.size > ImageCache.MAX_FOLDER_CACHE_ENTRIES) {
+      const oldest = this.folderCache.keys().next();
+      if (oldest.done) break;
+      this.folderCache.delete(oldest.value);
+    }
     return info;
   }
 

@@ -44,23 +44,46 @@ export interface LatestProgress {
   updatedAt: Date;
 }
 
+/**
+ * Timestamps flowing through a CTE/subquery come back as raw driver values
+ * (integer ms) instead of mapped Dates — normalize at the boundary.
+ */
+function toDate(value: unknown, fallback: Date): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value);
+  return fallback;
+}
+
 export class BookmarkRepository {
   constructor(private readonly db: Database) {}
 
   /**
-   * Latest progress row per panel (DISTINCT ON is Postgres-specific),
-   * shared by the flat list and the folder-contents batch lookup below.
+   * Latest progress row per panel, shared by the flat list and the
+   * folder-contents batch lookup below. Implemented with
+   * `row_number() OVER (PARTITION BY panel ...)` + `rn = 1` (SQLite has no
+   * `DISTINCT ON`) — one round-trip, same shape as before.
    */
   private latestProgressCte() {
+    const ranked = this.db
+      .select({
+        panelId: readingProgress.panelId,
+        chapterId: readingProgress.chapterId,
+        updatedAt: readingProgress.updatedAt,
+        rn: sql<number>`row_number() over (partition by ${readingProgress.panelId} order by ${readingProgress.updatedAt} desc)`.as(
+          'rn',
+        ),
+      })
+      .from(readingProgress)
+      .as('ranked');
     return this.db.$with('latest_progress').as(
       this.db
-        .selectDistinctOn([readingProgress.panelId], {
-          panelId: readingProgress.panelId,
-          chapterId: readingProgress.chapterId,
-          updatedAt: readingProgress.updatedAt,
+        .select({
+          panelId: ranked.panelId,
+          chapterId: ranked.chapterId,
+          updatedAt: ranked.updatedAt,
         })
-        .from(readingProgress)
-        .orderBy(readingProgress.panelId, desc(readingProgress.updatedAt)),
+        .from(ranked)
+        .where(sql`"rn" = 1`),
     );
   }
 
@@ -92,7 +115,7 @@ export class BookmarkRepository {
               chapterId: row.chapterGlobalId,
               chapterGlobalId: row.chapterGlobalId,
               chapterTitle: row.chapterTitle,
-              updatedAt: row.progressUpdatedAt ?? new Date(0),
+              updatedAt: toDate(row.progressUpdatedAt, new Date(0)),
             }
           : null,
     }));
@@ -126,7 +149,7 @@ export class BookmarkRepository {
         panelId: row.panelId,
         chapterId: row.chapterGlobalId,
         chapterTitle: row.chapterTitle,
-        updatedAt: row.updatedAt,
+        updatedAt: toDate(row.updatedAt, new Date(0)),
       });
     }
     return map;
@@ -141,21 +164,30 @@ export class BookmarkRepository {
     panelRowIds: string[],
   ): Promise<Map<string, { title: string; cachedAt: Date }>> {
     if (panelRowIds.length === 0) return new Map();
-    const rows = await this.db
-      .selectDistinctOn([chapters.panelId], {
+    // Newest chapter per panel (window function — SQLite has no DISTINCT ON).
+    // `desc nulls last` matches the old ordering for unnumbered chapters.
+    const ranked = this.db
+      .select({
         panelId: chapters.panelId,
         title: chapters.title,
         cachedAt: chapters.cachedAt,
+        rn: sql<number>`row_number() over (partition by ${chapters.panelId} order by ${chapters.chapterNumber} desc nulls last, ${chapters.cachedAt} desc)`.as(
+          'rn',
+        ),
       })
       .from(chapters)
       .where(inArray(chapters.panelId, panelRowIds))
-      .orderBy(
-        chapters.panelId,
-        sql`${chapters.chapterNumber} desc nulls last`,
-        desc(chapters.cachedAt),
-      );
+      .as('ranked');
+    const rows = await this.db
+      .select({
+        panelId: ranked.panelId,
+        title: ranked.title,
+        cachedAt: ranked.cachedAt,
+      })
+      .from(ranked)
+      .where(sql`"rn" = 1`);
     return new Map(
-      rows.map((row) => [row.panelId, { title: row.title, cachedAt: row.cachedAt }]),
+      rows.map((row) => [row.panelId, { title: row.title, cachedAt: toDate(row.cachedAt, new Date(0)) }]),
     );
   }
 

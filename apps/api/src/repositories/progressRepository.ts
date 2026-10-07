@@ -158,8 +158,8 @@ export class ProgressRepository {
     const rows = await this.db
       .select({
         globalId: panel.globalId,
-        total: sql<number>`count(distinct ${chapters.id})::int`,
-        read: sql<number>`count(distinct ${readingProgress.chapterId})::int`,
+        total: sql<number>`count(distinct ${chapters.id})`,
+        read: sql<number>`count(distinct ${readingProgress.chapterId})`,
       })
       .from(panel)
       .innerJoin(chapters, eq(chapters.panelId, panel.id))

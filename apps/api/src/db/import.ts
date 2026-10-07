@@ -2,10 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { PGlite } from '@electric-sql/pglite';
-import { migrate } from 'drizzle-orm/pglite/migrator';
-import { drizzle } from 'drizzle-orm/pglite';
-import { sql } from 'drizzle-orm';
+import { Database } from 'bun:sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { loadConfig } from '../config.js';
 import { logger } from '../lib/logger.js';
 
@@ -29,7 +28,7 @@ function readDumpFile(file: Awaited<ReturnType<typeof Bun.file>>): Promise<strin
 }
 
 /**
- * One-shot data import from a `pg_dump` export (COPY ... FROM stdin blocks).
+ * One-shot data import from a COPY-block export (COPY ... FROM stdin blocks).
  *
  * Usage:
  *   bun run db:import [path/to/export.sql] [--force]
@@ -37,15 +36,18 @@ function readDumpFile(file: Awaited<ReturnType<typeof Bun.file>>): Promise<strin
  *  - Applies migrations first (idempotent), then loads every COPY block in
  *    foreign-key-safe table order, in 500-row INSERT batches.
  *  - Aborts if the database already holds panel rows unless `--force` is
- *    passed (which wipes the local data directory and starts over).
+ *    passed (which deletes the local database file and starts over).
  *
  * The dump path resolves from the first CLI argument, then the DUMP_PATH
  * env var, then `panel_viewer_export.sql` at the repo root (see config).
  * Both plain `.sql` and gzip `.sql.gz` (the on-exit backup format) are
  * accepted — the gzip magic bytes are detected automatically.
  *
- * The dump format parsed here is PostgreSQL COPY TEXT: tab-separated fields,
+ * The dump format parsed here is COPY TEXT: tab-separated fields,
  * `\N` = NULL, backslash escapes (`\\`, `\t`, `\n`, `\r`, `\b`, `\f`).
+ * Files written by the PostgreSQL era (booleans `t`/`f`, ISO dates, JSON
+ * text) import 1:1 — this is also the pg → sqlite data migration path:
+ * point it at an old `data/.backup/*.sql.gz` with `--force`.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -63,6 +65,27 @@ const INT_COLUMNS = new Set([
 ]);
 const FLOAT_COLUMNS = new Set(['chapter_number']);
 const BOOL_COLUMNS = new Set(['has_more', 'is_default', 'only_missing']);
+/** Integer-millisecond timestamps (mapped to Date by the schema). */
+const DATE_COLUMNS = new Set([
+  'cached_at',
+  'created_at',
+  'updated_at',
+  'published_at',
+  'viewed_at',
+  'run_after',
+  'started_at',
+  'finished_at',
+]);
+/** JSON-text columns (stored as TEXT, validated on import). */
+const JSON_COLUMNS = new Set([
+  'alt_titles',
+  'authors',
+  'artists',
+  'genres',
+  'pages',
+  'results',
+  'failed',
+]);
 
 /** Tables in an order that satisfies every foreign key. */
 const TABLE_ORDER = [
@@ -115,6 +138,29 @@ function convertValue(column: string, value: string | null): string | number | b
   return value;
 }
 
+/** Map a parsed COPY text value to its SQLite driver value. */
+function toDriverValue(
+  column: string,
+  value: string | number | boolean | null,
+): string | number | null {
+  if (value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (DATE_COLUMNS.has(column) && typeof value === 'string') {
+    const ms = Date.parse(value);
+    if (!Number.isFinite(ms)) throw new Error(`Invalid date value for column "${column}"`);
+    return ms;
+  }
+  if (JSON_COLUMNS.has(column) && typeof value === 'string') {
+    JSON.parse(value);
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Invalid numeric value for column "${column}"`);
+    return value;
+  }
+  return value;
+}
+
 interface CopyBlock {
   table: string;
   columns: string[];
@@ -123,7 +169,7 @@ interface CopyBlock {
 
 function parseDump(text: string): Map<string, CopyBlock> {
   const blocks = new Map<string, CopyBlock>();
-  // pg_dump writes CRLF; strip a trailing \r so the COPY regex, the `\.`
+  // Dumps may use CRLF; strip a trailing \r so the COPY regex, the `\.`
   // terminator, and tab-split field values all see clean lines.
   const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
   let current: CopyBlock | null = null;
@@ -143,7 +189,7 @@ function parseDump(text: string): Map<string, CopyBlock> {
       const table = match[1];
       const cols = match[2];
       if (table === undefined || cols === undefined) continue;
-      // The drizzle bookkeeping schema travels with the dump but is owned
+      // The drizzle bookkeeping table travels with some dumps but is owned
       // by the migrator — never import it.
       if (table === '__drizzle_migrations') continue;
       current = { table, columns: cols.split(',').map((c) => c.trim()), rows: [] };
@@ -170,10 +216,13 @@ async function main(): Promise<void> {
   const dumpPath = cliPath ?? config.dumpPath;
 
   if (force) {
-    logger.info('Force flag set — wiping local database directory', {
-      databaseDir: config.databaseUrl,
+    logger.info('Force flag set — deleting local database file', {
+      databaseFile: config.databaseUrl,
     });
-    await rm(config.databaseUrl, { recursive: true, force: true });
+    // The database is a single file (+ WAL sidecars) — not a directory.
+    await rm(config.databaseUrl, { force: true });
+    await rm(`${config.databaseUrl}-wal`, { force: true });
+    await rm(`${config.databaseUrl}-shm`, { force: true });
   }
 
   const dumpFile = Bun.file(dumpPath);
@@ -186,18 +235,21 @@ async function main(): Promise<void> {
   const dump = await readDumpFile(dumpFile);
   const blocks = parseDump(dump);
 
-  // PGlite mkdirs non-recursively — ensure the full path on fresh clones.
-  await mkdir(config.databaseUrl, { recursive: true });
-  const client = await PGlite.create(config.databaseUrl);
+  // Ensure the parent directory exists on fresh clones.
+  await mkdir(dirname(config.databaseUrl), { recursive: true });
+  const client = new Database(config.databaseUrl, { create: true });
+  client.run('PRAGMA journal_mode = WAL;');
+  client.run('PRAGMA busy_timeout = 5000;');
+  client.run('PRAGMA foreign_keys = ON;');
   const db = drizzle({ client });
   try {
-    await migrate(db, { migrationsFolder });
+    migrate(db, { migrationsFolder });
 
-    const countResult = await db.execute<{ count: string }>(
-      sql`SELECT count(*)::text AS count FROM panel`,
-    );
-    const count = countResult.rows[0]?.count ?? '0';
-    if (Number(count) > 0 && !force) {
+    const countRow = client.query('SELECT count(*) AS count FROM panel').get() as {
+      count: number;
+    } | null;
+    const count = countRow?.count ?? 0;
+    if (count > 0 && !force) {
       logger.error(
         'Database already contains panel rows — refusing to import on top. ' +
           'Re-run with --force to wipe and re-import.',
@@ -218,15 +270,17 @@ async function main(): Promise<void> {
       const colList = block.columns.map((c) => `"${c}"`).join(', ');
       for (let i = 0; i < block.rows.length; i += BATCH_SIZE) {
         const batch = block.rows.slice(i, i + BATCH_SIZE);
-        const params: Array<string | number | boolean | null> = [];
+        const params: Array<string | number | null> = [];
         const tuples = batch.map((row) => {
           const placeholders = row.map((field, colIdx) => {
-            params.push(convertValue(block.columns[colIdx]!, unescapeCopyField(field)));
-            return `$${params.length}`;
+            params.push(
+              toDriverValue(block.columns[colIdx]!, convertValue(block.columns[colIdx]!, unescapeCopyField(field))),
+            );
+            return '?';
           });
           return `(${placeholders.join(', ')})`;
         });
-        await client.query(`INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(', ')}`, params);
+        client.query(`INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(', ')}`).run(...params);
       }
       summary.push({ table, rows: block.rows.length });
       logger.info('Imported table', { table, rows: block.rows.length });
@@ -242,7 +296,7 @@ async function main(): Promise<void> {
       totalRows: summary.reduce((n, s) => n + s.rows, 0),
     });
   } finally {
-    await client.close();
+    client.close();
   }
 }
 

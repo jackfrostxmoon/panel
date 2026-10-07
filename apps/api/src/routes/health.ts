@@ -188,7 +188,7 @@ export function healthRoutes(
   app.get('/health', async (c) => {
     let database: 'up' | 'down' = 'up';
     try {
-      await db.execute(sql`SELECT 1`);
+      await db.run(sql`SELECT 1`);
     } catch {
       database = 'down';
     }
@@ -218,21 +218,16 @@ export function healthRoutes(
     let dbLatencyMs: number | null = null;
     let poolActive: number | null = null;
     try {
-      await db.execute(sql`SELECT 1`);
+      await db.run(sql`SELECT 1`);
       dbLatencyMs = Date.now() - dbStartedAt;
     } catch {
       database = 'down';
     }
     if (database === 'up') {
-      try {
-        const result = await db.execute<{ count: string }>(
-          sql`SELECT count(*)::text AS count FROM pg_stat_activity WHERE state = 'active' AND pid <> pg_backend_pid()`,
-        );
-        const first = result.rows[0];
-        poolActive = first ? Number(first.count) : null;
-      } catch {
-        poolActive = null; // Diagnostics only — never fail the endpoint on this.
-      }
+      // No connection pool on the embedded SQLite database (single local
+      // file, one writer) — active-connection diagnostics don't apply.
+      // Diagnostics only — never fail the endpoint on this.
+      poolActive = null;
     }
 
     // In-memory source TTL cache hit rate.

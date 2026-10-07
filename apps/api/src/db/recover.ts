@@ -3,10 +3,10 @@ import { cp, mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
-import { drizzle } from 'drizzle-orm/pglite';
-import { migrate } from 'drizzle-orm/pglite/migrator';
-import { PGlite } from '@electric-sql/pglite';
+import { basename, dirname, join, resolve } from 'node:path';
+import { Database } from 'bun:sqlite';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { loadConfig } from '../config.js';
 import { logger } from '../lib/logger.js';
 
@@ -14,27 +14,26 @@ import { logger } from '../lib/logger.js';
  * Recovery script for a wedged embedded database.
  *
  * Symptom: `bun run dev` fails with
- *   "Local database could not be opened ... Aborted(). Build with -sASSERTIONS ..."
- * pointing at `data/pglite`. PGlite (embedded PostgreSQL) allows a single
- * opener and aborts on a stale lock or torn WAL after an unclean shutdown
- * (killed `bun --hot`, power loss, ...).
+ *   "Local database could not be opened ..." pointing at `data/panel.db`
+ * (SQLite file with a torn WAL after an unclean shutdown — killed
+ * `bun --hot`, power loss, ...).
  *
  * Usage:
  *   bun run db:recover           # reset only if the database fails to open
  *   bun run db:recover --force   # reset even if the database opens fine
- *   bun run db:recover [dump]    # reset, then import this pg_dump export
+ *   bun run db:recover [dump]    # reset, then import this COPY-block export
  *                                # (without it: DUMP_PATH when the file exists,
  *                                # otherwise the newest non-empty backup in
  *                                # the backup dir — empty test-boot dumps skipped)
  *
  * What it does:
- *   1. Refuses while the API is reachable (stop `bun run dev` first — the
- *      embedded database allows a single opener).
- *   2. Probes the database (`PGlite.create` + `select 1`). Healthy and no
+ *   1. Refuses while the API is reachable (stop `bun run dev` first —
+ *      rebuilding underneath a live process would corrupt it again).
+ *   2. Probes the database (open + `select 1`). Healthy and no
  *      `--force` → nothing to do, exit 0.
- *   3. Renames the wedged directory to `data/pglite-corrupt-YYYYMMDD-HHMMSS`
+ *   3. Renames the wedged file to `<name>-corrupt-YYYYMMDD-HHMMSS`
  *      (a backup — your data is never deleted outright).
- *   4. Recreates the directory, applies migrations (`database/migrations`).
+ *   4. Recreates the file, applies migrations (`database/migrations`).
  *   5. Restores data: CLI dump, else DUMP_PATH, else the newest backup in
  *      the backup dir that actually holds rows (fresh library if none).
  *   6. Re-opens the database and runs `select 1` to prove it works.
@@ -65,18 +64,21 @@ async function isApiAlive(port: number): Promise<boolean> {
   }
 }
 
-async function probeOpen(dataDir: string): Promise<boolean> {
-  let client: PGlite | undefined;
+async function probeOpen(dbFile: string): Promise<boolean> {
+  let client: Database | undefined;
   try {
-    client = await PGlite.create(dataDir);
-    await client.query('select 1');
+    // Read-only without create: a missing file fails instead of booting empty.
+    client = new Database(dbFile, { readonly: true });
+    client.query('select 1').get();
     return true;
   } catch {
     return false;
   } finally {
-    // create() either throws (nothing to close) or hands back an open
-    // client — never leave a second opener behind.
-    await client?.close().catch(() => undefined);
+    try {
+      client?.close();
+    } catch {
+      // Already closed.
+    }
   }
 }
 
@@ -138,22 +140,21 @@ async function main(): Promise<void> {
   const cliDumpPath = args.find((a) => !a.startsWith('--'));
 
   const config = loadConfig();
-  const dataDir = config.databaseUrl;
+  const dbFile = config.databaseUrl;
 
   if (await isApiAlive(config.port)) {
     logger.error('API is still running — stop `bun run dev` first', {
       port: config.port,
     });
     logger.error(
-      'The embedded database allows a single opener; resetting underneath ' +
-        'a live process would corrupt it again.',
+      'Rebuilding underneath a live process would corrupt the database again.',
     );
     process.exit(1);
   }
 
-  if (existsSync(dataDir)) {
-    logger.info('Probing local database', { databaseDir: dataDir });
-    if (await probeOpen(dataDir)) {
+  if (existsSync(dbFile)) {
+    logger.info('Probing local database', { databaseFile: dbFile });
+    if (await probeOpen(dbFile)) {
       if (!force) {
         logger.info('Database opens fine — nothing to recover (pass --force to reset anyway)');
         return;
@@ -161,73 +162,80 @@ async function main(): Promise<void> {
       logger.info('Database opens fine, but --force was passed — resetting anyway');
     } else {
       logger.error('Database failed to open — will back up and rebuild', {
-        databaseDir: dataDir,
+        databaseFile: dbFile,
       });
     }
   } else {
-    logger.info('No database directory yet — will create it', { databaseDir: dataDir });
+    logger.info('No database file yet — will create it', { databaseFile: dbFile });
   }
 
   // Backup: rename (fast, atomic on one volume) so nothing is ever deleted
   // outright. Suffix with -N on the (unlikely) timestamp collision. The
   // rename is retried — on Windows a transient lock (antivirus/indexer
-  // scanning the just-written postmaster.pid) can EPERM the first attempt.
-  let backupDir = join(dirname(dataDir), `pglite-corrupt-${timestamp()}`);
-  if (existsSync(dataDir)) {
-    let candidate = backupDir;
-    for (let n = 2; existsSync(candidate); n++) candidate = `${backupDir}-${n}`;
-    backupDir = candidate;
-    let renamed = false;
+  // scanning the just-written WAL) can EPERM the first attempt.
+  const base = basename(dbFile);
+  let asidePath = join(dirname(dbFile), `${base}-corrupt-${timestamp()}`);
+  if (existsSync(dbFile)) {
+    let candidate = asidePath;
+    for (let n = 2; existsSync(candidate); n++) candidate = `${asidePath}-${n}`;
+    asidePath = candidate;
+    let moved = false;
     let lastError: unknown;
-    for (let attempt = 1; attempt <= 5 && !renamed; attempt++) {
+    for (let attempt = 1; attempt <= 5 && !moved; attempt++) {
       try {
-        await rename(dataDir, backupDir);
-        renamed = true;
+        await rename(dbFile, asidePath);
+        moved = true;
       } catch (error) {
         lastError = error;
         if (attempt < 5) await new Promise((r) => setTimeout(r, 500 * attempt));
       }
     }
-    if (!renamed) {
+    if (!moved) {
       // Node's rename can EPERM while a plain move succeeds (transient
-      // antivirus/indexer lock on the just-written postmaster.pid). Fall
-      // back to copy + delete before giving up.
+      // antivirus/indexer lock on the just-written WAL). Fall back to
+      // copy + delete before giving up.
       logger.info('Rename blocked — falling back to copy + delete', {
-        from: dataDir,
-        to: backupDir,
+        from: dbFile,
+        to: asidePath,
       });
       try {
-        await cp(dataDir, backupDir, { recursive: true });
-        await rm(dataDir, { recursive: true, force: true });
-        if (existsSync(dataDir)) throw new Error('directory still present after delete');
-        renamed = true;
+        await cp(dbFile, asidePath, { recursive: true });
+        await rm(dbFile, { force: true });
+        if (existsSync(dbFile)) throw new Error('file still present after delete');
+        moved = true;
       } catch (copyError) {
         lastError = copyError;
       }
     }
-    if (!renamed) {
+    if (!moved) {
       logger.error('Could not move the wedged database aside', {
-        from: dataDir,
-        to: backupDir,
+        from: dbFile,
+        to: asidePath,
         error: lastError instanceof Error ? lastError.message : String(lastError),
       });
       logger.error(
-        'Something still holds the folder open: stop `bun run dev`, kill any ' +
+        'Something still holds the file open: stop `bun run dev`, kill any ' +
           'stale bun.exe, then re-run `bun run db:recover`.',
       );
       process.exit(1);
     }
-    logger.info('Backed up wedged database', { from: dataDir, to: backupDir });
+    // Leave no stale WAL sidecars behind for the fresh file.
+    await rm(`${dbFile}-wal`, { force: true });
+    await rm(`${dbFile}-shm`, { force: true });
+    logger.info('Backed up wedged database', { from: dbFile, to: asidePath });
   }
 
-  // Rebuild: fresh directory + migrations (same as `bun run db:migrate`).
-  await mkdir(dataDir, { recursive: true });
-  const client = await PGlite.create(dataDir);
+  // Rebuild: fresh file + migrations (same as `bun run db:migrate`).
+  await mkdir(dirname(dbFile), { recursive: true });
+  const client = new Database(dbFile, { create: true });
+  client.run('PRAGMA journal_mode = WAL;');
+  client.run('PRAGMA busy_timeout = 5000;');
+  client.run('PRAGMA foreign_keys = ON;');
   try {
-    await migrate(drizzle({ client }), { migrationsFolder });
+    migrate(drizzle({ client }), { migrationsFolder });
     logger.info('Migrations applied successfully');
   } finally {
-    await client.close();
+    client.close();
   }
 
   // Restore: CLI dump wins, then DUMP_PATH, then the newest backup that
@@ -254,7 +262,7 @@ async function main(): Promise<void> {
     if (result.status !== 0) {
       logger.error('Import failed — database is migrated but empty', {
         dumpPath,
-        backupDir: existsSync(backupDir) ? backupDir : undefined,
+        backupFile: existsSync(asidePath) ? asidePath : undefined,
       });
       process.exit(1);
     }
@@ -263,16 +271,16 @@ async function main(): Promise<void> {
   }
 
   // Verify: the exact operation that was failing must now succeed.
-  if (!(await probeOpen(dataDir))) {
+  if (!(await probeOpen(dbFile))) {
     logger.error('Recovery failed — rebuilt database still does not open', {
-      databaseDir: dataDir,
-      backupDir: existsSync(backupDir) ? backupDir : undefined,
+      databaseFile: dbFile,
+      backupFile: existsSync(asidePath) ? asidePath : undefined,
     });
     process.exit(1);
   }
   logger.info('Recovery complete — database opens. Run `bun run dev` to start.', {
-    databaseDir: dataDir,
-    backupDir: existsSync(backupDir) ? backupDir : undefined,
+    databaseFile: dbFile,
+    backupFile: existsSync(asidePath) ? asidePath : undefined,
   });
 }
 

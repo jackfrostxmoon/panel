@@ -7,12 +7,12 @@ import { buildSqlDump } from '../lib/backupDump.js';
 import type { Database } from './client.js';
 
 /**
- * Auto-backup: writes a SQL dump (pg_dump COPY-block format) to a
+ * Auto-backup: writes a SQL dump (COPY-block format) to a
  * timestamped, gzip-compressed `.sql.gz` in `backupDir`. Written on every
  * clean shutdown and, while the server runs, every BACKUP_INTERVAL_MS
  * (see the periodic timer in `index.ts`).
  *
- * Why SQL and not the raw PGlite data dir? The app already produces and
+ * Why SQL and not the raw database file? The app already produces and
  * round-trips this exact format — `buildSqlDump` here, `restoreSqlDump` in
  * the Bookmarks page Import action, and the `bun run db:import` CLI all
  * share the same COPY-block parser. A backup in that format is therefore

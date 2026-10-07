@@ -3,9 +3,9 @@
 A production-quality, full-stack panel image viewer. Browse and search panel from an
 external source, read chapters in a polished reader (vertical scroll or page-by-page),
 bookmark titles, and resume where you left off — with bookmarks and reading progress
-persisted in PostgreSQL.
+persisted in SQLite.
 
-![Stack](https://img.shields.io/badge/Bun-1.4.1-black) ![TS](https://img.shields.io/badge/TypeScript-7.0.2-blue) ![Vite](https://img.shields.io/badge/Vite-8.2.1-purple) ![Postgres](https://img.shields.io/badge/PostgreSQL-17-blue)
+![Stack](https://img.shields.io/badge/Bun-1.4.1-black) ![TS](https://img.shields.io/badge/TypeScript-7.0.2-blue) ![Vite](https://img.shields.io/badge/Vite-8.2.1-purple) ![SQLite](https://img.shields.io/badge/SQLite-bun:sqlite-green)
 
 ---
 
@@ -47,7 +47,7 @@ server, no system services — the database is embedded and lives in `data/`.
 
 ```bash
 bun install           # install workspace dependencies
-bun run db:migrate    # create the local database in data/pglite/
+bun run db:migrate    # create the local database file data/panel.db
 bun run db:import     # load your data from manga_viewer_export.sql (optional)
 bun run dev           # API (:3001) + Vite (:5173)
 ```
@@ -56,7 +56,7 @@ Then open **http://localhost:5173**. All data (database + cached images) lives
 under `data/` — back it up or delete it like any folder. To reset everything:
 
 ```bash
-rm -rf data/pglite && bun run db:migrate && bun run db:import
+rm data/panel.db && bun run db:migrate && bun run db:import
 ```
 
 ### LAN access with a bare IP (no port, Bun only)
@@ -91,7 +91,7 @@ network (same Wi-Fi).
 
 ### Docker (optional)
 
-The repo previously shipped `docker-compose.yml` + `Dockerfile` (PostgreSQL + all-in-one
+The repo previously shipped `docker-compose.yml` + `Dockerfile` (database + all-in-one
 image) as an alternative deployment path, but local development no longer needs it.
 Those files have been removed from this checkout — they were backed up before deletion.
 
@@ -108,7 +108,7 @@ Those scripts have been removed from this checkout — they were backed up befor
 # 1. Install dependencies (Bun workspaces)
 bun install
 
-# 2. Create the local database (embedded PGlite in data/pglite/) + load data
+# 2. Create the local database (embedded SQLite file data/panel.db) + load data
 bun run db:migrate
 bun run db:import     # from manga_viewer_export.sql; skip for an empty library
 
@@ -118,22 +118,22 @@ bun run dev
 
 ### Database (embedded — no Docker, no install)
 
-The database is PGlite: real PostgreSQL compiled to WebAssembly, running
-inside the API process. Data lives in a plain local folder (`DATABASE_URL`,
-default `data/pglite/`), created on first start. If the folder can't be
-opened, the API process exits with a clear error message instead of hanging.
+The database is SQLite via Bun's built-in `bun:sqlite` — no server, no install.
+Data lives in a single local file (`DATABASE_URL`, default `data/panel.db`),
+created on first start. If the file can't be opened, the API process exits
+with a clear error message instead of hanging.
 
 ```bash
 bun run db:migrate           # apply migrations (run once after cloning)
 bun run db:import            # load manga_viewer_export.sql into the local DB
-bun run db:import -- --force # wipe data/pglite and re-import from scratch
+bun run db:import -- --force # wipe data/panel.db and re-import from scratch
 bun run db:studio            # Drizzle Studio — visual DB browser
 ```
 
 Reset everything (destroys local data):
 
 ```bash
-rm -rf data/pglite && bun run db:migrate && bun run db:import
+rm data/panel.db && bun run db:migrate && bun run db:import
 ```
 
 Open **http://localhost:5173** (the Vite dev server proxies `/api` to the API).
@@ -171,7 +171,7 @@ All requested versions were verified against the npm registry / local toolchain 
 | TypeScript 7 | **7.0.2**     | native compiler; `tsc --version` → `7.0.2`         |
 | Vite 8.2.1   | **8.2.1**     | exact match                                        |
 | Bun 1.4.1    | **1.4.1**     | exact match (also pinned in the Docker base image) |
-| PostgreSQL   | **17** (PGlite, embedded) | no server — runs in-process via `@electric-sql/pglite` |
+| SQLite      | **3.x** (bun:sqlite, embedded) | no server — single local file via Bun's built-in driver |
 
 ### TypeScript 7 note
 
@@ -188,7 +188,7 @@ commit real values).
 
 | Variable                              | Default                                              | Description                                     |
 | ------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`                        | `data/pglite`                                        | Local folder for the embedded PGlite database (repo-root-relative) |
+| `DATABASE_URL`                        | `data/panel.db`                                      | Local file for the embedded SQLite database (repo-root-relative) |
 | `PORT`                                | `3001`                                               | API listen port (`80` inside the optional Docker image) |
 | `CORS_ORIGIN`                         | `http://localhost:5173`                              | Allowed browser origins, comma-separated. **Dev/test: every origin is allowed by default** — production/test restrict to this list. |
 | `NODE_ENV`                            | `development`                                        | `production` tightens logging + error responses |
@@ -232,12 +232,12 @@ commit real values).
 
 ## Database & migrations
 
-Drizzle ORM + PGlite (embedded PostgreSQL). Migrations are plain SQL in
+Drizzle ORM + SQLite (embedded via `bun:sqlite`). Migrations are plain SQL in
 `database/migrations/`.
 
 ```bash
 bun run db:generate   # create a new migration after editing src/db/schema.ts
-bun run db:migrate    # apply pending migrations to data/pglite/
+bun run db:migrate    # apply pending migrations to data/panel.db
 bun run db:import      # load manga_viewer_export.sql into the local DB
 bun run db:studio     # Drizzle Studio — visual DB browser
 ```
@@ -245,7 +245,7 @@ bun run db:studio     # Drizzle Studio — visual DB browser
 Reset everything (destroys local data):
 
 ```bash
-rm -rf data/pglite && bun run db:migrate && bun run db:import
+rm data/panel.db && bun run db:migrate && bun run db:import
 ```
 
 Schema overview:
@@ -268,7 +268,7 @@ Bun workspace monorepo with a strict dependency direction: **web → API → sou
 |-------|------------|---------|
 | **Frontend**<br/>(`apps/web`) | React 19 + Vite 8 | TanStack Query, React Router 7, Design system CSS, Reader (vertical / paged / gallery) |
 | **Backend**<br/>(`apps/api`) | Hono on Bun | REST + JSON → routes (HTTP), services (use cases: PanelService, BookmarkService, ChapterBookmarkService, ProgressService), sources (one adapter per site), repositories (Drizzle), middleware (CORS, rate-limit, security), db (schema, client) |
-| **Infrastructure** | PGlite (embedded PostgreSQL 17) | local `data/pglite/` folder (persistent) |
+| **Infrastructure** | SQLite (embedded via bun:sqlite) | local `data/panel.db` file (persistent) |
 | **Shared**<br/>(`packages/shared`) | TypeScript | Domain types, ApiResponse, PanelSource interface, id helpers |
 
 ```text
@@ -291,8 +291,8 @@ Bun workspace monorepo with a strict dependency direction: **web → API → sou
                                                               │
                                                               ▼
                                                ┌──────────────────────────────┐
-                                               │  PGlite (embedded PostgreSQL)  │
-                                                │     local data/pglite/         │
+                                               │  SQLite (embedded, bun:sqlite) │
+                                                │     local data/panel.db        │
                                                └──────────────┬───────────────┘
                                                               ▲
                                                               │

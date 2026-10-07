@@ -8,9 +8,11 @@ function isDatabaseError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const code = (err as { code?: unknown }).code;
   if (typeof code !== 'string') return false;
-  // PGlite surfaces real PostgreSQL SQLSTATE codes (e.g. 23505 unique
-  // violation, 57P01 admin shutdown) on its error objects.
+  // The embedded SQLite driver surfaces SQLITE_* codes (e.g.
+  // SQLITE_CONSTRAINT_UNIQUE) on its error objects; the legacy PostgreSQL
+  // SQLSTATE shape (5-char, e.g. 23505) is still matched for old backups.
   if (/^[0-9A-Z]{5}$/.test(code)) return true;
+  if (code.startsWith('SQLITE_')) return true;
   // Embedded DB has no sockets, but keep the connection-level codes as a
   // safety net for any future client-level failure surfacing as plain Error.
   return /^(ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND)$/.test(code);

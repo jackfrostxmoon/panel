@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import { prefetchJobs, type PrefetchJobRow, type PrefetchJobStatus } from '../db/schema.js';
 
@@ -6,10 +6,11 @@ import { prefetchJobs, type PrefetchJobRow, type PrefetchJobStatus } from '../db
  * Repository for the server-side prefetch job queue.
  *
  * Job lifecycle: `pending` → `running` → (one of) `completed` | `failed` |
- * `cancelled`. The worker `claimNext` atomic SELECT … FOR UPDATE SKIP LOCKED
- * prevents two worker instances (or two API replicas) from processing the
- * same job simultaneously. Cancelling a job is a pure state flip — the
- * worker checks `status` between pages and bails out.
+ * `cancelled`. The worker `claimNext` atomically flips the oldest due
+ * `pending` row to `running` inside one transaction (guarded by
+ * `AND status = 'pending'`), so two worker instances (or two API replicas)
+ * never process the same job simultaneously. Cancelling a job is a pure
+ * state flip — the worker checks `status` between pages and bails out.
  */
 
 export interface EnqueuePrefetchJobInput {
@@ -37,6 +38,20 @@ export interface PrefetchJobSnapshot {
 }
 
 function snapshot(row: PrefetchJobRow): PrefetchJobSnapshot {
+  // Rows read through a subquery/CTE carry raw integer-ms timestamps —
+  // normalize at the boundary.
+  const asDate = (value: unknown): Date | null => {
+    if (value instanceof Date) return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return new Date(value);
+    return null;
+  };
+  const createdAt = asDate(row.createdAt) ?? new Date(0);
+  // `failed` may arrive as raw JSON text when read through a subquery.
+  const failed: number[] = Array.isArray(row.failed)
+    ? row.failed
+    : typeof row.failed === 'string'
+      ? (JSON.parse(row.failed) as number[])
+      : [];
   return {
     id: row.id,
     chapterId: row.chapterId,
@@ -45,11 +60,11 @@ function snapshot(row: PrefetchJobRow): PrefetchJobSnapshot {
     totalPages: row.totalPages,
     cachedPages: row.cachedPages,
     failedPages: row.failedPages,
-    failed: row.failed,
-    runAfter: row.runAfter ? row.runAfter.toISOString() : null,
-    createdAt: row.createdAt.toISOString(),
-    startedAt: row.startedAt ? row.startedAt.toISOString() : null,
-    finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    failed,
+    runAfter: asDate(row.runAfter)?.toISOString() ?? null,
+    createdAt: createdAt.toISOString(),
+    startedAt: asDate(row.startedAt)?.toISOString() ?? null,
+    finishedAt: asDate(row.finishedAt)?.toISOString() ?? null,
   };
 }
 
@@ -59,15 +74,19 @@ export class PrefetchJobRepository {
   /**
    * Enqueue a prefetch job for a chapter. Returns the new row.
    *
-   * The partial unique index on (chapter_id) WHERE status IN ('pending',
-   * 'running') makes this idempotent while a previous job is still
-   * active — if a job for the same chapter already exists, callers
+   * Duplicate active jobs for the same chapter are rejected at the
+   * application level (`findActiveByChapter` check + unique-violation
+   * handling here) — if a job for the same chapter already exists, callers
    * should `findActiveByChapter` and use that id instead. We surface the
    * duplicate-key violation as `null` so route handlers can return the
    * existing job rather than 500.
    */
   async enqueue(input: EnqueuePrefetchJobInput): Promise<PrefetchJobSnapshot | null> {
     const delayMs = Math.max(0, Math.trunc(input.delayMs ?? 0));
+    // Application-level idempotency: an active job for this chapter means
+    // "already queued" — callers fall back to the existing job's id.
+    const active = await this.findActiveByChapter(input.chapterId);
+    if (active) return null;
     try {
       const [row] = await this.db
         .insert(prefetchJobs)
@@ -123,17 +142,40 @@ export class PrefetchJobRepository {
    * details page to render persisted per-row badges ("12 / 37 cached")
    * after a browser restart, when the in-memory progress map is gone.
    * Chapters with no job row are simply absent from the map. Single
-   * round-trip via DISTINCT ON, so even long series stay cheap.
+   * round-trip via a window function (SQLite has no DISTINCT ON), so even
+   * long series stay cheap.
    */
   async findLatestByChapters(chapterIds: readonly string[]): Promise<Map<string, PrefetchJobSnapshot>> {
     const map = new Map<string, PrefetchJobSnapshot>();
     if (chapterIds.length === 0) return map;
-    const rows = await this.db
-      .selectDistinctOn([prefetchJobs.chapterId])
+    const ranked = this.db
+      .select({
+        id: prefetchJobs.id,
+        chapterId: prefetchJobs.chapterId,
+        batchId: prefetchJobs.batchId,
+        status: prefetchJobs.status,
+        onlyMissing: prefetchJobs.onlyMissing,
+        totalPages: prefetchJobs.totalPages,
+        cachedPages: prefetchJobs.cachedPages,
+        failedPages: prefetchJobs.failedPages,
+        failed: prefetchJobs.failed,
+        intervalMs: prefetchJobs.intervalMs,
+        runAfter: prefetchJobs.runAfter,
+        createdAt: prefetchJobs.createdAt,
+        startedAt: prefetchJobs.startedAt,
+        finishedAt: prefetchJobs.finishedAt,
+        rn: sql<number>`row_number() over (partition by ${prefetchJobs.chapterId} order by ${prefetchJobs.createdAt} desc)`.as(
+          'rn',
+        ),
+      })
       .from(prefetchJobs)
       .where(inArray(prefetchJobs.chapterId, chapterIds))
-      .orderBy(prefetchJobs.chapterId, desc(prefetchJobs.createdAt));
-    for (const row of rows) map.set(row.chapterId, snapshot(row));
+      .as('ranked');
+    const rows = await this.db.select().from(ranked).where(sql`"rn" = 1`);
+    for (const row of rows) {
+      const { rn: _rn, ...job } = row;
+      map.set(job.chapterId, snapshot(job));
+    }
     return map;
   }
 
@@ -152,11 +194,10 @@ export class PrefetchJobRepository {
   /**
    * Crash recovery: flip every job left `running` back to `pending`.
    * A killed API process (SIGKILL, `taskkill /F`, container stop) never
-   * runs graceful shutdown, so without this the partial unique index on
-   * active chapters would park those chapters forever — re-enqueues would
-   * keep returning the dead job's id and no worker would ever finish it.
-   * Called once from `PrefetchWorker.start()`. Idempotent, so concurrent
-   * API replicas starting together are harmless.
+   * runs graceful shutdown, so without this those chapters would park
+   * forever — re-enqueues would keep returning the dead job's id and no
+   * worker would ever finish it. Called once from `PrefetchWorker.start()`.
+   * Idempotent, so concurrent API replicas starting together are harmless.
    *
    * Returns the number of jobs requeued.
    */
@@ -171,16 +212,24 @@ export class PrefetchJobRepository {
 
   /** Atomically claim the next DUE pending job for the worker.
    *  Jobs whose `run_after` lies in the future (inter-chapter pacing)
-   *  are skipped until their time comes. Uses SELECT … FOR UPDATE SKIP
-   *  LOCKED so multiple workers (or multiple API replicas) never
-   *  double-process the same row. The transaction flips status to
-   *  'running' before committing, so the claim is durable — a crash
-   *  between SELECT and UPDATE leaves the row `pending` and the next
-   *  worker picks it up. */
+   *  are skipped until their time comes.
+   *
+   *  Claim = oldest due `pending` row flipped to `running` inside one
+   *  transaction, guarded by `AND status = 'pending'` so two workers (or
+   *  two API replicas) racing the same row can't double-process it — only
+   *  one UPDATE matches. (The old PostgreSQL build used
+   *  `SELECT … FOR UPDATE SKIP LOCKED`; SQLite serialises writers, and the
+   *  single-instance lock plus the worker's single-flight flag mean only
+   *  one claimant normally exists anyway.)
+   *
+   *  NOTE: the bun-sqlite driver runs `db.transaction()` callbacks
+   *  synchronously, so the transaction is driven explicitly
+   *  (BEGIN IMMEDIATE/COMMIT) around the awaited queries instead. */
   async claimNext(): Promise<PrefetchJobRow | null> {
-    return this.db.transaction(async (tx) => {
-      const [pending] = await tx
-        .select()
+    this.db.$client.exec('BEGIN IMMEDIATE');
+    try {
+      const [pending] = await this.db
+        .select({ id: prefetchJobs.id })
         .from(prefetchJobs)
         .where(
           and(
@@ -189,16 +238,26 @@ export class PrefetchJobRepository {
           ),
         )
         .orderBy(prefetchJobs.runAfter, prefetchJobs.createdAt)
-        .limit(1)
-        .for('update', { skipLocked: true });
-      if (!pending) return null;
-      const [claimed] = await tx
+        .limit(1);
+      if (!pending) {
+        this.db.$client.exec('COMMIT');
+        return null;
+      }
+      const [row] = await this.db
         .update(prefetchJobs)
         .set({ status: 'running', startedAt: new Date(), runAfter: null })
-        .where(eq(prefetchJobs.id, pending.id))
+        .where(and(eq(prefetchJobs.id, pending.id), eq(prefetchJobs.status, 'pending')))
         .returning();
-      return claimed ?? null;
-    });
+      this.db.$client.exec('COMMIT');
+      return row ?? null;
+    } catch (error) {
+      try {
+        this.db.$client.exec('ROLLBACK');
+      } catch {
+        // Already rolled back / no transaction — surface the original error.
+      }
+      throw error;
+    }
   }
 
   /**
@@ -288,5 +347,11 @@ export class PrefetchJobRepository {
 function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: string }).code;
-  return code === '23505';
+  // PostgreSQL (legacy) + SQLite constraint codes.
+  return (
+    code === '23505' ||
+    code === 'SQLITE_CONSTRAINT' ||
+    code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+    code === 'SQLITE_CONSTRAINT_PRIMARYKEY'
+  );
 }

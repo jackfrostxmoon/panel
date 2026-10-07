@@ -5,10 +5,10 @@ import { logger } from './logger.js';
 /**
  * Single-instance guard for the embedded database.
  *
- * PGlite allows a single opener per data directory, but on some platforms
- * a second opener fails only later (or corrupts shared state instead of
- * refusing) — e.g. `bun run dev` (:3001) and `bun run lan` (:80) started
- * together both open `data/pglite`, risking torn reads and WASM aborts.
+ * SQLite allows concurrent readers but a single writer, and on some platforms
+ * a second opener fails only later — e.g. `bun run dev` (:3001) and
+ * `bun run lan` (:80) started together both open `data/panel.db`, risking
+ * SQLITE_BUSY churn and torn backups instead of a clean refusal.
  * This lock refuses the second boot with a clear message instead.
  *
  * The lock lives next to the data directory (`<databaseUrl>.lock`), so

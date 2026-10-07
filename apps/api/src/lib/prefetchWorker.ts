@@ -12,7 +12,7 @@ import type { PrefetchJobRow } from '../db/schema.js';
  * Started once per API process (from `apps/api/src/index.ts`) and stopped
  * on graceful shutdown. A single instance per process is sufficient for
  * the local single-user app — multiple API replicas would coordinate via
- * the partial unique index + `FOR UPDATE SKIP LOCKED` already in place.
+ * the atomic `claimNext` (only one UPDATE can win a pending row).
  *
  * Loop:
  *   1. `claimNext()` — atomic transition `pending` → `running`.

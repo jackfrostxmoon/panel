@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Panel viewer API — Hono on Bun, Drizzle ORM, PostgreSQL.",
+  "description": "Panel viewer API — Hono on Bun, Drizzle ORM, SQLite.",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",

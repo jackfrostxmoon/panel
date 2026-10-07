@@ -58,8 +58,7 @@ export function chapterRoutes(panelService: PanelService, db: Database): Hono {
    *
    * Idempotent: if a job for this chapter is already `pending` or
    * `running`, returns the existing `jobId` rather than creating a
-   * duplicate (the partial unique index on `chapter_id WHERE status IN
-   * ('pending','running')` enforces this on the DB side).
+   * duplicate (checked in the repository before insert).
    */
   app.post('/:id/prefetch', async (c) => {
     const id = c.req.param('id');
