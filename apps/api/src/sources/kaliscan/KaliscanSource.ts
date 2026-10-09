@@ -56,11 +56,53 @@ export class KaliscanSource implements PanelSource {
 
   private readonly http: SourceHttpClient;
 
+  /**
+   * Mirror bases tried in order when the configured base is unreachable.
+   * KaliScan hops TLDs to dodge blocks and its `.io` registration expired
+   * in 2026, so every text/JSON fetch fails over across these (configured
+   * base first) and sticks to the first mirror that answers.
+   */
+  private static readonly FALLBACK_BASE_URLS = [
+    'https://kaliscan.me',
+    'https://kaliscan.com',
+    'https://kaliscan.net',
+  ];
+
+  /**
+   * Substrings present on genuine reader pages / API fragments but absent
+   * from the SEO-spam squatters currently parked on retired KaliScan
+   * domains — guards failover so a squatter's HTTP 200 never counts as a
+   * working mirror (which would otherwise stick and serve empty results
+   * instead of the offline cache fallback).
+   */
+  private static readonly READER_MARKERS = [
+    'book-item',
+    'genres__wrapper',
+    'paginator',
+    'book-info',
+    'chapter-select',
+    'chapter__content',
+    'reading-box',
+    'chapter-image',
+    'chapterId',
+  ];
+
+  /** All candidate bases (configured first, then mirrors, deduplicated). */
+  private readonly baseUrls: string[];
+  /** Last base that answered — tried first so failover only costs extra
+   * latency while every mirror is actually down. */
+  private activeBaseUrl: string;
+
   constructor(config: SourceConfig, http?: SourceHttpClient) {
     this.name = config.name;
     this.label = config.label;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.enabled = config.enabled;
+    this.baseUrls = [
+      this.baseUrl,
+      ...KaliscanSource.FALLBACK_BASE_URLS.filter((mirror) => mirror !== this.baseUrl),
+    ];
+    this.activeBaseUrl = this.baseUrls[0] ?? this.baseUrl;
     this.http =
       http ??
       new SourceHttpClient(config.name, {
@@ -78,15 +120,19 @@ export class KaliscanSource implements PanelSource {
   }
 
   static allowedHostsFor(baseUrl: string): string[] {
+    const hosts = new Set<string>();
     try {
-      return [
-        new URL(baseUrl).hostname.toLowerCase(),
-        'cdn.1stmangago.com',
-        's9.1stmggv7.xyz',
-      ];
+      hosts.add(new URL(baseUrl).hostname.toLowerCase());
     } catch {
-      return ['kaliscan.io', 'cdn.1stmangago.com', 's9.1stmggv7.xyz'];
+      hosts.add('kaliscan.io');
     }
+    // Mirror failover targets must pass the SSRF allowlist too.
+    for (const mirror of KaliscanSource.FALLBACK_BASE_URLS) {
+      hosts.add(new URL(mirror).hostname.toLowerCase());
+    }
+    hosts.add('cdn.1stmangago.com');
+    hosts.add('s9.1stmggv7.xyz');
+    return [...hosts];
   }
 
   private assertEnabled(): void {
@@ -100,13 +146,115 @@ export class KaliscanSource implements PanelSource {
   }
 
   /**
+   * Transport failures worth trying the next mirror for: timeouts, DNS /
+   * connection resets and 429/5xx. HTTP 404 is definitive (the same path
+   * 404s on every mirror) and any other code propagates immediately.
+   */
+  private static isFailoverTransportError(error: unknown): boolean {
+    if (!(error instanceof SourceError)) return false;
+    if (error.code !== ErrorCodes.SOURCE_TIMEOUT && error.code !== ErrorCodes.SOURCE_UNAVAILABLE) {
+      return false;
+    }
+    const upstreamStatus = (error.details as { upstreamStatus?: unknown } | undefined)
+      ?.upstreamStatus;
+    return upstreamStatus !== 404;
+  }
+
+  /** Reject squatter/parked-domain HTML so failover keeps looking. */
+  private static assertReaderMarkup(body: string, what: string): void {
+    if (KaliscanSource.READER_MARKERS.some((marker) => body.includes(marker))) return;
+    throw new PageNotRecognizedError(`Kaliscan ${what} contained no reader markup.`);
+  }
+
+  /**
+   * Run `attempt` against each candidate base (last-working first),
+   * failing over on transport errors and unrecognized (squatter) pages.
+   * Client aborts and definitive errors propagate immediately. When every
+   * mirror answered with non-reader content the result is a
+   * PageNotRecognizedError (callers map it as "not found"); when at least
+   * one mirror was unreachable the last transport error wins so the
+   * offline cache fallback engages.
+   */
+  private async withFailover<T>(
+    label: string,
+    attempt: (base: string) => Promise<T>,
+  ): Promise<{ result: T; baseUrl: string }> {
+    const ordered = [this.activeBaseUrl, ...this.baseUrls.filter((base) => base !== this.activeBaseUrl)];
+    let lastTransportError: unknown = null;
+    let sawTransportError = false;
+    for (const base of ordered) {
+      try {
+        const result = await attempt(base);
+        this.activeBaseUrl = base;
+        return { result, baseUrl: base };
+      } catch (error) {
+        if (error instanceof PageNotRecognizedError) {
+          logger.warn('Kaliscan mirror served an unrecognized page, trying next', {
+            source: this.name,
+            base,
+            label,
+          });
+          continue;
+        }
+        if (KaliscanSource.isFailoverTransportError(error)) {
+          sawTransportError = true;
+          lastTransportError = error;
+          logger.warn('Kaliscan mirror unreachable, trying next', {
+            source: this.name,
+            base,
+            label,
+            code: error instanceof SourceError ? error.code : 'unknown',
+          });
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (!sawTransportError) {
+      throw new PageNotRecognizedError(`No Kaliscan mirror served a recognizable ${label}.`);
+    }
+    throw lastTransportError;
+  }
+
+  /** Map an all-mirrors-unrecognized failure to "source unavailable" for
+   * listing endpoints (where empty results are legitimate and must not
+   * read as a parse error). */
+  private unavailableAfterFailover(path: string): SourceError {
+    return SourceError.unavailable(this.name, `${this.baseUrl}${path}`);
+  }
+
+  /** Rewrite site-host image URLs (e.g. stale cached covers pointing at a
+   * dead base) onto the last-working mirror. CDN hosts pass through. */
+  private rebaseToActiveBase(url: string): string {
+    let parsed: URL;
+    let activeHost: string;
+    try {
+      parsed = new URL(url);
+      activeHost = new URL(this.activeBaseUrl).hostname.toLowerCase();
+    } catch {
+      return url;
+    }
+    if (parsed.hostname.toLowerCase() === activeHost) return url;
+    const isSiteHost = this.baseUrls.some((base) => {
+      try {
+        return new URL(base).hostname.toLowerCase() === parsed.hostname.toLowerCase();
+      } catch {
+        return false;
+      }
+    });
+    if (!isSiteHost) return url;
+    parsed.hostname = activeHost;
+    return parsed.toString();
+  }
+
+  /**
    * Covers are served directly from kaliscan.io's own CDN (no hotlink
    * protection), but routing them through the API's image proxy lets the
-    * client-side cache warm + persist them in the on-disk image cache.
+   * client-side cache warm + persist them in the on-disk image cache.
    */
   async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
-    return this.http.fetchImage(url, undefined, opts?.signal);
+    return this.http.fetchImage(this.rebaseToActiveBase(url), undefined, opts?.signal);
   }
 
   buildPanelUrl(nativePanelId: string): string {
@@ -124,7 +272,7 @@ export class KaliscanSource implements PanelSource {
   }
 
   nativePanelIdFromUrl(url: string): string | null {
-    if (!isSameHost(url, this.baseUrl)) return null;
+    if (!this.baseUrls.some((base) => isSameHost(url, base))) return null;
     return panelNativeIdFromUrl(url);
   }
 
@@ -134,12 +282,23 @@ export class KaliscanSource implements PanelSource {
       q: query,
       page: String(page),
     });
-    const url = `${this.baseUrl}/search?${params.toString()}`;
-    const { body, finalUrl } = await this.http.fetchText(url);
-    const parsed = parseSearchPage(body, this.baseUrl);
+    const path = `/search?${params.toString()}`;
+    let fetched: { result: { body: string; finalUrl: string }; baseUrl: string };
+    try {
+      fetched = await this.withFailover('search page', async (base) => {
+        const { body, finalUrl } = await this.http.fetchText(`${base}${path}`);
+        KaliscanSource.assertReaderMarkup(body, 'search page');
+        return { body, finalUrl };
+      });
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) throw this.unavailableAfterFailover(path);
+      throw error;
+    }
+    const { result, baseUrl } = fetched;
+    const parsed = parseSearchPage(result.body, baseUrl);
     if (parsed.items.length === 0) {
       try {
-        const detail = parsePanelPage(body, finalUrl, this.baseUrl);
+        const detail = parsePanelPage(result.body, result.finalUrl, baseUrl);
         return {
           results: [
             this.toPanelSummary({
@@ -177,12 +336,20 @@ export class KaliscanSource implements PanelSource {
     // (see `.paginator` in parser.ts), so the path form `/latest/page/N/`
     // the adapter used to build is just served as a 200 with the same
     // first page of items, which made every "page 2+" load appear empty.
-    const url =
-      page <= 1
-        ? `${this.baseUrl}/latest`
-        : `${this.baseUrl}/latest?page=${encodeURIComponent(String(page))}`;
-    const { body } = await this.http.fetchText(url);
-    const parsed = parseLatestPage(body, this.baseUrl);
+    const path = page <= 1 ? '/latest' : `/latest?page=${encodeURIComponent(String(page))}`;
+    let fetched: { result: { body: string; finalUrl: string }; baseUrl: string };
+    try {
+      fetched = await this.withFailover('latest page', async (base) => {
+        const { body, finalUrl } = await this.http.fetchText(`${base}${path}`);
+        KaliscanSource.assertReaderMarkup(body, 'latest page');
+        return { body, finalUrl };
+      });
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) throw this.unavailableAfterFailover(path);
+      throw error;
+    }
+    const { result, baseUrl } = fetched;
+    const parsed = parseLatestPage(result.body, baseUrl);
 
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
@@ -198,8 +365,17 @@ export class KaliscanSource implements PanelSource {
    */
   async getGenreList(): Promise<string[]> {
     this.assertEnabled();
-    const { body } = await this.http.fetchText(`${this.baseUrl}/latest`);
-    return parseGenreCatalog(body);
+    try {
+      const { result } = await this.withFailover('genre index', async (base) => {
+        const { body } = await this.http.fetchText(`${base}/latest`);
+        KaliscanSource.assertReaderMarkup(body, 'genre index');
+        return { body };
+      });
+      return parseGenreCatalog(result.body);
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) throw this.unavailableAfterFailover('/latest');
+      throw error;
+    }
   }
 
   /**
@@ -239,8 +415,19 @@ export class KaliscanSource implements PanelSource {
     if (slugs.includes.length > 1) params.append('include_mode', 'or');
     for (const exclude of slugs.excludes) params.append('exclude[]', exclude);
     if (p > 1) params.set('page', String(p));
-    const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
-    const parsed = parseSearchPage(body, this.baseUrl);
+    const path = `/search?${params.toString()}`;
+    let fetched: { result: { body: string }; baseUrl: string };
+    try {
+      fetched = await this.withFailover('genre-filtered search', async (base) => {
+        const { body } = await this.http.fetchText(`${base}${path}`);
+        KaliscanSource.assertReaderMarkup(body, 'genre-filtered search');
+        return { body };
+      });
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) throw this.unavailableAfterFailover(path);
+      throw error;
+    }
+    const parsed = parseSearchPage(fetched.result.body, fetched.baseUrl);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page: p,
@@ -255,19 +442,43 @@ export class KaliscanSource implements PanelSource {
   ): Promise<SourceSearchResult> {
     const p = page >= 1 ? page : 1;
     if (!genre) return this.latest(p);
-    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
-    const href = parseGenreLinks(indexHtml, this.baseUrl).find(
-      (entry) => entry.label.toLowerCase() === genre.toLowerCase(),
-    )?.href;
-    if (!href) return this.latest(p);
-    const archiveUrl = p <= 1 ? href : `${href}?page=${encodeURIComponent(String(p))}`;
-    const { body } = await this.http.fetchText(archiveUrl);
-    const parsed = parseLatestPage(body, this.baseUrl);
-    return {
-      results: parsed.items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: parsed.hasMore || parsed.items.length >= 20,
-    };
+    try {
+      const { result: index } = await this.withFailover('genre index', async (base) => {
+        const { body } = await this.http.fetchText(`${base}/latest`);
+        KaliscanSource.assertReaderMarkup(body, 'genre index');
+        return { body };
+      });
+      const href = parseGenreLinks(index.body, this.activeBaseUrl).find(
+        (entry) => entry.label.toLowerCase() === genre.toLowerCase(),
+      )?.href;
+      if (!href) return this.latest(p);
+      const target = p <= 1 ? href : `${href}?page=${encodeURIComponent(String(p))}`;
+      const { result, baseUrl } = await this.withFailover('genre archive', async (base) => {
+        // `href` is absolute (built from the winning index base); reduce it
+        // to a path so failover actually changes hosts per attempt.
+        let relative = target;
+        try {
+          const parsedHref = new URL(target);
+          relative = `${parsedHref.pathname}${parsedHref.search}`;
+        } catch {
+          // Already relative — use as-is.
+        }
+        const { body } = await this.http.fetchText(`${base}${relative}`);
+        KaliscanSource.assertReaderMarkup(body, 'genre archive');
+        return { body };
+      });
+      const parsed = parseLatestPage(result.body, baseUrl);
+      return {
+        results: parsed.items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: parsed.hasMore || parsed.items.length >= 20,
+      };
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) {
+        throw SourceError.unavailable(this.name, `${this.baseUrl}/latest`);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -281,8 +492,20 @@ export class KaliscanSource implements PanelSource {
     genres: readonly string[],
     excludedGenres: readonly string[],
   ): Promise<{ includes: string[]; excludes: string[] } | null> {
-    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
-    const links = parseGenreLinks(indexHtml, this.baseUrl);
+    let indexHtml: string;
+    try {
+      const { result } = await this.withFailover('genre index', async (base) => {
+        const { body } = await this.http.fetchText(`${base}/latest`);
+        KaliscanSource.assertReaderMarkup(body, 'genre index');
+        return { body };
+      });
+      indexHtml = result.body;
+    } catch (error) {
+      // Unresolvable labels fall back to the unfiltered listing.
+      if (error instanceof PageNotRecognizedError) return null;
+      throw error;
+    }
+    const links = parseGenreLinks(indexHtml, this.activeBaseUrl);
     const slugOf = (label: string): string | null => {
       const href = links.find((entry) => entry.label.toLowerCase() === label.toLowerCase())?.href;
       if (!href) return null;
@@ -328,8 +551,19 @@ export class KaliscanSource implements PanelSource {
     if (slugs.includes.length > 1) params.append('include_mode', 'or');
     for (const exclude of slugs.excludes) params.append('exclude[]', exclude);
     if (p > 1) params.set('page', String(p));
-    const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
-    const parsed = parseSearchPage(body, this.baseUrl);
+    const path = `/search?${params.toString()}`;
+    let fetched: { result: { body: string }; baseUrl: string };
+    try {
+      fetched = await this.withFailover('genre-filtered search', async (base) => {
+        const { body } = await this.http.fetchText(`${base}${path}`);
+        KaliscanSource.assertReaderMarkup(body, 'genre-filtered search');
+        return { body };
+      });
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) throw this.unavailableAfterFailover(path);
+      throw error;
+    }
+    const parsed = parseSearchPage(fetched.result.body, fetched.baseUrl);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page: p,
@@ -339,11 +573,30 @@ export class KaliscanSource implements PanelSource {
 
   async getPanel(nativePanelId: string): Promise<Panel> {
     this.assertEnabled();
-    const sourceUrl = this.buildPanelUrl(nativePanelId);
-    const { body, finalUrl } = await this.http.fetchText(sourceUrl);
+    const path = `/manga/${encodeURIComponent(nativePanelId)}`;
+    let fetched: { result: { body: string; finalUrl: string }; baseUrl: string };
+    try {
+      fetched = await this.withFailover('panel page', async (base) => {
+        const { body, finalUrl } = await this.http.fetchText(`${base}${path}`);
+        KaliscanSource.assertReaderMarkup(body, 'panel page');
+        return { body, finalUrl };
+      });
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) {
+        logger.info('Panel page not recognized', { source: this.name, nativePanelId });
+        throw new SourceError(
+          this.name,
+          ErrorCodes.PANEL_NOT_FOUND,
+          'The requested panel could not be found.',
+          { nativePanelId },
+        );
+      }
+      throw error;
+    }
+    const { result, baseUrl } = fetched;
 
     try {
-      const raw = parsePanelPage(body, finalUrl, this.baseUrl);
+      const raw = parsePanelPage(result.body, result.finalUrl, baseUrl);
       return {
         ...this.toPanelSummary({
           nativeId: nativePanelId,
@@ -381,11 +634,33 @@ export class KaliscanSource implements PanelSource {
     const bookIdMatch = /(\d+)-/.exec(nativePanelId);
     const bookId = bookIdMatch ? bookIdMatch[1] : nativePanelId;
 
-    const { body } = await this.http.fetchText(
-      `${this.baseUrl}/service/backend/chapterList/?manga_id=${bookId}`,
-    );
+    let body: string;
+    let baseUrl: string;
+    try {
+      const fetched = await this.withFailover('chapter list', async (base) => {
+        const { body: listHtml } = await this.http.fetchText(
+          `${base}/service/backend/chapterList/?manga_id=${bookId}`,
+        );
+        KaliscanSource.assertReaderMarkup(listHtml, 'chapter list');
+        return { body: listHtml };
+      });
+      body = fetched.result.body;
+      baseUrl = fetched.baseUrl;
+    } catch (error) {
+      // A mirror that answers without reader markup behaves like an empty
+      // chapter list; transport errors still propagate to the cache fallback.
+      if (error instanceof PageNotRecognizedError) {
+        logger.warn('Chapter list API returned no recognizable content', {
+          source: this.name,
+          nativePanelId,
+          bookId,
+        });
+        return [];
+      }
+      throw error;
+    }
 
-    const rawChapters = parseChapterListFromApi(body, this.baseUrl);
+    const rawChapters = parseChapterListFromApi(body, baseUrl);
 
     if (rawChapters.length === 0) {
       logger.warn('Chapter list API returned no chapters', {
@@ -419,7 +694,16 @@ export class KaliscanSource implements PanelSource {
       });
     }
 
-    const { body: chapterPageBody } = await this.http.fetchText(this.buildChapterUrl(nativeChapterId));
+    const chapterPath = `/manga/${encodeURIComponent(parts.panelId)}/${encodeURIComponent(parts.chapterToken)}`;
+    const { result: chapterPage, baseUrl: pageBaseUrl } = await this.withFailover(
+      'chapter page',
+      async (base) => {
+        const { body } = await this.http.fetchText(`${base}${chapterPath}`);
+        KaliscanSource.assertReaderMarkup(body, 'chapter page');
+        return { body };
+      },
+    );
+    const chapterPageBody = chapterPage.body;
 
     const chapterIdMatch = /var chapterId\s*=\s*(\d+);/.exec(chapterPageBody);
     const chapterId = chapterIdMatch ? chapterIdMatch[1] : null;
@@ -437,27 +721,42 @@ export class KaliscanSource implements PanelSource {
     // Fetch chapter list API to get chapter options (titles like "Chapter 1")
     let chapterListHtml = '';
     try {
-      const { body } = await this.http.fetchText(`${this.baseUrl}/service/backend/chapterList/?manga_id=${bookId}`);
-      chapterListHtml = body;
+      const { result } = await this.withFailover('chapter list', async (base) => {
+        const { body } = await this.http.fetchText(`${base}/service/backend/chapterList/?manga_id=${bookId}`);
+        KaliscanSource.assertReaderMarkup(body, 'chapter list');
+        return { body };
+      });
+      chapterListHtml = result.body;
     } catch {
       logger.warn('Failed to fetch chapter list API', { source: this.name, nativePanelId: parts.panelId });
     }
 
     if (chapterId) {
-      const { body: imagesHtml } = await this.http.fetchJson(
-        `${this.baseUrl}/service/backend/chapterServer/?server_id=1&chapter_id=${chapterId}`,
-        {
-          Referer: this.buildChapterUrl(nativeChapterId),
-          'X-Requested-With': 'XMLHttpRequest',
+      const imagesPath = `/service/backend/chapterServer/?server_id=1&chapter_id=${chapterId}`;
+      const { result: imagesFetched, baseUrl: imagesBaseUrl } = await this.withFailover(
+        'chapter images',
+        async (base) => {
+          const { body } = await this.http.fetchJson(
+            `${base}${imagesPath}`,
+            {
+              Referer: `${base}${chapterPath}`,
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          );
+          if (!body.includes('chapter-image') && !body.includes('data-src')) {
+            throw new PageNotRecognizedError('Chapter image API returned no reader markup.');
+          }
+          return { body };
         },
       );
+      const imagesHtml = imagesFetched.body;
 
-      imageUrls = parseChapterImagesFromApi(imagesHtml, this.baseUrl);
+      imageUrls = parseChapterImagesFromApi(imagesHtml, imagesBaseUrl);
 
       const chapterPageRoot = parseHtml(chapterPageBody);
       coverUrl = absoluteUrl(
         chapterPageRoot.querySelector('meta[property="og:image"]')?.getAttribute('content'),
-        this.baseUrl,
+        pageBaseUrl,
       );
 
       // Extract panel title from breadcrumbs (second item)
@@ -490,7 +789,7 @@ export class KaliscanSource implements PanelSource {
     }
 
     if (imageUrls.length === 0) {
-      const fallback = parseChapterReaderPage(chapterPageBody, this.baseUrl);
+      const fallback = parseChapterReaderPage(chapterPageBody, pageBaseUrl);
       imageUrls = fallback.imageUrls;
       chapterOptions = fallback.chapterOptions;
       currentToken = fallback.currentToken;
