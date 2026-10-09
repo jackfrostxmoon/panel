@@ -37,6 +37,14 @@ import type { PrefetchJobRow } from '../db/schema.js';
 const PAGE_CONCURRENCY = 3;
 const PROGRESS_PERSIST_EVERY = 3;
 
+/** Internal control-flow error: the user cancelled mid-run. Never surfaced. */
+class JobCancelledError extends Error {
+  constructor() {
+    super('job cancelled');
+    this.name = 'JobCancelledError';
+  }
+}
+
 export interface PrefetchWorkerDeps {
   db: Database;
   registry: SourceRegistry;
@@ -49,6 +57,7 @@ export class PrefetchWorker {
   private running = false;
   private stopRequested = false;
   private inflightAbort: AbortController | null = null;
+  private inflightJobId: string | null = null;
   /**
    * Guard against overlapping ticks. The tick interval fires every
    * 500ms but a single chapter can take minutes; without this flag a
@@ -83,6 +92,20 @@ export class PrefetchWorker {
     logger.info('PrefetchWorker stop requested');
   }
 
+  /**
+   * Abort the in-flight job when it matches one of the given ids. Called
+   * synchronously from the cancel routes so "Stop downloads" interrupts
+   * the running chapter within its current page batch instead of letting
+   * it run to completion. Pending jobs need no abort — the DB flip alone
+   * keeps them unclaimable. The worker's DB-cancel checks below are the
+   * backstop when this in-memory signal misses (e.g. multi-process).
+   */
+  cancelInflight(jobIds: readonly string[]): void {
+    if (this.inflightJobId && jobIds.includes(this.inflightJobId)) {
+      this.inflightAbort?.abort();
+    }
+  }
+
   /** Called from the API's setInterval. No-ops when the worker has
    *  nothing to do, is shutting down, or is already processing a job. */
   async tick(): Promise<void> {
@@ -100,6 +123,7 @@ export class PrefetchWorker {
   private async process(job: PrefetchJobRow): Promise<void> {
     const controller = new AbortController();
     this.inflightAbort = controller;
+    this.inflightJobId = job.id;
     const jobId = job.id;
     const chapterId = job.chapterId;
     const log = (msg: string, ctx?: Record<string, unknown>) =>
@@ -118,18 +142,39 @@ export class PrefetchWorker {
     const failed: number[] = [];
     let lastPersist = 0;
 
+    const isCancelRequested = async (): Promise<boolean> => {
+      if (controller.signal.aborted) return true;
+      // DB flip from the cancel routes (pending/running → cancelled). The
+      // in-memory abort covers the single-process fast path; this covers
+      // every other path and is cheap on local SQLite.
+      try {
+        return await this.repo.isCancelled(jobId);
+      } catch {
+        return controller.signal.aborted;
+      }
+    };
+
     try {
       const payload = await this.deps.panelService.getChapterPages(chapterId);
+      if (await isCancelRequested()) {
+        await this.markCancelled(jobId, { cachedPages, failedPages, failed });
+        log('cancelled before start');
+        return;
+      }
       const chapterTag = payload.chapterId || chapterId;
       const pages = payload.pages;
       total = pages.length;
 
-      if (controller.signal.aborted) return;
+      if (await isCancelRequested()) {
+        await this.markCancelled(jobId, { cachedPages, failedPages, failed });
+        log('cancelled before start');
+        return;
+      }
       await this.repo.setTotalPages(jobId, total);
 
       if (total === 0) {
-        await this.repo.complete(jobId, { cachedPages: 0, failedPages: 0, failed: [] });
-        log('completed (empty chapter)');
+        const completed = await this.repo.complete(jobId, { cachedPages: 0, failedPages: 0, failed: [] });
+        log(completed ? 'completed (empty chapter)' : 'cancelled (empty chapter)');
         return;
       }
 
@@ -194,6 +239,12 @@ export class PrefetchWorker {
         return { pageIdx, sourceName, cacheUrl };
       });
 
+      if (await isCancelRequested()) {
+        await this.markCancelled(jobId, { cachedPages, failedPages, failed });
+        log('cancelled before fetch');
+        return;
+      }
+
       let skip = new Set<number>();
       if (job.onlyMissing) {
         const probes = await Promise.all(
@@ -216,12 +267,18 @@ export class PrefetchWorker {
       const persist = async () => {
         await this.repo.updateProgress(jobId, { cachedPages, failedPages, failed });
         lastPersist = cachedPages + failedPages;
+        // Mid-run cancel check on every progress persist (every few pages)
+        // so "Stop downloads" interrupts the running chapter promptly
+        // instead of letting it run to completion.
+        if (await isCancelRequested()) {
+          throw new JobCancelledError();
+        }
       };
 
       let cursor = 0;
       const next = async (): Promise<void> => {
         while (cursor < toFetch.length) {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) throw new JobCancelledError();
           const target = toFetch[cursor++]!;
           try {
             const source = target.sourceName ? this.deps.registry.get(target.sourceName) : null;
@@ -251,20 +308,38 @@ export class PrefetchWorker {
         }
       };
 
-      await Promise.all(
-        Array.from({ length: Math.min(PAGE_CONCURRENCY, toFetch.length) }, () => next()),
-      );
+      try {
+        await Promise.all(
+          Array.from({ length: Math.min(PAGE_CONCURRENCY, toFetch.length) }, () => next()),
+        );
+      } catch (error) {
+        if (error instanceof JobCancelledError || controller.signal.aborted || (await isCancelRequested())) {
+          await this.markCancelled(jobId, { cachedPages, failedPages, failed });
+          log('cancelled mid-flight');
+          return;
+        }
+        throw error;
+      }
 
-      if (controller.signal.aborted) {
+      if (await isCancelRequested()) {
         await this.markCancelled(jobId, { cachedPages, failedPages, failed });
         log('cancelled mid-flight');
         return;
       }
 
       await persist();
-      await this.repo.complete(jobId, { cachedPages, failedPages, failed });
+      const completed = await this.repo.complete(jobId, { cachedPages, failedPages, failed });
+      if (!completed) {
+        log('cancelled at finish (cancel won the race)');
+        return;
+      }
       log('completed', { cachedPages, failedPages });
     } catch (error) {
+      if (error instanceof JobCancelledError) {
+        await this.markCancelled(jobId, { cachedPages, failedPages, failed });
+        log('cancelled mid-flight');
+        return;
+      }
       logger.error('prefetch job errored', {
         jobId,
         chapterId,
@@ -273,6 +348,7 @@ export class PrefetchWorker {
       await this.repo.fail(jobId, error instanceof Error ? error.message : String(error));
     } finally {
       this.inflightAbort = null;
+      if (this.inflightJobId === jobId) this.inflightJobId = null;
     }
 
     // Pace the batch whether this chapter succeeded or failed (matches

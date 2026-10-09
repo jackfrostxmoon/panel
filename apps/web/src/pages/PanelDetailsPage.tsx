@@ -394,15 +394,14 @@ const filteredAndSortedChapters = useMemo(() => {
         return null;
       },
       startOne: (chapter: Chapter) => {
-        // Manual per-row clicks share the same pacing as the bulk panel:
-        // the job is held back by `delayFirstMs` so the user-configured
-        // wait applies before a manual download fires too. `0` (default)
-        // starts immediately — the user only ever sees a delay when
-        // they've explicitly opted into one. The job itself lives
-        // server-side, so a refresh mid-run no longer kills it.
+        // Single-chapter taps start immediately — pacing (`chapterIntervalMs`)
+        // only spaces chapters *within* a bulk batch, so holding a manual
+        // download back by that wait just made single taps feel stuck when
+        // the user had configured e.g. 2m between chapters. The job itself
+        // lives server-side, so a refresh mid-run no longer kills it.
         void downloader.downloadChapters([chapter], {
-          chapterIntervalMs: downloadSettingsState.settings.chapterIntervalMs,
-          delayFirstMs: downloadSettingsState.settings.chapterIntervalMs,
+          chapterIntervalMs: 0,
+          delayFirstMs: 0,
         }).then((result) => {
           if (result.cancelled) return;
           // Per-row failures are visible via the failed icon state on the
@@ -416,7 +415,7 @@ const filteredAndSortedChapters = useMemo(() => {
         downloader.cancel();
       },
     }),
-    [downloader, isChapterCached, snapshotByChapter, diskByChapter, downloadSettingsState.settings.chapterIntervalMs],
+    [downloader, isChapterCached, snapshotByChapter, diskByChapter],
   );
 
   /**

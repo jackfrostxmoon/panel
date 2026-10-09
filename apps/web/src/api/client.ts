@@ -10,9 +10,13 @@ import type {
   BookmarkFolder,
   BookmarkFolderContents,
   BulkMarkChaptersReadInput,
+  CancelPrefetchBatchInput,
+  CancelPrefetchBatchResult,
   Chapter,
   ChapterBookmark,
   ChapterPages,
+  EnqueuePrefetchBatchInput,
+  EnqueuePrefetchBatchResult,
   EnqueuePrefetchInput,
   EnqueuePrefetchResult,
   PrefetchJob,
@@ -333,6 +337,18 @@ export const api = {
     }),
 
   /**
+   * Enqueue many chapters in one round-trip. The old client fired one
+   * POST per chapter sequentially, so "Download all" spent seconds just
+   * enqueuing before the first page fetched. Batches are capped at
+   * `BULK_CHAPTER_LIMIT` server-side — callers with longer lists chunk.
+   */
+  prefetchChaptersBatch: (chapters: readonly string[], input?: Omit<EnqueuePrefetchBatchInput, 'chapters'>) =>
+    request<EnqueuePrefetchBatchResult>('/api/prefetch/jobs/batch', {
+      method: 'POST',
+      body: JSON.stringify({ chapters: [...chapters], onlyMissing: true, ...input }),
+    }),
+
+  /**
    * Every active (pending or running) prefetch job. The chapter downloader
    * polls this to rebuild its progress view — including after a page
    * refresh, when the in-memory state is gone but the jobs live on.
@@ -371,6 +387,17 @@ export const api = {
   cancelPrefetchJob: (jobId: string) =>
     request<{ cancelled: boolean }>(`/api/prefetch/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
+    }),
+
+  /**
+   * Flip many jobs in one round-trip. "Stop downloads" used to fire one
+   * POST per chapter and wait behind the browser's connection limit; one
+   * POST stops the whole batch.
+   */
+  cancelPrefetchJobs: (jobIds: readonly string[]) =>
+    request<CancelPrefetchBatchResult>('/api/prefetch/jobs/cancel-many', {
+      method: 'POST',
+      body: JSON.stringify({ jobIds: [...jobIds] } satisfies CancelPrefetchBatchInput),
     }),
 
   /* Bookmarks */

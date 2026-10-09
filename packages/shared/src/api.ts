@@ -272,6 +272,39 @@ export interface EnqueuePrefetchInput {
   delayMs?: number;
 }
 
+/** Body for POST /api/prefetch/jobs/batch. Enqueues many chapters in one round-trip. */
+export interface EnqueuePrefetchBatchInput {
+  /** Global chapter ids, in download order (worker claims oldest first). */
+  chapters: string[];
+  /** Shared pacing scope for the whole batch. */
+  batchId?: string;
+  /** Pacing between chapters in the same batch (worker honors). */
+  intervalMs?: number;
+  onlyMissing?: boolean;
+}
+
+/** One entry of a batch enqueue result. */
+export interface EnqueuePrefetchBatchItem {
+  chapterId: string;
+  jobId: string;
+  reused: boolean;
+}
+
+/** Result for POST /api/prefetch/jobs/batch. */
+export interface EnqueuePrefetchBatchResult {
+  jobs: EnqueuePrefetchBatchItem[];
+}
+
+/** Body for POST /api/prefetch/jobs/cancel-many. */
+export interface CancelPrefetchBatchInput {
+  jobIds: string[];
+}
+
+/** Result for POST /api/prefetch/jobs/cancel-many. */
+export interface CancelPrefetchBatchResult {
+  cancelled: number;
+}
+
 /**
  * Full-database SQL dump (pg_dump COPY format) backing the Bookmarks page
  * Export / Import actions.

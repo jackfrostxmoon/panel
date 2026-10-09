@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Chapter, PrefetchJob } from '@panel/shared';
+import { BULK_CHAPTER_LIMIT, type Chapter, type PrefetchJob } from '@panel/shared';
 import { api, ApiClientError } from '../api/client';
 import { newBatchId } from '../download/batchId';
 import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
@@ -51,7 +51,7 @@ export interface DownloadChaptersResult {
 }
 
 /** How often the hook polls GET /api/prefetch/jobs while jobs are tracked. */
-const POLL_INTERVAL_MS = 1000;
+const POLL_INTERVAL_MS = 500;
 
 interface TrackedJob {
   jobId: string;
@@ -159,6 +159,10 @@ export function useChapterDownloader() {
   /** Last terminal progress per chapter — lets `downloadChapter` return
    *  an honest final value instead of a stale-closure guess. */
   const terminalRef = useRef(new Map<string, ChapterDownloadProgress>());
+  /** Synchronous mirrors so `cancel()` (a stable callback) never reads a
+   *  stale closure while a batch POST is still in flight. */
+  const progressRef = useRef<Record<string, ChapterDownloadProgress>>({});
+  progressRef.current = progress;
 
   const untrack = useCallback((chapterId: string) => {
     trackedRef.current.delete(chapterId);
@@ -231,7 +235,7 @@ export function useChapterDownloader() {
   );
 
   /** One poll tick: merge the active job list into progress, resolve
-   *  chapters whose jobs left the active list via a single fetch. */
+   *  chapters whose jobs left the active list via parallel fetches. */
   const poll = useCallback(async () => {
     const tracked = trackedRef.current;
     if (tracked.size === 0) {
@@ -248,39 +252,73 @@ export function useChapterDownloader() {
     const byChapter = new Map(active.map((job) => [job.chapterId, job]));
     const now = Date.now();
     let maxWait: number | null = null;
+    // Batch live updates into one state write per tick — the old loop
+    // called setProgress per chapter, re-rendering N times every tick.
+    const liveUpdates: Record<string, ChapterDownloadProgress> = {};
+    const vanished: Array<{ chapterId: string; jobId: string }> = [];
+    const settled: Array<{ chapterId: string; job: PrefetchJob }> = [];
     for (const [chapterId, { jobId }] of Array.from(tracked.entries())) {
       const job = byChapter.get(chapterId);
       if (!job) {
-        // Left the active list — fetch once for the terminal state.
-        try {
-          const snapshot = await api.getPrefetchJob(jobId);
+        // No job id yet (batch POST still in flight) — keep the
+        // optimistic fetching-payload state until the enqueue lands.
+        if (!jobId) continue;
+        vanished.push({ chapterId, jobId });
+        continue;
+      }
+      if (job.status === 'pending' || job.status === 'running') {
+        liveUpdates[chapterId] = liveProgress(job);
+        if (job.status === 'pending' && job.runAfter) {
+          const wait = new Date(job.runAfter).getTime() - now;
+          if (wait > 0) maxWait = maxWait === null ? wait : Math.max(maxWait, wait);
+        }
+      } else {
+        settled.push({ chapterId, job });
+      }
+    }
+    if (Object.keys(liveUpdates).length > 0) {
+      setProgress((p) => ({ ...p, ...liveUpdates }));
+    }
+    for (const { chapterId, job } of settled) {
+      settleChapter(chapterId, job);
+    }
+    if (vanished.length > 0) {
+      // Left the active list — fetch terminal states in parallel, not
+      // one await per chapter (the old sequential loop took N RTTs to
+      // notice N completions).
+      const snapshots = await Promise.allSettled(
+        vanished.map(async ({ chapterId, jobId }) => ({
+          chapterId,
+          snapshot: await api.getPrefetchJob(jobId),
+        })),
+      );
+      const vanishedLive: Record<string, ChapterDownloadProgress> = {};
+      for (let i = 0; i < snapshots.length; i += 1) {
+        const result = snapshots[i]!;
+        if (result.status === 'fulfilled') {
+          const { chapterId, snapshot } = result.value;
           if (
             snapshot.status === 'completed' ||
             snapshot.status === 'failed' ||
             snapshot.status === 'cancelled'
           ) {
             settleChapter(chapterId, snapshot);
-            continue;
+          } else {
+            // Still active but missed the list (list/active race) — keep waiting.
+            vanishedLive[chapterId] = liveProgress(snapshot);
           }
-          // Still active but missed the list (list/active race) — keep waiting.
-          setProgress((p) => ({ ...p, [chapterId]: liveProgress(snapshot) }));
-        } catch (error) {
-          if (error instanceof ApiClientError && error.code === 'NOT_FOUND') {
+        } else {
+          const reason = (result as PromiseRejectedResult).reason;
+          if (reason instanceof ApiClientError && reason.code === 'NOT_FOUND') {
             // Job row is gone (pruned) — count it as failed, not stuck.
-            markChapterFailed(chapterId);
+            const entry = vanished[i];
+            if (entry) markChapterFailed(entry.chapterId);
           }
           // Other errors (network) — retry on the next tick.
         }
-        continue;
       }
-      if (job.status === 'pending' || job.status === 'running') {
-        setProgress((p) => ({ ...p, [chapterId]: liveProgress(job) }));
-        if (job.status === 'pending' && job.runAfter) {
-          const wait = new Date(job.runAfter).getTime() - now;
-          if (wait > 0) maxWait = maxWait === null ? wait : Math.max(maxWait, wait);
-        }
-      } else {
-        settleChapter(chapterId, job);
+      if (Object.keys(vanishedLive).length > 0) {
+        setProgress((p) => ({ ...p, ...vanishedLive }));
       }
     }
     setIntervalRemainingMs(maxWait);
@@ -322,32 +360,53 @@ export function useChapterDownloader() {
   }, [poll]);
 
   const cancel = useCallback(() => {
+    // Includes optimistic placeholders (jobId '') added before the batch
+    // POST lands — otherwise Stop during enqueue leaves them stuck in
+    // fetching-payload.
     const tracked = Array.from(trackedRef.current.entries());
     if (tracked.length === 0) {
       setIntervalRemainingMs(null);
       return;
     }
     for (const waiter of waitersRef.current) waiter.cancelled = true;
-    // Best-effort: flip every tracked job server-side, then mark them
-    // cancelled locally. Jobs that already finished settle via the poll.
-    void Promise.allSettled(tracked.map(([, { jobId }]) => api.cancelPrefetchJob(jobId))).then(
-      () => {
-        for (const [chapterId] of tracked) {
-          if (!trackedRef.current.has(chapterId)) continue;
-          setProgress((p) => {
-            const cur = p[chapterId];
-            if (cur && (cur.state === 'fetching-payload' || cur.state === 'downloading')) {
-              return { ...p, [chapterId]: { ...cur, state: 'cancelled' } };
-            }
-            return p;
-          });
-          untrack(chapterId);
+    const jobIds = tracked.map(([, { jobId }]) => jobId).filter((id) => id.length > 0);
+    // Optimistic UI: clear locally FIRST so Stop feels instant even for a
+    // 200-chapter batch. Server flips happen in the background; the worker
+    // notices via the DB + in-memory abort and stops mid-chapter.
+    const cancelledPatch: Record<string, ChapterDownloadProgress> = {};
+    for (const [chapterId] of tracked) {
+      const cur = progressRef.current[chapterId];
+      if (cur && (cur.state === 'fetching-payload' || cur.state === 'downloading')) {
+        cancelledPatch[chapterId] = { ...cur, state: 'cancelled' };
+      }
+      untrack(chapterId);
+    }
+    if (Object.keys(cancelledPatch).length > 0) {
+      setProgress((p) => ({ ...p, ...cancelledPatch }));
+    }
+    setIntervalRemainingMs(null);
+    settleWaiters();
+    bumpSnapshots();
+    if (jobIds.length === 0) return;
+    // One round-trip for the whole batch (chunked like the other bulk
+    // endpoints). Fire-and-forget — UI already cleared. A late batch-POST
+    // that lands after this cancel is re-cancelled by downloadChapters'
+    // waiter-cancelled check.
+    const CHUNK = 200;
+    void (async () => {
+      try {
+        for (let i = 0; i < jobIds.length; i += CHUNK) {
+          const chunk = jobIds.slice(i, i + CHUNK);
+          if (chunk.length === 1) await api.cancelPrefetchJob(chunk[0]!);
+          else await api.cancelPrefetchJobs(chunk);
         }
-        setIntervalRemainingMs(null);
-        settleWaiters();
+      } catch {
+        // Best-effort — a retry happens on the next Stop press, and the
+        // worker's pacing skips cancelled batches anyway.
+      } finally {
         bumpSnapshots();
-      },
-    );
+      }
+    })();
   }, [bumpSnapshots, settleWaiters, untrack]);
 
   const reset = useCallback(() => {
@@ -360,11 +419,11 @@ export function useChapterDownloader() {
   }, [cancel]);
 
   /**
-   * Download multiple chapters: enqueue one job per chapter under a
-   * shared batch id (worker paces them by `chapterIntervalMs`), then
-   * resolve when every chapter settles. Survives page refresh — the
-   * returned promise rejects only on enqueue failure, never on reload
-   * (a reloaded page has no waiter, but the jobs keep running).
+   * Download multiple chapters: enqueue jobs under a shared batch id
+   * (worker paces them by `chapterIntervalMs`), then resolve when every
+   * chapter settles. Survives page refresh — the returned promise rejects
+   * only on enqueue failure, never on reload (a reloaded page has no
+   * waiter, but the jobs keep running).
    */
   const downloadChapters = useCallback(
     async (
@@ -398,38 +457,120 @@ export function useChapterDownloader() {
       });
       waitersRef.current.push(waiter);
 
-      // Enqueue sequentially so `created_at` order matches chapter order
-      // (the worker claims the earliest-due job first). A single failure
-      // marks just that chapter failed — the rest still enqueue.
-      for (let i = 0; i < ordered.length; i += 1) {
-        const chapter = ordered[i]!;
-        setProgress((p) => ({
-          ...p,
-          [chapter.id]: {
-            state: 'fetching-payload',
-            current: 0,
-            total: 0,
-            failedPages: 0,
-            cachedPages: 0,
-          },
-        }));
-        try {
-          const { jobId } = await api.prefetchChapterPages(chapter.id, {
-            onlyMissing: true,
-            batchId,
-            intervalMs,
-            delayMs: i === 0 ? delayFirstMs : 0,
-          });
-          trackedRef.current.set(chapter.id, { jobId });
-        } catch {
-          markChapterFailed(chapter.id);
+      // Optimistic start: show every row as fetching + flip isDownloading
+      // synchronously so Stop is visible instantly, even for a 200-chapter
+      // batch whose enqueue POST hasn't returned yet. Placeholders
+      // (jobId '') keep the chapters tracked so a Stop during enqueue
+      // clears them instead of leaving orphans.
+      const fetchingPatch: Record<string, ChapterDownloadProgress> = {};
+      for (const chapter of ordered) {
+        fetchingPatch[chapter.id] = {
+          state: 'fetching-payload',
+          current: 0,
+          total: 0,
+          failedPages: 0,
+          cachedPages: 0,
+        };
+        if (!trackedRef.current.has(chapter.id)) {
+          trackedRef.current.set(chapter.id, { jobId: '' });
         }
       }
+      setProgress((p) => ({ ...p, ...fetchingPatch }));
       setActiveChapterIds(Array.from(trackedRef.current.keys()));
       void poll();
+
+      const cancelNewJobs = (jobIds: string[]) => {
+        if (jobIds.length === 0) return;
+        void (async () => {
+          try {
+            if (jobIds.length === 1) await api.cancelPrefetchJob(jobIds[0]!);
+            else await api.cancelPrefetchJobs(jobIds);
+          } catch {
+            // Best-effort — jobs stay pending and the next Stop clears them.
+          }
+        })();
+      };
+
+      try {
+        if (ordered.length === 1) {
+          const chapter = ordered[0]!;
+          try {
+            const { jobId } = await api.prefetchChapterPages(chapter.id, {
+              onlyMissing: true,
+              batchId,
+              intervalMs,
+              delayMs: delayFirstMs,
+            });
+            if (waiter.cancelled) {
+              // Stop pressed during enqueue — don't leave an orphan running.
+              trackedRef.current.delete(chapter.id);
+              setActiveChapterIds(Array.from(trackedRef.current.keys()));
+              cancelNewJobs([jobId]);
+              settleWaiters();
+            } else {
+              trackedRef.current.set(chapter.id, { jobId });
+              setActiveChapterIds(Array.from(trackedRef.current.keys()));
+              void poll();
+            }
+          } catch {
+            // A cancel during enqueue already untracked the placeholder;
+            // don't resurrect it as failed.
+            if (!waiter.cancelled) markChapterFailed(chapter.id);
+            else {
+              trackedRef.current.delete(chapter.id);
+              setActiveChapterIds(Array.from(trackedRef.current.keys()));
+              settleWaiters();
+            }
+          }
+        } else {
+          // One POST per 200 chapters (server cap) instead of one POST per
+          // chapter — start latency stays flat for long series.
+          for (let i = 0; i < ordered.length; i += BULK_CHAPTER_LIMIT) {
+            if (waiter.cancelled) break;
+            const chunk = ordered.slice(i, i + BULK_CHAPTER_LIMIT);
+            try {
+              const { jobs } = await api.prefetchChaptersBatch(
+                chunk.map((c) => c.id),
+                { batchId, intervalMs },
+              );
+              const newJobIds: string[] = [];
+              const byChapter = new Map(jobs.map((j) => [j.chapterId, j.jobId]));
+              for (const chapter of chunk) {
+                const jobId = byChapter.get(chapter.id);
+                if (jobId) {
+                  if (waiter.cancelled) newJobIds.push(jobId);
+                  else trackedRef.current.set(chapter.id, { jobId });
+                } else if (!waiter.cancelled) {
+                  markChapterFailed(chapter.id);
+                } else {
+                  trackedRef.current.delete(chapter.id);
+                }
+              }
+              if (waiter.cancelled && newJobIds.length > 0) {
+                cancelNewJobs(newJobIds);
+                for (const chapter of chunk) trackedRef.current.delete(chapter.id);
+              }
+            } catch {
+              // Whole chunk POST failed (network) — mark its chapters failed
+              // unless the user already cancelled (then just drop them).
+              for (const chapter of chunk) {
+                if (waiter.cancelled) trackedRef.current.delete(chapter.id);
+                else markChapterFailed(chapter.id);
+              }
+              // Keep going with the next chunk — one bad slice shouldn't
+              // kill a 200-chapter run.
+            }
+            setActiveChapterIds(Array.from(trackedRef.current.keys()));
+            void poll();
+          }
+          if (waiter.cancelled) settleWaiters();
+        }
+      } finally {
+        setActiveChapterIds(Array.from(trackedRef.current.keys()));
+      }
       return settled;
     },
-    [markChapterFailed, poll],
+    [markChapterFailed, poll, settleWaiters],
   );
 
   /**

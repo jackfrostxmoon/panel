@@ -179,8 +179,8 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   // Routes
   app.route('/api', healthRoutes(db, registry, imageCache, config.shareLanAddress));
   app.route('/api/panel', panelRoutes(panelService, registry));
-  app.route('/api/chapter', chapterRoutes(panelService, db));
-  app.route('/api/prefetch', prefetchRoutes(db));
+  app.route('/api/chapter', chapterRoutes(panelService, db, { worker: prefetchWorker }));
+  app.route('/api/prefetch', prefetchRoutes(db, { worker: prefetchWorker }));
   app.route('/api/source-image', sourceImageRoutes(registry, imageCache, (ids) =>
     panelCacheRepo.findPanelGlobalIdByChapterGlobalIds(ids),
     async (panelId) => {

@@ -108,6 +108,63 @@ export class PrefetchJobRepository {
     }
   }
 
+  /**
+   * Enqueue many chapters in one call, preserving input order so
+   * `created_at` order matches the download order (the worker claims the
+   * oldest-due job first). Chapters that already have an active job are
+   * returned with `reused: true` instead of inserting a duplicate.
+   */
+  async enqueueMany(
+    chapterIds: readonly string[],
+    opts?: { batchId?: string | null; intervalMs?: number; onlyMissing?: boolean },
+  ): Promise<Array<{ chapterId: string; job: PrefetchJobSnapshot; reused: boolean }>> {
+    const results: Array<{ chapterId: string; job: PrefetchJobSnapshot; reused: boolean }> = [];
+    if (chapterIds.length === 0) return results;
+    const existing = await this.db
+      .select()
+      .from(prefetchJobs)
+      .where(
+        and(
+          inArray(prefetchJobs.chapterId, [...chapterIds]),
+          inArray(prefetchJobs.status, ['pending', 'running']),
+        ),
+      );
+    const activeByChapter = new Map(existing.map((row) => [row.chapterId, snapshot(row)]));
+    for (const chapterId of chapterIds) {
+      const active = activeByChapter.get(chapterId);
+      if (active) {
+        results.push({ chapterId, job: active, reused: true });
+        continue;
+      }
+      try {
+        const [row] = await this.db
+          .insert(prefetchJobs)
+          .values({
+            chapterId,
+            batchId: opts?.batchId ?? null,
+            onlyMissing: opts?.onlyMissing ?? true,
+            intervalMs: Math.max(0, Math.trunc(opts?.intervalMs ?? 0)),
+          })
+          .returning();
+        if (!row) continue;
+        const snap = snapshot(row);
+        activeByChapter.set(chapterId, snap);
+        results.push({ chapterId, job: snap, reused: false });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          const retry = await this.findActiveByChapter(chapterId);
+          if (retry) {
+            activeByChapter.set(chapterId, retry);
+            results.push({ chapterId, job: retry, reused: true });
+          }
+          continue;
+        }
+        throw error;
+      }
+    }
+    return results;
+  }
+
   async findActiveByChapter(chapterId: string): Promise<PrefetchJobSnapshot | null> {
     const [row] = await this.db
       .select()
@@ -304,8 +361,13 @@ export class PrefetchJobRepository {
     await this.db.update(prefetchJobs).set(set).where(eq(prefetchJobs.id, id));
   }
 
-  async complete(id: string, final: { cachedPages: number; failedPages: number; failed: number[] }): Promise<void> {
-    await this.db
+  /**
+   * Mark a job completed — guarded so a concurrent user cancel wins. When
+   * the row was already flipped to `cancelled`, this is a no-op and
+   * returns false so the worker skips batch pacing.
+   */
+  async complete(id: string, final: { cachedPages: number; failedPages: number; failed: number[] }): Promise<boolean> {
+    const [updated] = await this.db
       .update(prefetchJobs)
       .set({
         status: 'completed',
@@ -314,20 +376,28 @@ export class PrefetchJobRepository {
         failed: final.failed,
         finishedAt: new Date(),
       })
-      .where(eq(prefetchJobs.id, id));
+      .where(and(eq(prefetchJobs.id, id), inArray(prefetchJobs.status, ['pending', 'running'])))
+      .returning({ id: prefetchJobs.id });
+    return Boolean(updated);
   }
 
-  async fail(id: string, error: string): Promise<void> {
-    await this.db
+  /**
+   * Mark a job failed — guarded like `complete` so a user cancel is never
+   * overwritten by a late source error.
+   */
+  async fail(id: string, error: string): Promise<boolean> {
+    const [updated] = await this.db
       .update(prefetchJobs)
       .set({
         status: 'failed',
         finishedAt: new Date(),
       })
-      .where(eq(prefetchJobs.id, id));
+      .where(and(eq(prefetchJobs.id, id), inArray(prefetchJobs.status, ['pending', 'running'])))
+      .returning({ id: prefetchJobs.id });
     // The `error` string is logged via the worker; storing it would
     // require a dedicated column and isn't surfaced to the UI yet.
     void error;
+    return Boolean(updated);
   }
 
   /** Flip a `pending`/`running` job to `cancelled`. The worker checks
@@ -341,6 +411,33 @@ export class PrefetchJobRepository {
       )
       .returning({ id: prefetchJobs.id });
     return Boolean(updated);
+  }
+
+  /**
+   * Flip many jobs to `cancelled` in a single UPDATE — the fast path for
+   * "Stop downloads" on a large batch. Without this the client fires one
+   * POST per chapter and the UI waits behind the browser's ~6-connection
+   * limit. Returns the number of jobs flipped.
+   */
+  async cancelMany(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const updated = await this.db
+      .update(prefetchJobs)
+      .set({ status: 'cancelled', finishedAt: new Date() })
+      .where(and(inArray(prefetchJobs.id, [...ids]), inArray(prefetchJobs.status, ['pending', 'running'])))
+      .returning({ id: prefetchJobs.id });
+    return updated.length;
+  }
+
+  /** True when the job row is currently `cancelled` (or gone). */
+  async isCancelled(id: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ status: prefetchJobs.status })
+      .from(prefetchJobs)
+      .where(eq(prefetchJobs.id, id))
+      .limit(1);
+    if (!row) return true;
+    return row.status === 'cancelled';
   }
 }
 

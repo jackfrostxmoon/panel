@@ -3,6 +3,7 @@ import { ErrorCodes, isGlobalId, ok } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
 import type { Database } from '../db/client.js';
 import type { PanelService } from '../services/panelService.js';
+import type { PrefetchWorker } from '../lib/prefetchWorker.js';
 import { PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
 
 /** `batch_id` is a uuid column — reject malformed values with a 400
@@ -21,7 +22,11 @@ const UUID_RE =
  * survives browser refresh / tab close / API restart. Status / cancel live
  * in `prefetchJobRoutes` mounted at `/api/prefetch`.
  */
-export function chapterRoutes(panelService: PanelService, db: Database): Hono {
+export function chapterRoutes(
+  panelService: PanelService,
+  db: Database,
+  opts?: { worker?: Pick<PrefetchWorker, 'tick'> },
+): Hono {
   const app = new Hono();
 
   // GET /api/chapter/:id
@@ -99,6 +104,7 @@ export function chapterRoutes(panelService: PanelService, db: Database): Hono {
     const repo = new PrefetchJobRepository(db);
     const existing = await repo.findActiveByChapter(id);
     if (existing) {
+      if (opts?.worker) void opts.worker.tick().catch(() => {});
       return c.json(ok({ jobId: existing.id, reused: true }));
     }
     const created = await repo.enqueue({
@@ -116,6 +122,9 @@ export function chapterRoutes(panelService: PanelService, db: Database): Hono {
       if (existing2) return c.json(ok({ jobId: existing2.id, reused: true }));
       throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Failed to enqueue prefetch job.');
     }
+    // Wake the drain loop immediately — otherwise a single-chapter
+    // download waits out the 500ms tick before the first page fetches.
+    if (opts?.worker) void opts.worker.tick().catch(() => {});
     return c.json(ok({ jobId: created.id, reused: false }));
   });
 
