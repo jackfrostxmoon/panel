@@ -57,6 +57,8 @@ const envSchema = z.object({
   SOURCE_KALISCAN_ENABLED: boolFromString(true),
   SOURCE_RAWUWU_BASE_URL: z.url().default('https://rawuwu.net'),
   SOURCE_RAWUWU_ENABLED: boolFromString(true),
+  SOURCE_ROLIASCAN_BASE_URL: z.url().default('https://roliascan.xyz'),
+  SOURCE_ROLIASCAN_ENABLED: boolFromString(true),
   SOURCE_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
 
   /**
@@ -244,6 +246,7 @@ export interface AppConfig {
     readonly rawdex: SourceConfig;
     readonly kaliscan: SourceConfig;
     readonly rawuwu: SourceConfig;
+    readonly roliascan: SourceConfig;
   };
   readonly cache: CacheConfig;
   readonly imageCache: ImageCacheConfig;
@@ -303,6 +306,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const rawdexBaseUrl = e.SOURCE_RAWDEX_BASE_URL.replace(/\/+$/, '');
   const kaliscanBaseUrl = e.SOURCE_KALISCAN_BASE_URL.replace(/\/+$/, '');
   const rawuwuBaseUrl = e.SOURCE_RAWUWU_BASE_URL.replace(/\/+$/, '');
+  const roliascanBaseUrl = e.SOURCE_ROLIASCAN_BASE_URL.replace(/\/+$/, '');
 
   const isProduction = e.NODE_ENV === 'production';
   const isTest = e.NODE_ENV === 'test';
@@ -438,6 +442,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         label: 'RawUwU',
         baseUrl: rawuwuBaseUrl,
         enabled: e.SOURCE_RAWUWU_ENABLED,
+        requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
+        requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
+        requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
+        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
+        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+      },
+      roliascan: {
+        name: 'rl',
+        label: 'RoliaScan',
+        baseUrl: roliascanBaseUrl,
+        enabled: e.SOURCE_ROLIASCAN_ENABLED,
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,

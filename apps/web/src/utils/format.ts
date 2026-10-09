@@ -65,6 +65,7 @@ const SOURCE_LABELS: Record<string, string> = {
   rd: 'RawDex',
   ks: 'KaliScan',
   ru: 'RawUwU',
+  rl: 'RoliaScan',
 };
 
 export function sourceLabel(source: string): string {

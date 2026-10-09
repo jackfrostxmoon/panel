@@ -11,6 +11,7 @@ import { ToonilySource } from './toonily/ToonilySource.js';
 import { RawdexSource } from './rawdex/RawdexSource.js';
 import { KaliscanSource } from './kaliscan/KaliscanSource.js';
 import { RawUwUSource } from './rawuwu/RawUwUSource.js';
+import { RoliaScanSource } from './roliascan/RoliaScanSource.js';
 
 /**
  * Source registry — maps global id prefixes ("mk:...") to source adapters.
@@ -66,5 +67,6 @@ export function createSourceRegistry(
   registry.register(new RawdexSource(config.sources.rawdex, undefined, findGenres));
   registry.register(new KaliscanSource(config.sources.kaliscan));
   registry.register(new RawUwUSource(config.sources.rawuwu, undefined, findGenres));
+  registry.register(new RoliaScanSource(config.sources.roliascan));
   return registry;
 }
