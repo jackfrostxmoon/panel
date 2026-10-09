@@ -249,22 +249,22 @@ export class PrefetchJobRepository {
   }
 
   /**
-   * Crash recovery: flip every job left `running` back to `pending`.
-   * A killed API process (SIGKILL, `taskkill /F`, container stop) never
-   * runs graceful shutdown, so without this those chapters would park
-   * forever — re-enqueues would keep returning the dead job's id and no
-   * worker would ever finish it. Called once from `PrefetchWorker.start()`.
-   * Idempotent, so concurrent API replicas starting together are harmless.
+   * Cold-start stop: flip every job left `pending` or `running` to
+   * `cancelled`. A killed + restarted server must NOT resume downloads —
+   * the user expects a fresh boot to stop the run (pages already cached
+   * stay cached; re-enqueue starts a new run). Called once from
+   * `PrefetchWorker.start()`. Idempotent, so concurrent API replicas
+   * starting together are harmless.
    *
-   * Returns the number of jobs requeued.
+   * Returns the number of jobs cancelled.
    */
-  async requeueStuck(): Promise<number> {
-    const stuck = await this.db
+  async cancelActive(): Promise<number> {
+    const stopped = await this.db
       .update(prefetchJobs)
-      .set({ status: 'pending', startedAt: null })
-      .where(eq(prefetchJobs.status, 'running'))
+      .set({ status: 'cancelled', finishedAt: new Date() })
+      .where(inArray(prefetchJobs.status, ['pending', 'running']))
       .returning({ id: prefetchJobs.id });
-    return stuck.length;
+    return stopped.length;
   }
 
   /** Atomically claim the next DUE pending job for the worker.

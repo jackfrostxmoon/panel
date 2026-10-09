@@ -70,14 +70,14 @@ export class PrefetchWorker {
     this.repo = new PrefetchJobRepository(deps.db);
   }
 
-  /** Start the drain loop. First requeues jobs stranded `running` by a
-   *  previous unclean shutdown (see `requeueStuck`), then returns — the
-   *  loop itself runs on the API's setInterval so HTTP requests aren't
-   *  blocked. */
+  /** Start the drain loop. First cancels jobs stranded `pending`/`running`
+   *  by a previous run (see `cancelActive`) — a cold start stops downloads
+   *  instead of resuming them — then returns. The loop itself runs on the
+   *  API's setInterval so HTTP requests aren't blocked. */
   async start(): Promise<void> {
     if (this.running) return;
-    const requeued = await this.repo.requeueStuck();
-    if (requeued > 0) logger.info('PrefetchWorker requeued stuck jobs', { requeued });
+    const cancelled = await this.repo.cancelActive();
+    if (cancelled > 0) logger.info('PrefetchWorker cancelled active jobs on startup', { cancelled });
     this.running = true;
     this.stopRequested = false;
     logger.info('PrefetchWorker started');
