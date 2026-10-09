@@ -10,8 +10,8 @@ import {
   useSearch,
   useSearchSettings,
   useSaveSearchSettings,
-  useSourceOrder,
 } from '../api/hooks';
+import { useVisibleSource } from '../hooks/useVisibleSource';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid, type PanelCardProgress } from '../components/PanelCard';
 import { IconChevronDown } from '../components/icons';
@@ -27,7 +27,7 @@ import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
-import { defaultSourceFor, sourceLabel } from '../utils/format';
+import { sourceLabel } from '../utils/format';
 
 /** Search results screen with loading / empty / error states. */
 export function SearchPage() {
@@ -38,9 +38,9 @@ export function SearchPage() {
   const pageParam = Number.parseInt(params.get('page') ?? '1', 10);
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
   // Always query exactly one source — no fan-out "all sources" mode.
-  // The default is the user's top-ordered source (Sources page).
-  const sourceOrder = useSourceOrder();
-  const source = params.get('source') ?? defaultSourceFor(sourceOrder.data?.order);
+  // The default is the first visible source in the user's order (Sources
+  // page). A `?source=` naming a hidden source remaps to the default.
+  const source = useVisibleSource(params, setParams);
 
   /** Combined filters: status is client-side only, while the genre pair is
       ALSO sent to the API — combo-capable sources filter server-side

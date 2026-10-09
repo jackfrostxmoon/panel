@@ -139,22 +139,31 @@ export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
 };
 
 /**
- * Source display order. Persisted server-side as a JSON file
+ * Source display order + visibility. Persisted server-side as a JSON file
  * (`data/display/sources.json`) via the source-order endpoints.
  *
  * `order` holds source codes (e.g. "mk") in the user's preferred order.
  * Empty (the default) means the canonical built-in order. Codes the client
  * doesn't know are ignored; known codes missing from the list are appended
  * in canonical order — so a newly added source never vanishes.
+ *
+ * `hidden` holds source codes the user hid via the Sources page toggle.
+ * Hidden sources disappear from the source pills and their cards are
+ * filtered out of the home rail, latest grid, and bookmarks — display-only,
+ * the source itself keeps working behind direct links. Empty (the default)
+ * means every source is visible.
  */
 export interface SourceOrderSettings {
   /** Source codes in user order; [] = canonical order. */
   order: string[];
+  /** Hidden source codes; [] = everything visible. */
+  hidden: string[];
 }
 
-/** Default: canonical built-in source order. */
+/** Default: canonical built-in source order, everything visible. */
 export const DEFAULT_SOURCE_ORDER_SETTINGS: SourceOrderSettings = {
   order: [],
+  hidden: [],
 };
 
 /**

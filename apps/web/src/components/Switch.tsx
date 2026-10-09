@@ -14,6 +14,7 @@ export function Switch({
   onChange,
   labelledBy,
   size,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
@@ -21,6 +22,8 @@ export function Switch({
   labelledBy: string;
   /** Compact variant for inline toolbar placement (defaults to regular). */
   size?: 'sm';
+  /** Disabled state (e.g. an action with no valid target). */
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -28,7 +31,8 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       aria-labelledby={labelledBy}
-      className={`switch${checked ? ' switch--on' : ''}${size === 'sm' ? ' switch--sm' : ''}`}
+      disabled={disabled}
+      className={`switch${checked ? ' switch--on' : ''}${size === 'sm' ? ' switch--sm' : ''}${disabled ? ' switch--disabled' : ''}`}
       onClick={() => onChange(!checked)}
     >
       <span className="switch__thumb" />

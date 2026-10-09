@@ -4,10 +4,11 @@ import type { SourceBenchmarkResult } from '../api/client';
 import { useBenchmarkSources, useSaveSourceOrder, useSourceImageHealth, useSourceOrder } from '../api/hooks';
 import { LogPanel } from '../components/LogPanel';
 import { ErrorState } from '../components/StateView';
+import { Switch } from '../components/Switch';
 import { IconArrowLeft } from '../components/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { log as rootLog } from '../lib/logger';
-import { formatRelativeTime } from '../utils/format';
+import { SOURCE_OPTIONS, effectiveHiddenSources, formatRelativeTime } from '../utils/format';
 
 /** Page-scoped log. Every trace line on this page carries this scope. */
 const pageLog = rootLog.child('sources');
@@ -53,6 +54,7 @@ export function SourcesPage() {
   const sourceOrderQuery = useSourceOrder();
   const saveSourceOrder = useSaveSourceOrder();
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [dragOverName, setDragOverName] = useState<string | null>(null);
   const dragName = useRef<string | null>(null);
   const savedOrder = sourceOrderQuery.data?.order ?? [];
@@ -60,6 +62,27 @@ export function SourcesPage() {
     saveSourceOrder.isPending && saveSourceOrder.variables
       ? saveSourceOrder.variables.order
       : savedOrder;
+  /**
+   * Visibility toggle. Same pending-wins pattern as the order so the
+   * switch flips instantly; persisted to the same `sources.json` file.
+   * Display-only — hiding a source drops its pills and cards, the source
+   * itself keeps working behind direct links.
+   */
+  const savedHidden = sourceOrderQuery.data?.hidden ?? [];
+  const effectiveHiddenList =
+    saveSourceOrder.isPending && saveSourceOrder.variables
+      ? saveSourceOrder.variables.hidden
+      : savedHidden;
+  const effectiveHidden = useMemo(
+    () => effectiveHiddenSources(effectiveHiddenList),
+    [effectiveHiddenList],
+  );
+  /** Hiding the last visible source would brick every pill grid — the
+   *  switch for it is disabled instead (the shared fail-open rule is the
+   *  backstop for stale states). */
+  const isLastVisible = (name: string): boolean =>
+    !effectiveHidden.has(name) &&
+    SOURCE_OPTIONS.every((option) => option.code === name || effectiveHidden.has(option.code));
   const rank = useMemo(
     () => new Map(effectiveOrder.map((code, i) => [code, i] as const)),
     [effectiveOrder],
@@ -219,7 +242,7 @@ export function SourcesPage() {
       changed: next.join(',') !== effectiveOrder.join(','),
     });
     saveSourceOrder.mutate(
-      { order: next },
+      { order: next, hidden: [...effectiveHiddenList] },
       {
         onError: (error) => {
           const message = error instanceof Error ? error.message : 'Could not save source order.';
@@ -228,6 +251,32 @@ export function SourcesPage() {
         },
         onSuccess: (saved) => {
           pageLog.debug('persist order settled', { requested: next, saved: saved.order });
+        },
+      },
+    );
+  }
+
+  /** Flip one source's visibility, then auto-save (order untouched). */
+  function toggleVisibility(name: string, visible: boolean) {
+    if (saveSourceOrder.isPending) {
+      pageLog.warn('visibility toggle ignored — a save is still in flight', { source: name, visible });
+      return;
+    }
+    setVisibilityError(null);
+    const next = visible
+      ? effectiveHiddenList.filter((code) => code !== name)
+      : [...effectiveHiddenList, name];
+    pageLog.debug('persist visibility', { source: name, visible, next });
+    saveSourceOrder.mutate(
+      { order: [...effectiveOrder], hidden: next },
+      {
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : 'Could not save source visibility.';
+          pageLog.error('persist visibility failed', { next, message });
+          setVisibilityError(message);
+        },
+        onSuccess: (saved) => {
+          pageLog.debug('persist visibility settled', { requested: next, saved: saved.hidden });
         },
       },
     );
@@ -390,6 +439,8 @@ export function SourcesPage() {
             run the benchmark to probe each source&apos;s live listing right now. Drag a
             row by its grip (or use ↑ ↓) to reorder sources: the order sets the source
             pills, the Latest/Search default, and the sequence the benchmark probes.
+            The Visible switch hides a source&apos;s pills and cards everywhere
+            (display-only — bookmarks and direct links keep working).
           </p>
         </div>
         <div className="cache-settings__actions">
@@ -434,6 +485,11 @@ export function SourcesPage() {
           {orderError && (
             <p className="sources-page__error" role="alert">
               Could not save source order: {orderError}
+            </p>
+          )}
+          {visibilityError && (
+            <p className="sources-page__error" role="alert">
+              Could not save source visibility: {visibilityError}
             </p>
           )}
           <ul className="sources-list" role="list">
@@ -523,6 +579,30 @@ export function SourcesPage() {
                   imageBlocked={source.imageBlocked}
                 />
                 <div className="sources-row__actions">
+                  <span
+                    className="sources-row__visibility"
+                    title={
+                      isLastVisible(source.name)
+                        ? 'This is the last visible source — at least one must stay visible'
+                        : `Show ${source.label} in pills and grids`
+                    }
+                  >
+                    <span
+                      className="sources-row__visibility-label"
+                      id={`sources-visible-${source.name}`}
+                    >
+                      Visible
+                    </span>
+                    <Switch
+                      checked={!effectiveHidden.has(source.name)}
+                      onChange={(visible) => toggleVisibility(source.name, visible)}
+                      labelledBy={`sources-visible-${source.name}`}
+                      size="sm"
+                      disabled={
+                        saveSourceOrder.isPending || isLastVisible(source.name)
+                      }
+                    />
+                  </span>
                   <button
                     type="button"
                     className="btn btn--ghost btn--sm"

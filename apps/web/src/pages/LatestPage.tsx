@@ -12,8 +12,8 @@ import {
   useGenreList,
   useLatestSettings,
   useSaveLatestSettings,
-  useSourceOrder,
 } from '../api/hooks';
+import { useVisibleSource } from '../hooks/useVisibleSource';
 import { api } from '../api/client';
 import { PanelCard, PanelGrid } from '../components/PanelCard';
 import { IconChevronDown } from '../components/icons';
@@ -29,7 +29,7 @@ import { SearchBar } from '../components/SearchBar';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
-import { defaultSourceFor, formatDate, sourceLabel } from '../utils/format';
+import { formatDate, sourceLabel } from '../utils/format';
 
 /** Latest source updates with page navigation below the grid. */
 export function LatestPage() {
@@ -39,10 +39,10 @@ export function LatestPage() {
   const pageParam = Number.parseInt(params.get('page') ?? '1', 10);
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
   // Always query exactly one source — no fan-out "all sources" mode.
-  // The default is the user's top-ordered source (Sources page), MangaKatana
-  // until an order is saved.
-  const sourceOrder = useSourceOrder();
-  const source = params.get('source') ?? defaultSourceFor(sourceOrder.data?.order);
+  // The default is the first visible source in the user's order (Sources
+  // page), MangaKatana until an order is saved. A `?source=` naming a
+  // hidden source remaps to the default (URL fixed via replace).
+  const source = useVisibleSource(params, setParams);
 
   /** Client-side status + genre filters (mirror the search page). Genre
       constraints are ALSO sent to the API: combo-capable sources filter

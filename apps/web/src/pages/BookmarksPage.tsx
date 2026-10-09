@@ -12,6 +12,7 @@ import {
   useRemoveBookmark,
   useRemoveBookmarkFromFolder,
   useSaveBookmarksSettings,
+  useSourceOrder,
   useTags,
 } from '../api/hooks';
 import {
@@ -43,7 +44,7 @@ import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import { readDefaultFolderId, writeDefaultFolderId } from '../utils/defaultBookmarkFolder';
-import { sourceLabel } from '../utils/format';
+import { effectiveHiddenSources, sourceLabel } from '../utils/format';
 
 /**
  * Sort bookmarks so freshly-released chapters bubble a panel to the top.
@@ -82,6 +83,20 @@ export function BookmarksPage() {
   const { toast } = useToast();
   const [pendingRemoval, setPendingRemoval] = useState<Bookmark | null>(null);
   const [sourceFilter, setSourceFilter] = useState('');
+  /**
+   * Sources hidden via the Sources page toggle — their pills vanish (via
+   * SourceFilter) and their cards are filtered out of the grid below.
+   */
+  const sourceOrder = useSourceOrder();
+  const hiddenSources = useMemo(
+    () => effectiveHiddenSources(sourceOrder.data?.hidden),
+    [sourceOrder.data?.hidden],
+  );
+  // A toggle flipped while this filter points at the source resets to All
+  // (the pill is gone, so the stale value would otherwise show nothing).
+  useEffect(() => {
+    if (sourceFilter !== '' && hiddenSources.has(sourceFilter)) setSourceFilter('');
+  }, [sourceFilter, hiddenSources]);
   const [query, setQuery] = useState('');
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
@@ -198,6 +213,7 @@ export function BookmarksPage() {
     const filtered = sourceData.filter(
       (bookmark) =>
         (!sourceFilter || bookmark.source === sourceFilter) &&
+        !hiddenSources.has(bookmark.source) &&
         (!needle || bookmark.title.toLowerCase().includes(needle)) &&
         (!tagFilter || panelTags.get(bookmark.panelId)?.has(tagFilter)) &&
         (!statusFilter || bookmark.status === statusFilter) &&
@@ -207,7 +223,7 @@ export function BookmarksPage() {
           !(bookmark.genres ?? []).some((g) => excludeSet.has(g.toLowerCase()))),
     );
     return sortBookmarks(filtered);
-  }, [sourceData, sourceFilter, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data]);
+  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data]);
 
   /** Render window into `sorted` (see PAGE_SIZE): only these cards are
    *  mounted, so a 200-title shelf issues ~30 cover fetches up front and

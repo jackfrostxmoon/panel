@@ -28,20 +28,26 @@ export function sanitizeSourceOrder(value: unknown): string[] {
   return out;
 }
 
-/** Load the source order; canonical (empty) when the file is missing/invalid. */
+/** Load the source order + visibility; canonical (all visible) when the file is missing/invalid. */
 export function loadSourceOrder(): SourceOrderSettings {
   if (!existsSync(FILE_PATH)) return { ...DEFAULT_SOURCE_ORDER_SETTINGS };
   try {
     const parsed = JSON.parse(readFileSync(FILE_PATH, 'utf-8')) as Partial<SourceOrderSettings>;
-    return { order: sanitizeSourceOrder(parsed.order) };
+    return {
+      order: sanitizeSourceOrder(parsed.order),
+      hidden: sanitizeSourceOrder(parsed.hidden),
+    };
   } catch {
     return { ...DEFAULT_SOURCE_ORDER_SETTINGS };
   }
 }
 
-/** Replace the stored source order (already validated by the route). */
+/** Replace the stored source order + visibility (already validated by the route). */
 export function saveSourceOrder(settings: SourceOrderSettings): SourceOrderSettings {
-  const clean: SourceOrderSettings = { order: sanitizeSourceOrder(settings.order) };
+  const clean: SourceOrderSettings = {
+    order: sanitizeSourceOrder(settings.order),
+    hidden: sanitizeSourceOrder(settings.hidden),
+  };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
   }

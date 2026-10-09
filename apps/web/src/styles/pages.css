@@ -4372,6 +4372,20 @@
   margin-top: var(--space-3);
   display: flex;
   gap: var(--space-2);
+  align-items: center;
+}
+
+/* Per-row visibility toggle (hides the source's pills and cards). */
+.sources-row__visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: auto;
+}
+
+.sources-row__visibility-label {
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
 }
 
 /* Benchmark outcome pills — extend the shared .status-pill base. */

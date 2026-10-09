@@ -171,12 +171,36 @@ export const SOURCE_OPTIONS: SourceOption[] = Object.entries(SOURCE_LABELS).map(
 );
 
 /**
+ * Effective hidden-source set after the fail-open rule: unknown codes are
+ * dropped, and an all-hidden set hides nothing (so the UI can never brick
+ * itself into zero pills / empty grids).
+ */
+export function effectiveHiddenSources(hidden?: readonly string[]): Set<string> {
+  const known = new Set(SOURCE_OPTIONS.map((option) => option.code));
+  const set = new Set((hidden ?? []).filter((code) => known.has(code)));
+  if (set.size > 0 && [...known].every((code) => set.has(code))) return new Set();
+  return set;
+}
+
+/**
  * Sources in the user's preferred order (the Sources page editor writes it
  * to `data/display/sources.json`). Unknown codes are ignored; known codes
  * missing from the list keep their canonical relative order at the end —
- * so a newly added source never vanishes from the filter.
+ * so a newly added source never vanishes from the filter. Sources in
+ * `hidden` (the Sources page visibility toggle) are dropped, subject to
+ * the `effectiveHiddenSources` fail-open rule.
  */
-export function orderedSourceOptions(order?: readonly string[]): SourceOption[] {
+export function orderedSourceOptions(
+  order?: readonly string[],
+  hidden?: readonly string[],
+): SourceOption[] {
+  const hiddenSet = effectiveHiddenSources(hidden);
+  const ordered = doOrder(order);
+  if (hiddenSet.size === 0) return ordered;
+  return ordered.filter((option) => !hiddenSet.has(option.code));
+}
+
+function doOrder(order?: readonly string[]): SourceOption[] {
   if (!order || order.length === 0) return SOURCE_OPTIONS;
   const byCode = new Map(SOURCE_OPTIONS.map((option) => [option.code, option]));
   const seen = new Set<string>();
@@ -195,9 +219,10 @@ export function orderedSourceOptions(order?: readonly string[]): SourceOption[] 
 }
 
 /**
- * Default source honoring the user's order: the first source in the merged
- * order (their top pick, or MangaKatana when no order is saved yet).
+ * Default source honoring the user's order and visibility: the first
+ * visible source in the merged order (their top pick, or MangaKatana when
+ * no order is saved yet).
  */
-export function defaultSourceFor(order?: readonly string[]): string {
-  return orderedSourceOptions(order)[0]!.code;
+export function defaultSourceFor(order?: readonly string[], hidden?: readonly string[]): string {
+  return orderedSourceOptions(order, hidden)[0]!.code;
 }

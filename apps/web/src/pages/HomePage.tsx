@@ -3,13 +3,13 @@ import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent }
 import { Link } from 'react-router-dom';
 import { SearchBar } from '../components/SearchBar';
 import { api } from '../api/client';
-import { useClearRecentlyViewed, useRecentlyViewed } from '../api/hooks';
+import { useClearRecentlyViewed, useRecentlyViewed, useSourceOrder } from '../api/hooks';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { PanelCard } from '../components/PanelCard';
 import { IconChevronLeft, IconChevronRight, IconArrowRight } from '../components/icons';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 
-import { formatBytes } from '../utils/format';
+import { effectiveHiddenSources, formatBytes } from '../utils/format';
 import { loadRecentlyViewed, clearRecentlyViewed, replaceRecentlyViewed, type RecentlyViewedEntry } from '../utils/recentlyViewed';
 
 /** Base cadence for the cache-size badge re-read. The badge is
@@ -26,6 +26,35 @@ const SIZE_SETTLE_READS = 2;
  * tagline and one prominent search bar centered in the viewport over an
  * ambient glow, with quick links beneath.
  */
+
+interface ServerHistoryEntry {
+  id: string;
+  title: string;
+  coverUrl: string | null;
+  source: string;
+  sourceUrl: string;
+  status: RecentlyViewedEntry['status'];
+  latestChapter: string | null;
+  viewedAt: string;
+}
+
+function fromServerEntries(server: readonly ServerHistoryEntry[]): RecentlyViewedEntry[] {
+  return server.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    coverUrl: entry.coverUrl,
+    source: entry.source,
+    sourceUrl: entry.sourceUrl,
+    status: entry.status,
+    latestChapter: entry.latestChapter,
+    updatedAt: null,
+    viewedAt: entry.viewedAt,
+  }));
+}
+
+function seenIds(server: readonly ServerHistoryEntry[]): Set<string> {
+  return new Set(server.map((entry) => entry.id));
+}
 export function HomePage() {
   useDocumentTitle(null);
   const { settings } = useDisplaySettings();
@@ -38,27 +67,27 @@ export function HomePage() {
   /** Local rail — instant fallback while the server history loads, and the
       offline copy when the API is unreachable. */
   const [localRecent, setLocalRecent] = useState<RecentlyViewedEntry[]>(() => loadRecentlyViewed());
+  /** Sources hidden via the Sources page toggle — their cards are dropped
+      from the rail below. */
+  const sourceOrder = useSourceOrder();
+  const hiddenSources = useMemo(
+    () => effectiveHiddenSources(sourceOrder.data?.hidden),
+    [sourceOrder.data?.hidden],
+  );
 
   /** Server wins when present; local-only entries (recorded while offline)
-      are appended so they stay visible until the server confirms them. */
+      are appended so they stay visible until the server confirms them.
+      Cards from hidden sources are dropped. */
   const recent = useMemo<RecentlyViewedEntry[]>(() => {
     const server = historyQuery.data;
-    if (!server) return localRecent;
-    const fromServer: RecentlyViewedEntry[] = server.map((entry) => ({
-      id: entry.id,
-      title: entry.title,
-      coverUrl: entry.coverUrl,
-      source: entry.source,
-      sourceUrl: entry.sourceUrl,
-      status: entry.status,
-      latestChapter: entry.latestChapter,
-      updatedAt: null,
-      viewedAt: entry.viewedAt,
-    }));
-    if (localRecent.length === 0) return fromServer;
-    const seen = new Set(fromServer.map((entry) => entry.id));
-    return [...fromServer, ...localRecent.filter((entry) => !seen.has(entry.id))].slice(0, 10);
-  }, [historyQuery.data, localRecent]);
+    const merged = !server
+      ? localRecent
+      : localRecent.length === 0
+        ? fromServerEntries(server)
+        : [...fromServerEntries(server), ...localRecent.filter((entry) => !seenIds(server).has(entry.id))].slice(0, 10);
+    if (hiddenSources.size === 0) return merged;
+    return merged.filter((entry) => !hiddenSources.has(entry.source));
+  }, [historyQuery.data, localRecent, hiddenSources]);
 
   // Mirror the server list into localStorage so the rail still renders on
   // a cold offline load. Never shrinks the local rail on an empty server

@@ -14,12 +14,13 @@ interface SourceFilterProps {
 
 /**
  * Segmented control choosing which source to query. Pills follow the user's
- * saved source order (Sources page); unknown future sources keep their
- * canonical slot at the end via `orderedSourceOptions`.
+ * saved source order (Sources page) and skip sources hidden by the
+ * visibility toggle; unknown future sources keep their canonical slot at
+ * the end via `orderedSourceOptions`.
  */
 export function SourceFilter({ value, onChange, allowAll = false }: SourceFilterProps) {
   const sourceOrder = useSourceOrder();
-  const options = orderedSourceOptions(sourceOrder.data?.order);
+  const options = orderedSourceOptions(sourceOrder.data?.order, sourceOrder.data?.hidden);
   const button = (code: string, label: string) => (
     <button
       key={code || 'all'}

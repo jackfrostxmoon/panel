@@ -872,6 +872,14 @@
   transform: translateX(14px);
 }
 
+/* Disabled switches (e.g. hiding the last visible source, which would
+   leave every pill grid empty). Native `disabled` already blocks
+   interaction; this only dims the control. */
+.switch--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Jump dropdowns in the settings panel */
 .reader-settings__select {
   width: 100%;
