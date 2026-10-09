@@ -41,7 +41,7 @@ export interface SourceHttpClientOptions {
   readonly headers?: Record<string, string>;
   /** Maximum TEXT response size in bytes (HTML/JSON/sitemap, default 3 MiB). */
   readonly maxTextBytes?: number;
-  /** Maximum IMAGE response size in bytes (default 8 MiB). */
+  /** Maximum IMAGE response size in bytes (default 16 MiB). */
   readonly maxImageBytes?: number;
   /**
    * ADDITIONAL hosts the source's image CDN may be proxied through. These
@@ -209,7 +209,7 @@ export class SourceHttpClient {
     this.userAgent = options.userAgent ?? DEFAULT_UA;
     this.headers = options.headers ?? null;
     this.maxTextBytes = options.maxTextBytes ?? 3 * 1024 * 1024;
-    this.maxImageBytes = options.maxImageBytes ?? 8 * 1024 * 1024;
+    this.maxImageBytes = options.maxImageBytes ?? 16 * 1024 * 1024;
     this.retryCount = options.retryCount ?? DEFAULT_RETRY_COUNT;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
   }

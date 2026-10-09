@@ -118,17 +118,21 @@ const envSchema = z.object({
    * whole image in heap, so unbounded concurrency is the transient 300MB+
    * spike. Disk hits bypass the limiter — revisits stay instant. Queued
    * requests wait FIFO; fewer parallel fetches also means fewer source
-   * 429s/retries.
+   * 429s/retries. Sized together with SOURCE_MAX_IMAGE_BYTES: 8 × 16 MiB
+   * keeps the same worst-case transient heap as the old 16 × 8 MiB.
    */
-  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(16),
+  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
 
   /**
    * Split response cap for outbound source traffic. Listings are KBs of
    * HTML — a rogue multi-MB page used to become a multi-MB JS string. Text
-   * (HTML/JSON/sitemap) fails fast above this; images keep the full 8MB.
+   * (HTML/JSON/sitemap) fails fast above this; images keep the full 16MB —
+   * some sources serve multi-MB originals (13MB PNG covers and stitched
+   * webtoon pages exist in the wild), and anything above the cap fails
+   * every retry deterministically, surfacing as a permanent broken image.
    */
   SOURCE_MAX_TEXT_BYTES: z.coerce.number().int().positive().default(3 * 1024 * 1024),
-  SOURCE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
+  SOURCE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(16 * 1024 * 1024),
 
   /**
    * Path to the COPY-block export used by `bun run db:import`. Relative paths
