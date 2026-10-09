@@ -59,6 +59,8 @@ export class RecentlyViewedRepository {
       .select({ id: recentlyViewed.id })
       .from(recentlyViewed)
       .orderBy(desc(recentlyViewed.viewedAt))
+      // SQLite rejects bare OFFSET without LIMIT — LIMIT -1 means "no limit".
+      .limit(-1)
       .offset(keep);
     if (overflow.length === 0) return 0;
     const deleted = await this.db
