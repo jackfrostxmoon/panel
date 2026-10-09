@@ -248,25 +248,40 @@ export function sourceImageRoutes(
     const stableKey =
       tag !== null && pageIdx !== null ? `${tag}#p${pageIdx}` : null;
 
-    const entry = await imageCache
-      .getOrCreate(
-        cacheUrl,
-        (fetchSignal) => source.fetchImage!(cacheUrl, fetchSignal ? { signal: fetchSignal } : undefined),
-        kind,
-        tag,
-        stableKey,
-        clientSignal,
-      )
-      .then(
-        (hit) => {
-          recordImageResult(sourceName, true, false);
-          return hit;
-        },
-        (error) => {
-          recordImageResult(sourceName, false, isAllowlistRejection(error));
-          throw error;
-        },
-      );
+    const fetchOne = (fetchSignal?: AbortSignal) =>
+      source.fetchImage!(cacheUrl, fetchSignal ? { signal: fetchSignal } : undefined);
+    // Covers with a panel tag get stale-while-revalidate: an exact-miss
+    // with another cover for the same panel on disk serves the stale cover
+    // instantly (killing the "covers miss more and more" spiral from URL
+    // variants + chapter-download evictions) while the new URL refreshes
+    // in the background. Chapter pages keep the exact path (stable keys
+    // already survive URL rotations there).
+    const entry =
+      kind === 'cover' && tag
+        ? await imageCache
+            .getCoverWithFallback(cacheUrl, fetchOne, tag, clientSignal)
+            .then(
+              ({ entry: hit }) => {
+                recordImageResult(sourceName, true, false);
+                return hit;
+              },
+              (error) => {
+                recordImageResult(sourceName, false, isAllowlistRejection(error));
+                throw error;
+              },
+            )
+        : await imageCache
+            .getOrCreate(cacheUrl, fetchOne, kind, tag, stableKey, clientSignal)
+            .then(
+              (hit) => {
+                recordImageResult(sourceName, true, false);
+                return hit;
+              },
+              (error) => {
+                recordImageResult(sourceName, false, isAllowlistRejection(error));
+                throw error;
+              },
+            );
 return new Response(Bun.file(entry.path), {
       headers: {
         // Pick the best MIME type we can: prefer the one we stored at fetch

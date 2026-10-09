@@ -203,6 +203,17 @@ export class ImageCache {
    * keep two maps.
    */
   private legacyIndex: Map<string, string> | null = null;
+  /**
+   * One cached cover per panel tag-hash → relative path. Backs the
+   * stale-while-revalidate fallback: covers are keyed `cover-<tagHash><urlHash>`
+   * (no stable key like chapter pages have), so ANY upstream URL variant
+   * (thumbnail vs og:image, CDN host move, `?v=`/token rotation) is an exact
+   * miss. The fallback serves the panel's last-known cover instantly and
+   * refreshes to the new URL in the background instead of stalling the grid.
+   * Last-write-wins; `null` means "not loaded yet" (same lifecycle as the
+   * other two maps).
+   */
+  private coverTagIndex: Map<string, string> | null = null;
 
   /**
    * Memoized `ensureDirs()` flag. `mkdir` with `recursive: true` is
@@ -261,9 +272,19 @@ export class ImageCache {
     return this.tagHash(tag);
   }
 
-  /** 56-hex-char hash derived from the upstream URL (drops the `?_retry=` suffix). */
+  /**
+   * 56-hex-char hash derived from the upstream URL. Defensive `?_retry=`
+   * stripping + fragment drop live here (not just at call sites) so a
+   * retry-busted or fragment-tagged URL never mints a junk variant entry.
+   * NOTE: deliberately NOT a full query normalization (sorting/stripping
+   * volatile `?v=`/token params would change hashes for existing files and
+   * invalidate the whole on-disk cache on deploy). URL-variant robustness
+   * comes from the tag-only stale fallback (`coverTagIndex`) instead, which
+   * needs no invalidation.
+   */
   private urlSuffix(url: string): string {
-    return createHash('sha256').update(url).digest('hex').slice(0, 56);
+    const clean = url.replace(/[?&]_retry=\d+/, '').split('#')[0] ?? url;
+    return createHash('sha256').update(clean).digest('hex').slice(0, 56);
   }
 
   /**
@@ -493,6 +514,11 @@ export class ImageCache {
     for (const [k, v] of this.legacyIndex) {
       if (dead.has(v)) this.legacyIndex.delete(k);
     }
+    if (this.coverTagIndex) {
+      for (const [k, v] of this.coverTagIndex) {
+        if (dead.has(v)) this.coverTagIndex.delete(k);
+      }
+    }
   }
 
   /**
@@ -658,6 +684,75 @@ export class ImageCache {
     };
     promise.then(release, release);
     return await promise;
+  }
+
+  /**
+   * Any cached cover for a panel tag, regardless of upstream URL. O(1) via
+   * `coverTagIndex`, with a prefix scan over `indexStems` as fallback for
+   * entries written before this process warmed its index. Returns null when
+   * the panel has no cover on disk at all.
+   */
+  private async findStaleCover(tag: string): Promise<ImageCacheEntry | null> {
+    await this.ensureIndexPopulated();
+    const tagHash = this.tagHash(tag);
+    const known = this.coverTagIndex?.get(tagHash);
+    if (known) {
+      const fullPath = join(this.deps.dir, known);
+      try {
+        await stat(fullPath);
+        return { url: '', path: fullPath, bytes: 0, contentType: null };
+      } catch {
+        if (this.coverTagIndex?.get(tagHash) === known) this.coverTagIndex.delete(tagHash);
+      }
+    }
+    if (this.indexStems) {
+      for (const [stem, rel] of this.indexStems) {
+        if (!stem.startsWith(`cover-${tagHash}`)) continue;
+        const fullPath = join(this.deps.dir, rel);
+        try {
+          await stat(fullPath);
+          this.coverTagIndex?.set(tagHash, rel);
+          return { url: '', path: fullPath, bytes: 0, contentType: null };
+        } catch {
+          this.indexStems.delete(stem);
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Cover read with stale-while-revalidate. Exact URL-hash hit → served
+   * immediately (no upstream). Exact miss but another cover for the same
+   * panel on disk → the stale cover is served immediately and the new URL
+   * refreshes in the background (fire-and-forget; failures are silent
+   * because the caller already has bytes). Total miss → synchronous fetch
+   * as before. `stale` tells the caller whether a background refresh is in
+   * flight (callers that track hit/miss stats may want to count it a hit).
+   */
+  async getCoverWithFallback(
+    url: string,
+    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    tag: string | null,
+    signal?: AbortSignal,
+  ): Promise<{ entry: ImageCacheEntry; stale: boolean }> {
+    await this.ensureDirs();
+    signal?.throwIfAborted();
+    const exact = await this.readFromDisk('cover', url, tag, null);
+    if (exact) return { entry: exact, stale: false };
+    if (tag) {
+      const stale = await this.findStaleCover(tag);
+      if (stale) {
+        // Refresh out of band — deliberately NOT tied to the caller's
+        // signal (a grid scroll-away must not kill the update), and
+        // deduped by `getOrCreate`'s in-flight map when several rows race
+        // the same new URL.
+        void this.getOrCreate(url, fetcher, 'cover', tag, null).catch(() => {});
+        return { entry: stale, stale: true };
+      }
+    }
+    const fresh = await this.getOrCreate(url, fetcher, 'cover', tag, null, signal);
+    return { entry: fresh, stale: false };
   }
 
   /**
@@ -918,6 +1013,11 @@ export class ImageCache {
     for (const [k, v] of this.legacyIndex) {
       if (v === relPath) this.legacyIndex.delete(k);
     }
+    if (this.coverTagIndex) {
+      for (const [k, v] of this.coverTagIndex) {
+        if (v === relPath) this.coverTagIndex.delete(k);
+      }
+    }
   }
 
   /**
@@ -930,6 +1030,7 @@ export class ImageCache {
     if (this.indexStems !== null && this.legacyIndex !== null) return;
     if (this.indexStems === null) this.indexStems = new Map();
     if (this.legacyIndex === null) this.legacyIndex = new Map();
+    if (this.coverTagIndex === null) this.coverTagIndex = new Map();
     for (const rel of await this.listFiles()) {
       this.indexFile(rel);
     }
@@ -967,6 +1068,7 @@ export class ImageCache {
       // extension) is the value.
       const stem = `${kind}-${tagHash}${suffix}`;
       this.indexStems.set(stem, relPath);
+      if (kind === 'cover' && tagHash) this.coverTagIndex?.set(tagHash, relPath);
       return;
     }
     const legacyMatch = /^(cover|chapter)-([0-9a-f]{64})\.\w+$/.exec(filename);
@@ -1189,9 +1291,19 @@ export class ImageCache {
           }
         });
       }
-      const files = metas
-        // Oldest access time first — evict cold entries.
-        .sort((a, b) => a.atime - b.atime || a.mtime - b.mtime);
+      // Chapters-first: covers are tiny (~100–500KB) but every grid
+      // re-requests them, while a single bulk chapter download writes
+      // hundreds of MB and would otherwise evict the cold covers first —
+      // the "covers miss more and more" spiral. Chapter pages (numbered
+      // `NNN.ext` files included — anything NOT `cover-`-prefixed) go
+      // oldest-first; covers only go once no chapter files remain.
+      const isCoverFile = (rel: string): boolean => pathBasename(rel).startsWith('cover-');
+      const byAge = (a: (typeof metas)[number], b: (typeof metas)[number]) =>
+        a.atime - b.atime || a.mtime - b.mtime;
+      const files = [
+        ...metas.filter((e) => !isCoverFile(e.rel)).sort(byAge),
+        ...metas.filter((e) => isCoverFile(e.rel)).sort(byAge),
+      ];
 
       let remaining = total;
       const evicted: string[] = [];
@@ -1479,6 +1591,7 @@ export class ImageCache {
   dropMemoryIndex(): void {
     this.indexStems = null;
     this.legacyIndex = null;
+    this.coverTagIndex = null;
     this.sizeMemo.clear();
     this.sizeInflight.clear();
     this.folderCache.clear();
