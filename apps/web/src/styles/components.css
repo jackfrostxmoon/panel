@@ -2177,6 +2177,7 @@ input::placeholder {
 .download-settings__presets .segmented__option {
   padding: 4px 10px;
   font-size: var(--font-size-sm);
+  white-space: nowrap;
 }
 
 .download-settings__custom {
