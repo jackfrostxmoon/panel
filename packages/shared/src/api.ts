@@ -251,6 +251,13 @@ export interface PrefetchJob {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  /**
+   * Pages fetched concurrently within this job. Mirrors the reader's image
+   * loading width (`parallel` = 8, `sequential` = `preloadAhead`, data-saver
+   * = 1). Optional on read so rows written before the column existed still
+   * parse; the worker falls back to 3 when absent.
+   */
+  pageConcurrency?: number;
 }
 
 /** Enqueue result (POST /api/chapter/:id/prefetch). `reused` is true when
@@ -270,6 +277,12 @@ export interface EnqueuePrefetchInput {
   intervalMs?: number;
   /** Hold this job back before it becomes claimable (manual clicks). */
   delayMs?: number;
+  /**
+   * Pages to fetch concurrently within the chapter (worker honors).
+   * Follows the reader's image loading width when set; the worker clamps
+   * to 1–16 and defaults to 3 when omitted.
+   */
+  pageConcurrency?: number;
 }
 
 /** Body for POST /api/prefetch/jobs/batch. Enqueues many chapters in one round-trip. */
@@ -281,6 +294,11 @@ export interface EnqueuePrefetchBatchInput {
   /** Pacing between chapters in the same batch (worker honors). */
   intervalMs?: number;
   onlyMissing?: boolean;
+  /**
+   * Pages to fetch concurrently within each chapter of the batch.
+   * Same semantics as `EnqueuePrefetchInput.pageConcurrency`.
+   */
+  pageConcurrency?: number;
 }
 
 /** One entry of a batch enqueue result. */

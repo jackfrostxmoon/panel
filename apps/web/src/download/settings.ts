@@ -12,7 +12,14 @@
  */
 
 /**
- * Pacing options for bulk chapter downloads.
+ * How the download width is chosen. `follow-reader` mirrors the reader's
+ * image loading (`parallel` = 8, `sequential` = `preloadAhead`, data-saver
+ * = 1); `custom` uses `pageConcurrency` verbatim.
+ */
+export type PageConcurrencyMode = 'follow-reader' | 'custom';
+
+/**
+ * Pacing + width options for bulk chapter downloads.
  */
 export interface DownloadSettings {
   /**
@@ -22,17 +29,28 @@ export interface DownloadSettings {
    * pre-existing behaviour, also the default).
    *
    * The pause is skipped on user cancel and on the very last chapter of
-   * a batch (nothing to wait for). Within a chapter, pages still fan out
-   * at 3 parallel as before — this only spaces chapters apart, so a
+   * a batch (nothing to wait for). This only spaces chapters apart, so a
    * user-controlled rate limit keeps the upstream source from being
    * hammered by "Download all" runs.
    */
   chapterIntervalMs: number;
+  /**
+   * Width source for pages within a chapter. Default `follow-reader` keeps
+   * downloads matching the reader without a second knob to maintain.
+   */
+  pageConcurrencyMode: PageConcurrencyMode;
+  /**
+   * Custom pages-in-flight, used only when `pageConcurrencyMode` is
+   * `custom`. Clamped 1–16. Default 3 (the pre-existing worker width).
+   */
+  pageConcurrency: number;
 }
 
-/** Default pacing: no wait between chapters (backwards-compatible). */
+/** Defaults: no wait between chapters, follow the reader's loading width. */
 export const DEFAULT_DOWNLOAD_SETTINGS: DownloadSettings = {
   chapterIntervalMs: 0,
+  pageConcurrencyMode: 'follow-reader',
+  pageConcurrency: 3,
 };
 
 /** Sensible upper bound for the custom input (10 minutes). */
@@ -68,6 +86,10 @@ export const CHAPTER_INTERVAL_PRESETS: ReadonlyArray<{
  * storage falls back to `DEFAULT_DOWNLOAD_SETTINGS`; unknown future
  * fields in storage are ignored.
  */
+/** Bounds for the custom download width (mirrors pageConcurrency.ts). */
+export const DOWNLOAD_PAGE_CONCURRENCY_MIN = 1;
+export const DOWNLOAD_PAGE_CONCURRENCY_MAX = 16;
+
 export function loadDownloadSettings(
   storage: Pick<Storage, 'getItem'> = localStorage,
 ): DownloadSettings {
@@ -79,7 +101,24 @@ export function loadDownloadSettings(
       return { ...DEFAULT_DOWNLOAD_SETTINGS };
     }
     // Merge over defaults so adding new fields later needs no migration.
-    return { ...DEFAULT_DOWNLOAD_SETTINGS, ...(parsed as Partial<DownloadSettings>) };
+    const merged: DownloadSettings = {
+      ...DEFAULT_DOWNLOAD_SETTINGS,
+      ...(parsed as Partial<DownloadSettings>),
+    };
+    // Sanitize the newer width fields so a stale/corrupt store can't break
+    // the enqueue path — the reader page itself is never affected.
+    if (merged.pageConcurrencyMode !== 'follow-reader' && merged.pageConcurrencyMode !== 'custom') {
+      merged.pageConcurrencyMode = DEFAULT_DOWNLOAD_SETTINGS.pageConcurrencyMode;
+    }
+    if (typeof merged.pageConcurrency !== 'number' || !Number.isFinite(merged.pageConcurrency)) {
+      merged.pageConcurrency = DEFAULT_DOWNLOAD_SETTINGS.pageConcurrency;
+    } else {
+      merged.pageConcurrency = Math.min(
+        DOWNLOAD_PAGE_CONCURRENCY_MAX,
+        Math.max(DOWNLOAD_PAGE_CONCURRENCY_MIN, Math.trunc(merged.pageConcurrency)),
+      );
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_DOWNLOAD_SETTINGS };
   }

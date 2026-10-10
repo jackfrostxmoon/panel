@@ -20,9 +20,10 @@ import type { PrefetchJobRow } from '../db/schema.js';
  *      offline fallback to the `chapter_pages` DB cache — same path the
  *      synchronous prefetch endpoint already uses).
  *   3. Probe ImageCache for already-cached pages (when `onlyMissing`).
- *   4. Fetch the missing pages in parallel chunks (concurrency = 3) via
- *      the source adapters; persist counters after each chunk so the
- *      polled web UI sees live progress.
+ *   4. Fetch the missing pages in parallel chunks (concurrency =
+ *      the job's `page_concurrency`, following the reader's image loading
+ *      width) via the source adapters; persist counters after each chunk
+ *      so the polled web UI sees live progress.
  *   5. Mark the job `completed` / `failed`. If the status was flipped to
  *      `cancelled` mid-run (by the user via DELETE /api/prefetch/jobs/:id),
  *      mark it `cancelled` and stop without an error.
@@ -34,7 +35,12 @@ import type { PrefetchJobRow } from '../db/schema.js';
  * because the timestamps live in the database, not in memory.
  */
 
-const PAGE_CONCURRENCY = 3;
+/**
+ * Fallback pages-in-flight when a job row predates the `page_concurrency`
+ * column (or carries an out-of-range value). New jobs always store a
+ * clamped 1–16 value following the reader's image loading width.
+ */
+export const PREFETCH_PAGE_CONCURRENCY_FALLBACK = 3;
 const PROGRESS_PERSIST_EVERY = 3;
 
 /** Internal control-flow error: the user cancelled mid-run. Never surfaced. */
@@ -129,7 +135,7 @@ export class PrefetchWorker {
     const log = (msg: string, ctx?: Record<string, unknown>) =>
       logger.info(`[prefetch ${jobId.slice(0, 8)}] ${msg}`, { chapterId, ...ctx });
 
-    log('claimed', { batchId: job.batchId, onlyMissing: job.onlyMissing });
+    log('claimed', { batchId: job.batchId, onlyMissing: job.onlyMissing, pageConcurrency: job.pageConcurrency });
 
     // `0` until the page list resolves. Doubles as the "did we learn the
     // chapter size" flag for the pacing decision below: a job-level
@@ -308,9 +314,21 @@ export class PrefetchWorker {
         }
       };
 
+      // Per-job width: parallel reader = 8, sequential = preloadAhead,
+      // data-saver = 1. Clamped 1–16 at enqueue; legacy rows fall back to 3.
+      // The queue itself stays single-flight (one chapter at a time) — only
+      // the pages within the chapter fan out wider.
+      const rawConcurrency =
+        typeof (job as { pageConcurrency?: unknown }).pageConcurrency === 'number'
+          ? (job as { pageConcurrency?: number }).pageConcurrency!
+          : PREFETCH_PAGE_CONCURRENCY_FALLBACK;
+      const pageConcurrency = Math.min(
+        16,
+        Math.max(1, Math.trunc(rawConcurrency) || PREFETCH_PAGE_CONCURRENCY_FALLBACK),
+      );
       try {
         await Promise.all(
-          Array.from({ length: Math.min(PAGE_CONCURRENCY, toFetch.length) }, () => next()),
+          Array.from({ length: Math.min(pageConcurrency, toFetch.length) }, () => next()),
         );
       } catch (error) {
         if (error instanceof JobCancelledError || controller.signal.aborted || (await isCancelRequested())) {

@@ -12,8 +12,15 @@ import {
   DOWNLOAD_INTERVAL_MAX_MS,
   DOWNLOAD_INTERVAL_MIN_MS,
   DOWNLOAD_INTERVAL_STEP_MS,
+  DOWNLOAD_PAGE_CONCURRENCY_MAX,
+  DOWNLOAD_PAGE_CONCURRENCY_MIN,
   type DownloadSettings,
 } from '../download/settings';
+import {
+  describeDownloadWidth,
+  type PageConcurrencyMode,
+} from '../download/pageConcurrency';
+import type { ReaderSettings } from '../reader/settings';
 
 /**
  * Format a millisecond count as `m:ss` for the inter-chapter wait
@@ -40,6 +47,14 @@ interface ChapterDownloadActionsProps {
   downloadSettings: DownloadSettings;
   /** Patches the parent's download settings. */
   onDownloadSettingsChange: (patch: Partial<DownloadSettings>) => void;
+  /**
+   * Saved reader settings (read-only here). Powers the `follow-reader`
+   * download width label — editing stays in the reader settings panel so
+   * the reading page remains the single writer.
+   */
+  readerSettings: ReaderSettings;
+  /** Effective pages-in-flight, resolved by the parent. */
+  effectivePageConcurrency: number;
 }
 
 /**
@@ -63,6 +78,8 @@ export function ChapterDownloadActions({
   downloader,
   downloadSettings,
   onDownloadSettingsChange,
+  readerSettings,
+  effectivePageConcurrency,
 }: ChapterDownloadActionsProps) {
   const { toast } = useToast();
   const [confirmStop, setConfirmStop] = useState(false);
@@ -93,6 +110,7 @@ export function ChapterDownloadActions({
       try {
         const result = await downloader.downloadChapters(batch, {
           chapterIntervalMs: downloadSettings.chapterIntervalMs,
+          pageConcurrency: effectivePageConcurrency,
           order,
         });
         if (result.cancelled) {
@@ -120,7 +138,7 @@ export function ChapterDownloadActions({
         toast(error instanceof Error ? error.message : 'Download failed.', 'error');
       }
     },
-    [downloader, downloadSettings.chapterIntervalMs, toast],
+    [downloader, downloadSettings.chapterIntervalMs, effectivePageConcurrency, toast],
   );
 
   /* Both bulk buttons open the direction prompt instead of downloading
@@ -199,6 +217,12 @@ export function ChapterDownloadActions({
 
   // Stable id for the segmented row's radiogroup labelling.
   const intervalGroupId = useId();
+  const widthGroupId = useId();
+  const widthModes: ReadonlyArray<{ value: PageConcurrencyMode; label: string }> = [
+    { value: 'follow-reader', label: 'Follow reader' },
+    { value: 'custom', label: 'Custom' },
+  ];
+  const widthSummary = describeDownloadWidth(effectivePageConcurrency, readerSettings, downloadSettings);
 
   return (
     <div className="chapter-download-actions" aria-label="Bulk chapter download actions">
@@ -312,6 +336,71 @@ export function ChapterDownloadActions({
         <p className="download-settings__help">
           Pauses between chapters so a bulk run doesn't hammer the upstream source. 0 = off
           (back-to-back). Stops immediately if you cancel mid-wait.
+        </p>
+      </div>
+
+      <div
+        className="download-settings"
+        role="group"
+        aria-labelledby={`${widthGroupId}-label`}
+      >
+        <span id={`${widthGroupId}-label`} className="download-settings__label">
+          Pages at once
+        </span>
+        <div
+          className="segmented download-settings__presets"
+          role="radiogroup"
+          aria-labelledby={`${widthGroupId}-label`}
+        >
+          {widthModes.map((mode) => {
+            const active = mode.value === downloadSettings.pageConcurrencyMode;
+            return (
+              <button
+                key={mode.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                className={`segmented__option${active ? ' segmented__option--active' : ''}`}
+                onClick={() => onDownloadSettingsChange({ pageConcurrencyMode: mode.value })}
+              >
+                <span>{mode.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {downloadSettings.pageConcurrencyMode === 'custom' && (
+          <label className="download-settings__custom download-settings__custom--active">
+            <span className="download-settings__custom-label">Custom (pages)</span>
+            <input
+              type="number"
+              className="download-settings__custom-input"
+              min={DOWNLOAD_PAGE_CONCURRENCY_MIN}
+              max={DOWNLOAD_PAGE_CONCURRENCY_MAX}
+              step={1}
+              inputMode="numeric"
+              value={downloadSettings.pageConcurrency}
+              onChange={(event) => {
+                const raw = event.target.value;
+                if (raw === '') {
+                  onDownloadSettingsChange({ pageConcurrency: 3 });
+                  return;
+                }
+                const parsed = Number(raw);
+                if (Number.isNaN(parsed)) return;
+                onDownloadSettingsChange({
+                  pageConcurrency: Math.min(
+                    DOWNLOAD_PAGE_CONCURRENCY_MAX,
+                    Math.max(DOWNLOAD_PAGE_CONCURRENCY_MIN, Math.trunc(parsed)),
+                  ),
+                });
+              }}
+              aria-label="Custom pages downloaded at once (1 to 16)"
+            />
+          </label>
+        )}
+        <p className="download-settings__help" role="status" aria-live="polite">
+          {widthSummary}. Change it in the reader (All at once / While scrolling) or pick Custom
+          here — the reader itself is never changed from this panel.
         </p>
       </div>
 

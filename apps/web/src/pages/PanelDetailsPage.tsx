@@ -7,6 +7,9 @@ import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useChapterDownloader } from '../hooks/useChapterDownloader';
 import { useDownloadSettings } from '../hooks/useDownloadSettings';
+import { api } from '../api/client';
+import { DEFAULT_READER_SETTINGS, type ReaderSettings } from '../reader/settings';
+import { resolveDownloadPageConcurrency } from '../download/pageConcurrency';
 import { BookmarkFolderPicker, BookmarkToggle } from '../components/BookmarkButton';
 import { ReadingListStatusControl } from '../components/ReadingListStatus';
 import { ChapterList } from '../components/ChapterList';
@@ -126,6 +129,44 @@ export function PanelDetailsPage() {
    * panel can mutate it inline without the downloader caring about UI.
    */
   const downloadSettingsState = useDownloadSettings();
+  /**
+   * Saved reader settings (same server file the reader page edits). Drives
+   * the download width when the download mode is `follow-reader` — the
+   * reader page itself is never written from here, only read, so its
+   * behaviour can't regress from this wiring.
+   */
+  const [readerSettings, setReaderSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  useEffect(() => {
+    let alive = true;
+    api
+      .getReaderSettings()
+      .then((saved) => {
+        if (alive) setReaderSettings(saved);
+      })
+      .catch(() => {
+        // Keep defaults when the file is missing/unreachable.
+      });
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'panel-reader:settings:sync') {
+        api
+          .getReaderSettings()
+          .then((saved) => {
+            if (alive) setReaderSettings(saved);
+          })
+          .catch(() => {});
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      alive = false;
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+  /** Effective pages-in-flight for every download started from this page. */
+  const effectivePageConcurrency = useMemo(
+    () => resolveDownloadPageConcurrency(readerSettings, downloadSettingsState.settings),
+    [readerSettings, downloadSettingsState.settings],
+  );
 
   /**
    * Server-side chapter-image cache snapshot. Used to keep the per-row
@@ -402,6 +443,7 @@ const filteredAndSortedChapters = useMemo(() => {
         void downloader.downloadChapters([chapter], {
           chapterIntervalMs: 0,
           delayFirstMs: 0,
+          pageConcurrency: effectivePageConcurrency,
         }).then((result) => {
           if (result.cancelled) return;
           // Per-row failures are visible via the failed icon state on the
@@ -415,7 +457,7 @@ const filteredAndSortedChapters = useMemo(() => {
         downloader.cancel();
       },
     }),
-    [downloader, isChapterCached, snapshotByChapter, diskByChapter],
+    [downloader, isChapterCached, snapshotByChapter, diskByChapter, effectivePageConcurrency],
   );
 
   /**
@@ -480,6 +522,7 @@ const filteredAndSortedChapters = useMemo(() => {
       try {
         const result = await downloader.downloadChapters(batch, {
           chapterIntervalMs: downloadSettingsState.settings.chapterIntervalMs,
+          pageConcurrency: effectivePageConcurrency,
           order,
         });
       if (result.cancelled) {
@@ -510,7 +553,14 @@ const filteredAndSortedChapters = useMemo(() => {
         toast(error instanceof Error ? error.message : 'Download failed.', 'error');
       }
     },
-    [selectedChapters, downloader, downloadSettingsState.settings.chapterIntervalMs, toast, handleClearSelection],
+    [
+      selectedChapters,
+      downloader,
+      downloadSettingsState.settings.chapterIntervalMs,
+      effectivePageConcurrency,
+      toast,
+      handleClearSelection,
+    ],
   );
 
   /** Batch awaiting a direction choice from the order dialog; null = closed. */
@@ -1488,6 +1538,8 @@ const filteredAndSortedChapters = useMemo(() => {
               downloader={downloader}
               downloadSettings={downloadSettingsState.settings}
               onDownloadSettingsChange={downloadSettingsState.update}
+              readerSettings={readerSettings}
+              effectivePageConcurrency={effectivePageConcurrency}
             />
             {/* Once selection mode is on, the multi-select toolbar
                 (Select all / Bookmark N / Download N / Cancel) swaps in

@@ -13,6 +13,20 @@ import { prefetchJobs, type PrefetchJobRow, type PrefetchJobStatus } from '../db
  * state flip — the worker checks `status` between pages and bails out.
  */
 
+/** Bounds for per-job page concurrency (worker honors). */
+export const PREFETCH_PAGE_CONCURRENCY_MIN = 1;
+export const PREFETCH_PAGE_CONCURRENCY_MAX = 16;
+export const PREFETCH_PAGE_CONCURRENCY_DEFAULT = 3;
+
+/** Clamp a user-supplied page concurrency to the supported range. */
+export function clampPageConcurrency(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return PREFETCH_PAGE_CONCURRENCY_DEFAULT;
+  return Math.min(
+    PREFETCH_PAGE_CONCURRENCY_MAX,
+    Math.max(PREFETCH_PAGE_CONCURRENCY_MIN, Math.trunc(value)),
+  );
+}
+
 export interface EnqueuePrefetchJobInput {
   chapterId: string;
   batchId?: string | null;
@@ -20,6 +34,8 @@ export interface EnqueuePrefetchJobInput {
   onlyMissing?: boolean;
   /** Wait this long after enqueue before the job becomes claimable. */
   delayMs?: number;
+  /** Pages fetched concurrently within the chapter (worker honors). */
+  pageConcurrency?: number;
 }
 
 export interface PrefetchJobSnapshot {
@@ -35,6 +51,7 @@ export interface PrefetchJobSnapshot {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  pageConcurrency: number;
 }
 
 function snapshot(row: PrefetchJobRow): PrefetchJobSnapshot {
@@ -65,6 +82,9 @@ function snapshot(row: PrefetchJobRow): PrefetchJobSnapshot {
     createdAt: createdAt.toISOString(),
     startedAt: asDate(row.startedAt)?.toISOString() ?? null,
     finishedAt: asDate(row.finishedAt)?.toISOString() ?? null,
+    pageConcurrency: clampPageConcurrency(
+      typeof row.pageConcurrency === 'number' ? row.pageConcurrency : PREFETCH_PAGE_CONCURRENCY_DEFAULT,
+    ),
   };
 }
 
@@ -95,6 +115,7 @@ export class PrefetchJobRepository {
           batchId: input.batchId ?? null,
           onlyMissing: input.onlyMissing ?? true,
           intervalMs: Math.max(0, Math.trunc(input.intervalMs ?? 0)),
+          pageConcurrency: clampPageConcurrency(input.pageConcurrency),
           runAfter: delayMs > 0 ? new Date(Date.now() + delayMs) : null,
         })
         .returning();
@@ -116,7 +137,7 @@ export class PrefetchJobRepository {
    */
   async enqueueMany(
     chapterIds: readonly string[],
-    opts?: { batchId?: string | null; intervalMs?: number; onlyMissing?: boolean },
+    opts?: { batchId?: string | null; intervalMs?: number; onlyMissing?: boolean; pageConcurrency?: number },
   ): Promise<Array<{ chapterId: string; job: PrefetchJobSnapshot; reused: boolean }>> {
     const results: Array<{ chapterId: string; job: PrefetchJobSnapshot; reused: boolean }> = [];
     if (chapterIds.length === 0) return results;
@@ -144,6 +165,7 @@ export class PrefetchJobRepository {
             batchId: opts?.batchId ?? null,
             onlyMissing: opts?.onlyMissing ?? true,
             intervalMs: Math.max(0, Math.trunc(opts?.intervalMs ?? 0)),
+            pageConcurrency: clampPageConcurrency(opts?.pageConcurrency),
           })
           .returning();
         if (!row) continue;
@@ -217,6 +239,7 @@ export class PrefetchJobRepository {
         failedPages: prefetchJobs.failedPages,
         failed: prefetchJobs.failed,
         intervalMs: prefetchJobs.intervalMs,
+        pageConcurrency: prefetchJobs.pageConcurrency,
         runAfter: prefetchJobs.runAfter,
         createdAt: prefetchJobs.createdAt,
         startedAt: prefetchJobs.startedAt,

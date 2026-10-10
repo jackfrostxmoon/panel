@@ -4,7 +4,7 @@ import { BULK_CHAPTER_LIMIT, ErrorCodes, isGlobalId, ok } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
 import type { Database } from '../db/client.js';
 import type { PrefetchWorker } from '../lib/prefetchWorker.js';
-import { PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
+import { clampPageConcurrency, PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,6 +87,7 @@ export function prefetchRoutes(
       batchId?: unknown;
       intervalMs?: unknown;
       onlyMissing?: unknown;
+      pageConcurrency?: unknown;
     } = {};
     try {
       body = (await c.req.json()) as typeof body;
@@ -120,7 +121,15 @@ export function prefetchRoutes(
         ? Math.max(0, Math.trunc(body.intervalMs))
         : 0;
     const onlyMissing = body.onlyMissing !== undefined ? body.onlyMissing !== false : true;
-    const results = await repo.enqueueMany(chapters as string[], { batchId, intervalMs, onlyMissing });
+    const pageConcurrency = clampPageConcurrency(
+      typeof body.pageConcurrency === 'number' ? body.pageConcurrency : undefined,
+    );
+    const results = await repo.enqueueMany(chapters as string[], {
+      batchId,
+      intervalMs,
+      onlyMissing,
+      pageConcurrency,
+    });
     // Wake the drain loop without waiting out the interval — fire and
     // forget so the enqueue response stays fast even when the worker is
     // busy (tick no-ops while processing).

@@ -467,6 +467,13 @@ export const prefetchJobs = sqliteTable(
     /** Pacing to apply between chapters in the same batch (worker honors). */
     intervalMs: integer('interval_ms').notNull().default(0),
     /**
+     * Pages fetched concurrently within the chapter (worker honors).
+     * Follows the reader's image loading width: parallel = 8, sequential
+     * = preloadAhead, data-saver = 1. Clamped 1–16, default 3 (the
+     * pre-existing hard-coded width).
+     */
+    pageConcurrency: integer('page_concurrency').notNull().default(3),
+    /**
      * The job must not start before this timestamp. The worker's claim
      * query only picks up due jobs (`run_after IS NULL OR run_after <=
      * now()`). Two uses: (1) a single manual click enqueued with

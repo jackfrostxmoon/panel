@@ -31,6 +31,12 @@ export interface DownloadChaptersOptions {
   /** Pacing between chapters in the batch (worker honors, server-side). */
   chapterIntervalMs?: number;
   /**
+   * Pages fetched concurrently within each chapter (worker honors).
+   * Resolved by the caller from reader + download settings via
+   * `resolveDownloadPageConcurrency` — the hook only forwards it.
+   */
+  pageConcurrency?: number;
+  /**
    * Which end of the chapter list the batch starts from. Applied here rather
    * than trusted from the caller so the enqueue order always matches the
    * direction the user chose, regardless of which entry point started the run
@@ -436,6 +442,10 @@ export function useChapterDownloader() {
       setIntervalRemainingMs(null);
       const intervalMs = Math.max(0, Math.trunc(options?.chapterIntervalMs ?? 0));
       const delayFirstMs = Math.max(0, Math.trunc(options?.delayFirstMs ?? 0));
+      const pageConcurrency =
+        typeof options?.pageConcurrency === 'number' && Number.isFinite(options.pageConcurrency)
+          ? Math.min(16, Math.max(1, Math.trunc(options.pageConcurrency)))
+          : 3;
       // Sort BEFORE the waiter is built and before any enqueue, so the job
       // ids, the `created_at` order the worker claims by, and the waiter's
       // chapter list all agree on one sequence.
@@ -500,6 +510,7 @@ export function useChapterDownloader() {
               batchId,
               intervalMs,
               delayMs: delayFirstMs,
+              pageConcurrency,
             });
             if (waiter.cancelled) {
               // Stop pressed during enqueue — don't leave an orphan running.
@@ -531,7 +542,7 @@ export function useChapterDownloader() {
             try {
               const { jobs } = await api.prefetchChaptersBatch(
                 chunk.map((c) => c.id),
-                { batchId, intervalMs },
+                { batchId, intervalMs, pageConcurrency },
               );
               const newJobIds: string[] = [];
               const byChapter = new Map(jobs.map((j) => [j.chapterId, j.jobId]));

@@ -4,7 +4,7 @@ import { AppError } from '../lib/errors.js';
 import type { Database } from '../db/client.js';
 import type { PanelService } from '../services/panelService.js';
 import type { PrefetchWorker } from '../lib/prefetchWorker.js';
-import { PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
+import { clampPageConcurrency, PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
 
 /** `batch_id` is a uuid column — reject malformed values with a 400
  *  instead of leaking a Postgres error as a 500. */
@@ -51,11 +51,13 @@ export function chapterRoutes(
    * POST /api/chapter/:id/prefetch — enqueue an image-cache warm.
    *
    * Body (optional): `{ onlyMissing?: boolean, batchId?: string,
-   * intervalMs?: number, delayMs?: number }`. `batchId` should be shared
-   * by every chapter in the same "Download all" run so the worker can
-   * honour `intervalMs` between consecutive chapters in that batch.
-   * `delayMs` holds a single job back before it becomes claimable —
-   * used by manual per-row clicks to honour the same pacing setting.
+   * intervalMs?: number, delayMs?: number, pageConcurrency?: number }`.
+   * `batchId` should be shared by every chapter in the same "Download all"
+   * run so the worker can honour `intervalMs` between consecutive chapters
+   * in that batch. `delayMs` holds a single job back before it becomes
+   * claimable — used by manual per-row clicks to honour the same pacing
+   * setting. `pageConcurrency` follows the reader's image loading width
+   * (parallel = 8, sequential = preloadAhead, data-saver = 1).
    *
    * Returns `{ jobId }` immediately. The actual fetch + write happens
    * asynchronously in the background worker; the web UI polls
@@ -75,6 +77,7 @@ export function chapterRoutes(
       batchId?: unknown;
       intervalMs?: unknown;
       delayMs?: unknown;
+      pageConcurrency?: unknown;
     } = {};
     try {
       body = (await c.req.json()) as typeof body;
@@ -100,6 +103,9 @@ export function chapterRoutes(
       typeof body.delayMs === 'number' && Number.isFinite(body.delayMs)
         ? Math.max(0, Math.trunc(body.delayMs))
         : 0;
+    const pageConcurrency = clampPageConcurrency(
+      typeof body.pageConcurrency === 'number' ? body.pageConcurrency : undefined,
+    );
 
     const repo = new PrefetchJobRepository(db);
     const existing = await repo.findActiveByChapter(id);
@@ -113,6 +119,7 @@ export function chapterRoutes(
       intervalMs,
       onlyMissing,
       delayMs,
+      pageConcurrency,
     });
     if (!created) {
       // Race: another request enqueued between our existence check and
