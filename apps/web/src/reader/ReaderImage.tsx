@@ -9,12 +9,14 @@ import { getCachedAspectRatio, getCachedDimensions, setCachedDimensions } from '
  * tall, so ALL pages sit "near" the viewport and native lazy loading fetches
  * the whole chapter even in sequential mode.
  *
- * Tall default: unmeasured pages in the wild are ~900x6000 (ratio ~0.15),
- * so a 2/3 portrait box reserves ~4x too little height and every load shifts
- * the pages below it (CLS). 3/20 matches the observed average; repeat visits
- * do better still via the measured-dimension cache below.
+ * Typical portrait default (2/3 ≈ a standard manga/manhwa page). An earlier
+ * 3/20 long-strip default reserved ~6.7x the column width per unloaded page,
+ * painting a giant skeleton with its own vertical scroll and collapsing
+ * hard when the real bitmap landed — worse than the moderate shift a
+ * genuinely tall page causes here. Repeat visits do better still via the
+ * measured-dimension cache below, which reserves the exact box.
  */
-const FALLBACK_ASPECT_RATIO = '3 / 20';
+const FALLBACK_ASPECT_RATIO = '2 / 3';
 
 /** Number of automatic retries before surfacing the manual reload control. */
 const MAX_AUTO_RETRIES = 5;
