@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { PanelPage, SaveProgressInput } from '@panel/shared';
+import { parseGlobalId, splitNativeChapterId, toGlobalId } from '@panel/shared';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys, useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
@@ -140,6 +141,20 @@ export function ReaderPage() {
   const pages = chapterPages.data?.pages ?? EMPTY_PAGES;
   const pageCount = pages.length;
   const panelId = chapterPages.data?.panelId ?? '';
+  /**
+   * Panel id parsed from the URL chapter id (`<source>:<panel>~<token>`) so
+   * the `V` bookmark shortcut works before the chapter payload arrives.
+   * Used ONLY for the bookmark toggle — everything else keeps waiting for
+   * the payload's canonical panelId.
+   */
+  const bookmarkPanelId = useMemo(() => {
+    if (panelId) return panelId;
+    const parsed = parseGlobalId(chapterId);
+    if (!parsed) return '';
+    const split = splitNativeChapterId(parsed.nativeId);
+    if (!split) return '';
+    return toGlobalId(parsed.source, split.panelId);
+  }, [panelId, chapterId]);
 
   // Tab title: "Chapter 17 · Mousou Shoujo" — falls back to "Panel Reader" while loading.
   useDocumentTitle(
@@ -161,7 +176,9 @@ export function ReaderPage() {
    */
   const bookmarkChapters = useMemo(() => chapters.data ?? [], [chapters.data]);
   const { toggleBookmark } = useChapterBookmarkToggle({
-    panelId,
+    // Falls back to the URL-derived id while the payload is still loading
+    // so `V` never silently no-ops on `panelId === ''`.
+    panelId: bookmarkPanelId,
     chapterTitle:
       bookmarkChapters.find((c) => c.id === chapterId)?.title
       ?? chapterPages.data?.chapterTitle
