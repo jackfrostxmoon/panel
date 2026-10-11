@@ -178,6 +178,41 @@ export function prefetchRoutes(
     return c.json(ok({ cancelled }));
   });
 
+  /**
+   * POST /api/prefetch/jobs/interval — retarget the pacing of in-flight
+   * jobs. The details page sends this when the user changes the "wait
+   * between chapters" preset mid-run: without it the batch keeps the
+   * interval snapshotted at enqueue time, so switching Off → 30s while
+   * chapter 1 downloads still chains chapter 2 instantly. Pending AND
+   * running rows are updated (the worker re-reads the fresh value before
+   * each pace); dropping back to 0 also releases jobs already held by an
+   * earlier wait so the rest of the batch starts immediately.
+   */
+  app.post('/jobs/interval', async (c) => {
+    let body: { jobIds?: unknown; intervalMs?: unknown } = {};
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      // Falls through to validation below.
+    }
+    const jobIds = Array.isArray(body.jobIds) ? body.jobIds : [];
+    if (jobIds.length === 0) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Body "jobIds" must list at least one job id.');
+    }
+    if (jobIds.length > BULK_CHAPTER_LIMIT) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        `Body "jobIds" must list at most ${BULK_CHAPTER_LIMIT} job ids.`,
+      );
+    }
+    const intervalMs =
+      typeof body.intervalMs === 'number' && Number.isFinite(body.intervalMs)
+        ? Math.max(0, Math.trunc(body.intervalMs))
+        : 0;
+    const updated = await repo.setJobsInterval(jobIds as string[], intervalMs);
+    return c.json(ok({ updated }));
+  });
+
   app.post('/batch-id', async (c) => {
     return c.json(ok({ batchId: randomUUID() }));
   });

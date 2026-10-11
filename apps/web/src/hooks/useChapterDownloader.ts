@@ -425,6 +425,27 @@ export function useChapterDownloader() {
   }, [cancel]);
 
   /**
+   * Retarget the pacing of the in-flight batch. Called when the user
+   * changes the "wait between chapters" preset mid-run — without this the
+   * batch keeps the interval snapshotted at enqueue time, so switching
+   * Off → 30s while chapter 1 downloads still chains chapter 2 instantly.
+   * Pending AND running rows are updated server-side and the worker
+   * re-reads the fresh value before each pace. Best-effort: failures are
+   * swallowed (the batch simply keeps its enqueue-time pacing).
+   */
+  const updateInterval = useCallback(async (intervalMs: number) => {
+    const jobIds = Array.from(trackedRef.current.values())
+      .map(({ jobId }) => jobId)
+      .filter((id) => id.length > 0);
+    if (jobIds.length === 0) return;
+    try {
+      await api.setPrefetchJobsInterval(jobIds, Math.max(0, Math.trunc(intervalMs)));
+    } catch {
+      // Best-effort — the batch keeps its enqueue-time pacing.
+    }
+  }, []);
+
+  /**
    * Download multiple chapters: enqueue jobs under a shared batch id
    * (worker paces them by `chapterIntervalMs`), then resolve when every
    * chapter settles. Survives page refresh — the returned promise rejects
@@ -633,6 +654,11 @@ export function useChapterDownloader() {
     downloadChapters,
     /** Cancel every tracked job server-side. Pages already cached stay cached. */
     cancel,
+    /**
+     * Push a mid-run pacing change to the in-flight batch so the next
+     * chapter transition honours the new "wait between chapters" value.
+     */
+    updateInterval,
     /** Reset all state for a fresh run. */
     reset,
   };

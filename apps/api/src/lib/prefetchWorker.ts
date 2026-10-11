@@ -382,9 +382,22 @@ export class PrefetchWorker {
     // path — a job-level `fail()` leaves them at 0/0 with `total` still 0,
     // and that correctly still paces (the source may be struggling, so
     // back off).
-    if (!controller.signal.aborted && job.batchId && job.intervalMs > 0) {
-      const delayed = await this.repo.delayBatch(job.batchId, job.intervalMs);
-      if (delayed > 0) log('paced batch', { delayed, intervalMs: job.intervalMs });
+    // NOTE: the interval is re-read fresh (not trusted from the claim-time
+    // snapshot) so a mid-run preset change (Off → 30s while chapter 1
+    // downloads) takes effect on the very next transition. A deleted row
+    // falls back to the snapshot.
+    if (!controller.signal.aborted && job.batchId) {
+      let intervalMs = job.intervalMs;
+      try {
+        const fresh = await this.repo.getIntervalMs(jobId);
+        if (fresh !== null) intervalMs = fresh;
+      } catch {
+        // Row read failed — pace with the claim-time value.
+      }
+      if (intervalMs > 0) {
+        const delayed = await this.repo.delayBatch(job.batchId, intervalMs);
+        if (delayed > 0) log('paced batch', { delayed, intervalMs });
+      }
     }
   }
 

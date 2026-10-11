@@ -485,6 +485,44 @@ export class PrefetchJobRepository {
     if (!row) return true;
     return row.status === 'cancelled';
   }
+
+  /**
+   * Retarget the pacing of in-flight jobs. The user changed the "wait
+   * between chapters" setting mid-run: pending AND running rows adopt the
+   * new `intervalMs` so the very next chapter transition honours it (the
+   * worker re-reads the fresh value at pacing time instead of trusting its
+   * claim-time snapshot). Dropping back to 0 additionally releases jobs
+   * already held by an earlier wait (`runAfter` cleared) so the rest of the
+   * batch starts immediately. Returns the number of jobs updated.
+   */
+  async setJobsInterval(ids: readonly string[], intervalMs: number): Promise<number> {
+    if (ids.length === 0) return 0;
+    const interval = Math.max(0, Math.trunc(intervalMs));
+    const updated = await this.db
+      .update(prefetchJobs)
+      .set({
+        intervalMs: interval,
+        ...(interval === 0 ? { runAfter: null } : {}),
+      })
+      .where(and(inArray(prefetchJobs.id, [...ids]), inArray(prefetchJobs.status, ['pending', 'running'])))
+      .returning({ id: prefetchJobs.id });
+    return updated.length;
+  }
+
+  /**
+   * Fresh pacing value for one job. The worker calls this at pacing time so
+   * a mid-run setting change (applied via `setJobsInterval`) takes effect
+   * on the next transition. Returns null when the row is gone (caller falls
+   * back to its claim-time snapshot).
+   */
+  async getIntervalMs(id: string): Promise<number | null> {
+    const [row] = await this.db
+      .select({ intervalMs: prefetchJobs.intervalMs })
+      .from(prefetchJobs)
+      .where(eq(prefetchJobs.id, id))
+      .limit(1);
+    return row ? row.intervalMs : null;
+  }
 }
 
 function isUniqueViolation(error: unknown): boolean {

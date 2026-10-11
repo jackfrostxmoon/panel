@@ -167,6 +167,19 @@ export function PanelDetailsPage() {
     () => resolveDownloadPageConcurrency(readerSettings, downloadSettingsState.settings),
     [readerSettings, downloadSettingsState.settings],
   );
+  /**
+   * Push mid-run pacing changes to the in-flight batch. Jobs snapshot the
+   * interval at enqueue time, so without this switching Off → 30s while
+   * chapter 1 downloads still chains chapter 2 instantly. No-op while
+   * idle; failures are swallowed inside `updateInterval` (best-effort).
+   */
+  const pacingMs = downloadSettingsState.settings.chapterIntervalMs;
+  const isBatchDownloading = downloader.isDownloading;
+  const pushPacing = downloader.updateInterval;
+  useEffect(() => {
+    if (!isBatchDownloading) return;
+    void pushPacing(pacingMs);
+  }, [pacingMs, isBatchDownloading, pushPacing]);
 
   /**
    * Server-side chapter-image cache snapshot. Used to keep the per-row

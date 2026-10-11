@@ -12,6 +12,8 @@ import type {
   BulkMarkChaptersReadInput,
   CancelPrefetchBatchInput,
   CancelPrefetchBatchResult,
+  SetPrefetchIntervalInput,
+  SetPrefetchIntervalResult,
   Chapter,
   ChapterBookmark,
   ChapterPages,
@@ -399,6 +401,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ jobIds: [...jobIds] } satisfies CancelPrefetchBatchInput),
     }),
+
+  /**
+   * Retarget the pacing of in-flight jobs (chunked like the other bulk
+   * endpoints). The details page sends this when the user changes the
+   * "wait between chapters" preset mid-run so the next chapter transition
+   * honours the new value instead of the interval snapshotted at enqueue.
+   */
+  setPrefetchJobsInterval: async (jobIds: readonly string[], intervalMs: number) => {
+    const CHUNK = 200;
+    let updated = 0;
+    for (let i = 0; i < jobIds.length; i += CHUNK) {
+      const chunk = jobIds.slice(i, i + CHUNK);
+      if (chunk.length === 0) continue;
+      const page = await request<SetPrefetchIntervalResult>('/api/prefetch/jobs/interval', {
+        method: 'POST',
+        body: JSON.stringify({ jobIds: [...chunk], intervalMs } satisfies SetPrefetchIntervalInput),
+      });
+      updated += page.updated;
+    }
+    return { updated };
+  },
 
   /* Bookmarks */
   getBookmarks: () => request<Bookmark[]>('/api/bookmarks'),

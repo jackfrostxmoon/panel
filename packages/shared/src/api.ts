@@ -324,6 +324,23 @@ export interface CancelPrefetchBatchResult {
 }
 
 /**
+ * Body for POST /api/prefetch/jobs/interval. Retargets the pacing of an
+ * in-flight batch: the user changed the "wait between chapters" setting
+ * mid-run, so pending (and running) jobs adopt the new value from the next
+ * chapter transition on. Setting it to 0 also releases jobs already held
+ * by a previous wait.
+ */
+export interface SetPrefetchIntervalInput {
+  jobIds: string[];
+  intervalMs: number;
+}
+
+/** Result for POST /api/prefetch/jobs/interval. */
+export interface SetPrefetchIntervalResult {
+  updated: number;
+}
+
+/**
  * Full-database SQL dump (pg_dump COPY format) backing the Bookmarks page
  * Export / Import actions.
  *
