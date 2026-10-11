@@ -151,6 +151,28 @@ export class PrefetchJobRepository {
         ),
       );
     const activeByChapter = new Map(existing.map((row) => [row.chapterId, snapshot(row)]));
+    // Chunk-race hardening: the client enqueues long batches in slices, and
+    // a fast first chapter can complete (pushing its batch-mates' `runAfter`
+    // into the future) BEFORE a later slice arrives. New rows default to
+    // `runAfter = null` (immediately claimable), so without this they would
+    // jump the queue ahead of the delayed batch-mates and the pause would
+    // appear to not work. Inherit the batch's furthest pending `runAfter`
+    // when it still lies in the future.
+    let inheritRunAfter: Date | null = null;
+    if (opts?.batchId) {
+      const pending = await this.db
+        .select({ runAfter: prefetchJobs.runAfter })
+        .from(prefetchJobs)
+        .where(and(eq(prefetchJobs.batchId, opts.batchId), eq(prefetchJobs.status, 'pending')));
+      const now = Date.now();
+      for (const row of pending) {
+        const value: unknown = row.runAfter;
+        const when = value instanceof Date ? value.getTime() : typeof value === 'number' ? value : NaN;
+        if (Number.isFinite(when) && when > now && (!inheritRunAfter || when > inheritRunAfter.getTime())) {
+          inheritRunAfter = new Date(when);
+        }
+      }
+    }
     for (const chapterId of chapterIds) {
       const active = activeByChapter.get(chapterId);
       if (active) {
@@ -166,6 +188,7 @@ export class PrefetchJobRepository {
             onlyMissing: opts?.onlyMissing ?? true,
             intervalMs: Math.max(0, Math.trunc(opts?.intervalMs ?? 0)),
             pageConcurrency: clampPageConcurrency(opts?.pageConcurrency),
+            ...(inheritRunAfter ? { runAfter: inheritRunAfter } : {}),
           })
           .returning();
         if (!row) continue;

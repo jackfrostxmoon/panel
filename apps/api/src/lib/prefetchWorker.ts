@@ -369,22 +369,20 @@ export class PrefetchWorker {
       if (this.inflightJobId === jobId) this.inflightJobId = null;
     }
 
-    // Pace the batch whether this chapter succeeded or failed (matches
-    // the old client-side loop) — but never after a user cancel, and never
-    // when the chapter needed no work at all. A fully-cached chapter
-    // completes instantly with zero fetches and zero failures; penalising
-    // the rest of the batch with a wait for that would make "Download all"
-    // crawl on re-runs. Pushes the remaining pending chapters forward by
+    // Pace the batch after every chapter (success or per-chapter failure)
+    // — but never after a user cancel, and never after the batch's last
+    // pending chapter (nothing left to wait for). The wait applies even
+    // when the chapter needed no upstream work (fully cached): the user
+    // explicitly configured the pause, and skipping it made the countdown
+    // never appear while chapters chained instantly — "the timer doesn't
+    // work". Pushes the remaining pending chapters forward by
     // `intervalMs`. Zero delayed means this was the batch's last pending
     // chapter, so no wait is inserted after the final chapter.
     // NOTE: `fetched`/`failedPages` below are only assigned on the success
     // path — a job-level `fail()` leaves them at 0/0 with `total` still 0,
     // and that correctly still paces (the source may be struggling, so
     // back off).
-    const alreadyCached = fetched === 0 && failedPages === 0 && total > 0;
-    if (alreadyCached) {
-      log('already cached — skipping batch pace', { cachedPages });
-    } else if (!controller.signal.aborted && job.batchId && job.intervalMs > 0) {
+    if (!controller.signal.aborted && job.batchId && job.intervalMs > 0) {
       const delayed = await this.repo.delayBatch(job.batchId, job.intervalMs);
       if (delayed > 0) log('paced batch', { delayed, intervalMs: job.intervalMs });
     }

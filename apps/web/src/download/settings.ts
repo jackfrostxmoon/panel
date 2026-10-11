@@ -105,6 +105,15 @@ export function loadDownloadSettings(
       ...DEFAULT_DOWNLOAD_SETTINGS,
       ...(parsed as Partial<DownloadSettings>),
     };
+    // Sanitize the pacing interval so a stale/corrupt store can't silently
+    // zero it (NaN serializes to null, strings slip past the type) and make
+    // the bulk-download wait actually fire. Falls back to the default when
+    // the stored value isn't a finite number.
+    if (typeof merged.chapterIntervalMs !== 'number' || !Number.isFinite(merged.chapterIntervalMs)) {
+      merged.chapterIntervalMs = DEFAULT_DOWNLOAD_SETTINGS.chapterIntervalMs;
+    } else {
+      merged.chapterIntervalMs = clampDownloadInterval(merged.chapterIntervalMs);
+    }
     // Sanitize the newer width fields so a stale/corrupt store can't break
     // the enqueue path — the reader page itself is never affected.
     if (merged.pageConcurrencyMode !== 'follow-reader' && merged.pageConcurrencyMode !== 'custom') {

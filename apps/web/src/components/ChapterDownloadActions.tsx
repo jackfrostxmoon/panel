@@ -11,7 +11,6 @@ import {
   clampDownloadInterval,
   DOWNLOAD_INTERVAL_MAX_MS,
   DOWNLOAD_INTERVAL_MIN_MS,
-  DOWNLOAD_INTERVAL_STEP_MS,
   DOWNLOAD_PAGE_CONCURRENCY_MAX,
   DOWNLOAD_PAGE_CONCURRENCY_MIN,
   type DownloadSettings,
@@ -309,15 +308,15 @@ export function ChapterDownloadActions({
         <label
           className={`download-settings__custom${activePresetValue === undefined ? ' download-settings__custom--active' : ''}`}
         >
-          <span className="download-settings__custom-label">Custom (ms)</span>
+          <span className="download-settings__custom-label">Custom (seconds)</span>
           <input
             type="number"
             className="download-settings__custom-input"
             min={DOWNLOAD_INTERVAL_MIN_MS}
-            max={DOWNLOAD_INTERVAL_MAX_MS}
-            step={DOWNLOAD_INTERVAL_STEP_MS}
+            max={DOWNLOAD_INTERVAL_MAX_MS / 1000}
+            step={1}
             inputMode="numeric"
-            value={downloadSettings.chapterIntervalMs}
+            value={Math.round(downloadSettings.chapterIntervalMs / 1000)}
             onChange={(event) => {
               const raw = event.target.value;
               if (raw === '') {
@@ -326,11 +325,15 @@ export function ChapterDownloadActions({
               }
               const parsed = Number(raw);
               if (Number.isNaN(parsed)) return;
+              // The setting is stored in milliseconds (presets are ms), but
+              // the custom field reads/writes whole seconds — typing `30`
+              // means 30s, not 30ms (which fired instantly and looked like
+              // "the custom timer doesn't work").
               onDownloadSettingsChange({
-                chapterIntervalMs: clampDownloadInterval(parsed),
+                chapterIntervalMs: clampDownloadInterval(Math.round(parsed * 1000)),
               });
             }}
-            aria-label="Custom wait between chapters in milliseconds"
+            aria-label="Custom wait between chapters in seconds"
           />
         </label>
         <p className="download-settings__help">
