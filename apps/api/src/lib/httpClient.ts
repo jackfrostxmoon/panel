@@ -1,5 +1,6 @@
 import { createWriteStream } from 'node:fs';
-import { rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { SourceError } from './errors.js';
 import { logger } from './logger.js';
 import { recordSourceRequest } from './stats.js';
@@ -512,6 +513,10 @@ export class SourceHttpClient {
 
     const startedAt = Date.now();
     const response = await this.fetchWithRetry(rawUrl, init, hosts, signal);
+
+    // The image cache stages into an existing directory, but be tolerant:
+    // creating it here keeps this method safe for standalone callers.
+    await mkdir(dirname(destPath), { recursive: true });
 
     const contentType = response.headers.get('content-type');
     let bytes = 0;
