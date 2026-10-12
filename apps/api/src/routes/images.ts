@@ -8,6 +8,7 @@ import {
   MAX_UPSTREAM_CONCURRENCY,
   MIN_CUSTOM_CAP_BYTES,
   MIN_UPSTREAM_CONCURRENCY,
+  sourceImageFetcher,
   type ImageCache,
   type ImageCacheSizeInfo,
   type ImageCacheTagSummary,
@@ -248,8 +249,7 @@ export function sourceImageRoutes(
     const stableKey =
       tag !== null && pageIdx !== null ? `${tag}#p${pageIdx}` : null;
 
-    const fetchOne = (fetchSignal?: AbortSignal) =>
-      source.fetchImage!(cacheUrl, fetchSignal ? { signal: fetchSignal } : undefined);
+    const fetchers = sourceImageFetcher(source, cacheUrl);
     // Covers with a panel tag get stale-while-revalidate: an exact-miss
     // with another cover for the same panel on disk serves the stale cover
     // instantly (killing the "covers miss more and more" spiral from URL
@@ -259,7 +259,7 @@ export function sourceImageRoutes(
     const entry =
       kind === 'cover' && tag
         ? await imageCache
-            .getCoverWithFallback(cacheUrl, fetchOne, tag, clientSignal)
+            .getCoverWithFallback(cacheUrl, fetchers, tag, clientSignal)
             .then(
               ({ entry: hit }) => {
                 recordImageResult(sourceName, true, false);
@@ -271,7 +271,7 @@ export function sourceImageRoutes(
               },
             )
         : await imageCache
-            .getOrCreate(cacheUrl, fetchOne, kind, tag, stableKey, clientSignal)
+            .getOrCreate(cacheUrl, fetchers, kind, tag, stableKey, clientSignal)
             .then(
               (hit) => {
                 recordImageResult(sourceName, true, false);

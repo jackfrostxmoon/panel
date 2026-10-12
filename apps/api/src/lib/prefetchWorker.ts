@@ -1,6 +1,7 @@
 import type { Database } from '../db/client.js';
 import { logger } from './logger.js';
 import type { ImageCache } from './imageCache.js';
+import { sourceImageFetcher } from './imageCache.js';
 import type { PanelService } from '../services/panelService.js';
 import type { SourceRegistry } from '../sources/registry.js';
 import { PrefetchJobRepository } from '../repositories/prefetchJobRepository.js';
@@ -210,7 +211,7 @@ export class PrefetchWorker {
           if (source?.fetchImage) {
             await this.deps.imageCache.getOrCreate(
               coverUrl,
-              () => source.fetchImage!(coverUrl),
+              sourceImageFetcher(source, coverUrl),
               'cover',
               panelGlobalId,
               null,
@@ -291,7 +292,7 @@ export class PrefetchWorker {
             if (!source?.fetchImage) throw new Error(`no fetchImage for ${target.sourceName}`);
             await this.deps.imageCache.getOrCreate(
               target.cacheUrl,
-              () => source.fetchImage!(target.cacheUrl),
+              sourceImageFetcher(source, target.cacheUrl),
               'chapter',
               chapterTag,
               `${chapterTag}#p${target.pageIdx}`,

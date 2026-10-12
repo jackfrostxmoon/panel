@@ -11,6 +11,7 @@ import {
   type PanelSummary,
   type SourceConfig,
   type SourceImage,
+  type StreamedImage,
   type SourceSearchResult,
 } from '@panel/shared';
 import { TtlCache } from '../../lib/cache.js';
@@ -900,6 +901,17 @@ private async getOrderedChapters(nativePanelId: string): Promise<RawChapterItem[
       Referer: `${this.baseUrl}/`,
     }, opts?.signal);
     return { bytes, contentType };
+  }
+
+  /**
+   * Streaming variant of `fetchImage` for the image cache: bytes go
+   * straight to `destPath`, never accumulating in heap.
+   */
+  async fetchImageStream(url: string, destPath: string, opts?: { signal?: AbortSignal }): Promise<StreamedImage> {
+    this.assertEnabled();
+    return this.http.fetchImageToFile(url, destPath, {
+      Referer: `${this.baseUrl}/`,
+    }, opts?.signal);
   }
 
   /** Complete page list via the SPA's reader api; null → caller falls back. */

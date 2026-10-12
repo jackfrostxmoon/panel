@@ -11,6 +11,7 @@ import {
   type PanelSummary,
   type SourceConfig,
   type SourceImage,
+  type StreamedImage,
   type SourceSearchResult,
 } from '@panel/shared';
 import { SourceError } from '../../lib/errors.js';
@@ -255,6 +256,15 @@ export class KaliscanSource implements PanelSource {
   async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
     return this.http.fetchImage(this.rebaseToActiveBase(url), undefined, opts?.signal);
+  }
+
+  /**
+   * Streaming variant of `fetchImage` for the image cache: bytes go
+   * straight to `destPath`, never accumulating in heap.
+   */
+  async fetchImageStream(url: string, destPath: string, opts?: { signal?: AbortSignal }): Promise<StreamedImage> {
+    this.assertEnabled();
+    return this.http.fetchImageToFile(this.rebaseToActiveBase(url), destPath, undefined, opts?.signal);
   }
 
   buildPanelUrl(nativePanelId: string): string {

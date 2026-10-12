@@ -53,6 +53,19 @@ export interface PanelSource {
    */
   fetchImage?(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage>;
 
+  /**
+   * Optional: streaming variant of `fetchImage` for the image proxy's cache
+   * misses. Writes the upstream bytes straight to `destPath` (chunk by
+   * chunk, enforcing the source's max-image cap) and resolves with the byte
+   * count — the full image is never accumulated in heap. The image cache
+   * prefers this when implemented and falls back to `fetchImage` otherwise.
+   */
+  fetchImageStream?(
+    url: string,
+    destPath: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<StreamedImage>;
+
   /** Canonical source URL for a panel (the source owns its URL layout). */
   buildPanelUrl(nativePanelId: string): string;
 
@@ -128,6 +141,15 @@ export interface SourceSearchResult {
 /** Raw image bytes fetched through the API (see PanelSource.fetchImage). */
 export interface SourceImage {
   bytes: ArrayBuffer;
+  contentType: string | null;
+}
+
+/**
+ * Image streamed straight to disk (see PanelSource.fetchImageStream):
+ * `bytes` is the count written, not a buffer.
+ */
+export interface StreamedImage {
+  bytes: number;
   contentType: string | null;
 }
 

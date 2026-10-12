@@ -1,3 +1,5 @@
+import { createWriteStream } from 'node:fs';
+import { rm, writeFile } from 'node:fs/promises';
 import { SourceError } from './errors.js';
 import { logger } from './logger.js';
 import { recordSourceRequest } from './stats.js';
@@ -24,6 +26,15 @@ export interface FetchedPage {
 
 export interface FetchedImage {
   bytes: ArrayBuffer;
+  contentType: string | null;
+}
+
+/**
+ * Image streamed straight to disk (see `fetchImageToFile`): `bytes` is the
+ * count written, not a buffer — the full image is never held in heap.
+ */
+export interface FetchedImageFile {
+  bytes: number;
   contentType: string | null;
 }
 
@@ -302,6 +313,29 @@ export class SourceHttpClient {
     }, this.imageHosts, signal);
   }
 
+  /**
+   * Streaming variant of `fetchImage` for the image cache's miss path.
+   * Upstream bytes go chunk-by-chunk to `destPath` (same allowlist,
+   * timeout, redirect, retry and size-cap guards) so a 16 MiB image costs
+   * one network chunk in heap instead of the whole file. Over-cap and
+   * mid-stream failures delete the partial file and throw exactly like the
+   * buffered path.
+   */
+  async fetchImageToFile(
+    rawUrl: string,
+    destPath: string,
+    extraHeaders?: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
+    return this.requestBinaryToFile(rawUrl, {
+      headers: {
+        'User-Agent': this.userAgent,
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        ...extraHeaders,
+      },
+    }, destPath, this.imageHosts, signal);
+  }
+
   /** Shared guard: URL must be http(s) and on the allowlist. */
   private assertAllowedUrl(
     rawUrl: string,
@@ -465,6 +499,97 @@ export class SourceHttpClient {
       durationMs: Date.now() - startedAt,
     });
     return { bytes, contentType };
+  }
+
+  private async requestBinaryToFile(
+    rawUrl: string,
+    init: RequestInit,
+    destPath: string,
+    hosts: readonly string[] = this.allowedHosts,
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
+    this.assertAllowedUrl(rawUrl, hosts);
+
+    const startedAt = Date.now();
+    const response = await this.fetchWithRetry(rawUrl, init, hosts, signal);
+
+    const contentType = response.headers.get('content-type');
+    let bytes = 0;
+    try {
+      bytes = await this.streamBodyToFile(response, destPath, this.maxImageBytes, signal);
+    } catch (error) {
+      await rm(destPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    logger.debug('Streamed source image to disk', {
+      url: rawUrl,
+      status: response.status,
+      bytes,
+      durationMs: Date.now() - startedAt,
+    });
+    return { bytes, contentType };
+  }
+
+  /**
+   * Pipe a response body to disk chunk by chunk (backpressure via `drain`),
+   * enforcing the byte cap as bytes arrive. Only one network chunk is ever
+   * held in heap. A client abort surfaces promptly via the per-chunk check
+   * (the socket abort also rejects the reader); anything else propagates
+   * raw, exactly like the buffered reader — the caller deletes the partial
+   * file.
+   */
+  private async streamBodyToFile(
+    response: Response,
+    destPath: string,
+    maxBytes: number,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    if (!response.body) {
+      await writeFile(destPath, new Uint8Array(0));
+      return 0;
+    }
+    const stream = createWriteStream(destPath);
+    let received = 0;
+    try {
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          logger.warn('Source response exceeded size limit', {
+            url: response.url,
+            maxBodyBytes: maxBytes,
+          });
+          throw SourceError.unavailable(this.sourceName, response.url);
+        }
+        signal?.throwIfAborted();
+        const chunk: Uint8Array = value;
+        if (!stream.write(chunk)) {
+          await new Promise<void>((resolve, reject) => {
+            const onDrain = (): void => {
+              stream.off('error', onError);
+              resolve();
+            };
+            const onError = (error: unknown): void => {
+              stream.off('drain', onDrain);
+              reject(error);
+            };
+            stream.once('drain', onDrain);
+            stream.once('error', onError);
+          });
+        }
+      }
+    } catch (error) {
+      stream.destroy();
+      throw error;
+    }
+    await new Promise<void>((resolve, reject) => {
+      stream.once('error', reject);
+      stream.end(() => resolve());
+    });
+    return received;
   }
 
   /**

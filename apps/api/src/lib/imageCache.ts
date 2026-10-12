@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { basename as pathBasename } from 'node:path';
 import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
+import type { PanelSource } from '@panel/shared';
 
 export type ImageKind = 'cover' | 'chapter';
 
@@ -34,6 +35,37 @@ export interface ImageCacheTagSummary {
   tag: string;
   entryCount: number;
   totalBytes: number;
+}
+
+/**
+ * Upstream image fetch in two flavors. `buffered` accumulates the whole
+ * image in heap (legacy path, kept for sources without streaming);
+ * `streamed` writes chunk-by-chunk to `destPath` and resolves the byte
+ * count, so a multi-MB image never sits whole in heap. The cache prefers
+ * `streamed` whenever the fetcher provides it.
+ */
+export interface ImageFetcher {
+  buffered: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>;
+  streamed?: (
+    destPath: string,
+    signal?: AbortSignal,
+  ) => Promise<{ bytes: number; contentType: string | null }>;
+}
+
+/**
+ * Build both fetcher flavors from a source adapter: buffered via
+ * `fetchImage`, streamed via `fetchImageStream` when implemented.
+ * Preserves each call site's signal convention (request paths pass the
+ * client signal through; background paths pass none).
+ */
+export function sourceImageFetcher(source: PanelSource, url: string): ImageFetcher {
+  return {
+    buffered: (signal) => source.fetchImage!(url, signal ? { signal } : undefined),
+    streamed: source.fetchImageStream
+      ? (destPath, signal) =>
+          source.fetchImageStream!(url, destPath, signal ? { signal } : undefined)
+      : undefined,
+  };
 }
 
 /**
@@ -640,7 +672,7 @@ export class ImageCache {
 
   async getOrCreate(
     url: string,
-    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    fetcher: ImageFetcher,
     kind: ImageKind,
     tag: string | null = null,
     stableKey: string | null = null,
@@ -732,7 +764,7 @@ export class ImageCache {
    */
   async getCoverWithFallback(
     url: string,
-    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    fetcher: ImageFetcher,
     tag: string | null,
     signal?: AbortSignal,
   ): Promise<{ entry: ImageCacheEntry; stale: boolean }> {
@@ -917,22 +949,18 @@ export class ImageCache {
 
   private async doFetch(
     url: string,
-    fetcher: (signal?: AbortSignal) => Promise<{ bytes: ArrayBuffer; contentType: string | null }>,
+    fetcher: ImageFetcher,
     kind: ImageKind,
     tag: string | null,
     stableKey: string | null = null,
     signal?: AbortSignal,
   ): Promise<ImageCacheEntry> {
-    const { bytes, contentType } = await fetcher(signal);
-    const ext = this.extFor(url, contentType);
-    // Organize attributable files into per-panel folders (and chapter
-    // pages into chapter subfolders with human page names); unattributable
-    // ones (no tag, or a tag with no panel row) stay flat as before.
+    // Folder attribution runs before any fetch: the streamed path needs its
+    // staging directory before the first byte arrives. (Memoized; a failed
+    // fetch afterwards only leaves an empty dir behind.)
     const folders = tag ? await this.resolveFolder(tag, kind) : null;
-    let dir = this.deps.dir;
-    let filename: string;
-    let relPath: string;
     const pageNumber = kind === 'chapter' ? this.stablePageNumber(stableKey) : null;
+    let dir = this.deps.dir;
     if (pageNumber !== null && folders?.panelFolder && folders?.chapterFolder) {
       dir = join(this.deps.dir, folders.panelFolder, folders.chapterFolder);
       const key = join(folders.panelFolder, folders.chapterFolder);
@@ -940,24 +968,49 @@ export class ImageCache {
         await mkdir(dir, { recursive: true });
         this.foldersEnsured.add(key);
       }
-      filename = this.pageFilename(pageNumber, ext);
-      relPath = join(folders.panelFolder, folders.chapterFolder, filename);
-    } else {
-      const hashName = this.filename(kind, url, contentType, tag, stableKey);
-      filename = hashName;
-      if (folders?.panelFolder) {
-        dir = join(this.deps.dir, folders.panelFolder);
-        if (!this.foldersEnsured.has(folders.panelFolder)) {
-          await mkdir(dir, { recursive: true });
-          this.foldersEnsured.add(folders.panelFolder);
-        }
-        relPath = join(folders.panelFolder, filename);
-      } else {
-        relPath = filename;
+    } else if (folders?.panelFolder) {
+      dir = join(this.deps.dir, folders.panelFolder);
+      if (!this.foldersEnsured.has(folders.panelFolder)) {
+        await mkdir(dir, { recursive: true });
+        this.foldersEnsured.add(folders.panelFolder);
       }
     }
+    // Final name from the response content type (same layout as before:
+    // numbered pages in chapter folders, hash names elsewhere, panel
+    // folder when attributable).
+    const layout = (
+      contentType: string | null,
+    ): { filename: string; relPath: string; finalPath: string } => {
+      const ext = this.extFor(url, contentType);
+      let filename: string;
+      let relPath: string;
+      if (pageNumber !== null && folders?.panelFolder && folders?.chapterFolder) {
+        filename = this.pageFilename(pageNumber, ext);
+        relPath = join(folders.panelFolder, folders.chapterFolder, filename);
+      } else {
+        filename = this.filename(kind, url, contentType, tag, stableKey);
+        relPath = folders?.panelFolder ? join(folders.panelFolder, filename) : filename;
+      }
+      return { filename, relPath, finalPath: join(dir, filename) };
+    };
+
+    // Preferred: stream upstream bytes straight to a staging file — only
+    // one network chunk is ever held in heap, no matter the image size.
+    if (fetcher.streamed) {
+      const staging = join(dir, `.staging-${randomUUID()}.bin`);
+      const { bytes, contentType } = await fetcher.streamed(staging, signal);
+      const { relPath, finalPath } = layout(contentType);
+      await rm(finalPath, { force: true });
+      await rename(staging, finalPath);
+      this.indexWrite(relPath);
+      await this.maybeEvict();
+      return { url, path: finalPath, bytes, contentType };
+    }
+
+    // Legacy buffered path for sources without streaming.
+    const { bytes, contentType } = await fetcher.buffered(signal);
+    const { filename, relPath, finalPath } = layout(contentType);
     const tmpPath = join(dir, `${filename}.tmp`);
-    const finalPath = join(dir, filename);
     // Zero-copy view: `Buffer.from(arrayBuffer)` would duplicate the whole
     // image in heap (the fetcher already holds the ArrayBuffer). `writeFile`
     // accepts the Uint8Array view directly.
