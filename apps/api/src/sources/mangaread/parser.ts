@@ -1,6 +1,6 @@
 import { parse as parseHtml, type HTMLElement } from 'node-html-parser';
 import type { PanelStatus } from '@panel/shared';
-import { pickCoverSrc } from '../coverImage.js';
+import { largestSrcsetCandidate, stripWordPressSizeSuffix } from '../coverImage.js';
 
 /**
  * MangaRead (mangaread.org) HTML parser.
@@ -130,6 +130,53 @@ function absoluteUrl(href: string | undefined | null, baseUrl: string): string |
   }
 }
 
+/**
+ * Best cover URL from a Madara lazy `<img>`.
+ *
+ * Archive/detail thumbs serve tiny WordPress sizes in `src`
+ * (`...-110x150.jpg`) with ascending `srcset` sizes (`110w, 175w, 350w`).
+ * Picking `src` (or the first srcset entry) yields a 110px image that blurs
+ * when upscaled to card size — verified live 2026-10. Prefer the largest
+ * srcset candidate, then the data attributes and src, and strip the
+ * size suffix to recover the full-size original (og:image confirms it exists).
+ */
+function pickMangaReadCoverSrc(img: HTMLElement | null | undefined): string | null {
+  if (!img) return null;
+  const placeholders = (value: string | undefined | null): string | null => {
+    const v = value?.trim();
+    if (!v) return null;
+    const lower = v.toLowerCase();
+    if (lower.startsWith('data:image/') || lower.includes('blank.gif') || lower.includes('lazyload')) {
+      return null;
+    }
+    return v;
+  };
+  for (const attr of ['data-original', 'data-src', 'data-lazy-src', 'data-lazy']) {
+    const value = placeholders(img.getAttribute(attr));
+    if (value) return stripWordPressSizeSuffix(value);
+  }
+  for (const attr of ['srcset', 'data-srcset']) {
+    const largest = largestSrcsetCandidate(img.getAttribute(attr));
+    if (largest && placeholders(largest)) {
+      return stripWordPressSizeSuffix(placeholders(largest) as string);
+    }
+  }
+  const parent = img.parentNode as HTMLElement | null | undefined;
+  if (parent && parent.tagName?.toUpperCase() === 'PICTURE') {
+    for (const source of parent.querySelectorAll('source[srcset], source[data-srcset]')) {
+      for (const attr of ['srcset', 'data-srcset']) {
+        const largest = largestSrcsetCandidate(source.getAttribute(attr));
+        if (largest && placeholders(largest)) {
+          return stripWordPressSizeSuffix(placeholders(largest) as string);
+        }
+      }
+    }
+  }
+  const src = placeholders(img.getAttribute('src'));
+  if (src) return stripWordPressSizeSuffix(src);
+  return null;
+}
+
 /** "one-piece" from "https://www.mangaread.org/manga/one-piece/" or ".../chapter-4-5/". */
 export function panelNativeIdFromUrl(url: string): string | null {
   const match = /\/manga\/([^/?#]+)/i.exec(url);
@@ -257,7 +304,7 @@ export function parseArchivePage(html: string, baseUrl: string): RawListItem[] {
     if (!sourceUrl || !nativeId || !title) continue;
 
     const coverImg = card.querySelector('.item-thumb img');
-    const coverUrl = absoluteUrl(coverImg ? pickCoverSrc(coverImg) : null, baseUrl);
+    const coverUrl = absoluteUrl(coverImg ? pickMangaReadCoverSrc(coverImg) : null, baseUrl);
 
     // First .chapter-item is the newest release for this panel.
     const firstChapterItem = card.querySelector('.list-chapter .chapter-item');
@@ -332,7 +379,7 @@ export function parseSearchPage(html: string, baseUrl: string): RawListItem[] {
     if (!sourceUrl || !nativeId || !title) continue;
 
     const coverImg = row.querySelector('.tab-thumb img');
-    const coverUrl = absoluteUrl(coverImg ? pickCoverSrc(coverImg) : null, baseUrl);
+    const coverUrl = absoluteUrl(coverImg ? pickMangaReadCoverSrc(coverImg) : null, baseUrl);
 
     const genres = row
       .querySelectorAll('.mg_genres .summary-content a')
@@ -437,7 +484,7 @@ export function parsePanelPage(html: string, sourceUrl: string, baseUrl: string)
 
   const coverImg = profile.querySelector('.summary_image img, .tab-summary img');
   const coverUrl =
-    absoluteUrl(coverImg ? pickCoverSrc(coverImg) : null, baseUrl) ??
+    absoluteUrl(coverImg ? pickMangaReadCoverSrc(coverImg) : null, baseUrl) ??
     absoluteUrl(root.querySelector('meta[property="og:image"]')?.getAttribute('content'), baseUrl);
 
   const firstChapterLink = root.querySelector('.wp-manga-chapter a');

@@ -18,7 +18,6 @@ import { SourceError } from '../../lib/errors.js';
 import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
-import { eachWithConcurrency } from '../../lib/concurrency.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
 import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
@@ -196,30 +195,17 @@ export class MangaReadSource implements PanelSource {
 
   /**
    * Genre enrichment for archive results. The archive cards carry no genre
-   * markup (unlike the search cards), so each item's genres are filled from
-   * its detail page (the same parser `getPanel` uses). Bounded concurrency
-   * + per-item tolerance: one slow or broken detail page never fails the
-   * listing.
+   * markup (unlike the search cards), so genres are filled from the panel
+   * metadata cache only (panels the user has opened before).
+   *
+   * Deliberately cache-only: a live per-item detail fetch here costs 12
+   * extra page fetches + full DOM parses per latest page, which is the
+   * cold-start memory/CPU spike. Genre-less items are kept as-is — the
+   * service's exclude filter is fail-open and the UI still narrows
+   * client-side, so nothing is over-dropped.
    */
   private async enrichListGenres(items: Array<{ nativeId: string; genres: string[] }>): Promise<void> {
-    // Previously-seen panels resolve from the metadata cache — only the
-    // remainder pays for a detail fetch below.
     await fillGenresFromCache(this.name, items, this.findGenres);
-    await eachWithConcurrency(
-      items.filter((item) => item.genres.length === 0),
-      async (item) => {
-        try {
-          const panel = await this.getPanel(item.nativeId);
-          if (panel.genres.length > 0) item.genres = panel.genres;
-        } catch (error) {
-          logger.debug('Could not enrich MangaRead list-item genres', {
-            source: this.name,
-            nativeId: item.nativeId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
-    );
   }
 
   /**

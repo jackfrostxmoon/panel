@@ -61,6 +61,52 @@ function firstSrcsetCandidate(raw: string | undefined | null): string | null {
   return first && first.length > 0 ? first : null;
 }
 
+/**
+ * Largest URL of a `srcset` list by width (`350w`) or density (`2x`)
+ * descriptor, falling back to the last candidate when no descriptor parses.
+ * Madara thumbs list ascending sizes (`110w, 175w, 350w`) — the first entry
+ * is a 110px thumbnail that blurs when upscaled to card size, so cover
+ * extraction must prefer the largest, not the first.
+ */
+export function largestSrcsetCandidate(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  let bestUrl: string | null = null;
+  let bestScore = -1;
+  let lastUrl: string | null = null;
+  for (const part of raw.split(',')) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    const url = tokens[0]?.trim();
+    if (!url) continue;
+    lastUrl = url;
+    const descriptor = tokens[1]?.trim().toLowerCase() ?? '';
+    let score = -1;
+    if (descriptor.endsWith('w')) {
+      const width = Number.parseInt(descriptor.slice(0, -1), 10);
+      if (Number.isFinite(width)) score = width;
+    } else if (descriptor.endsWith('x')) {
+      const density = Number.parseFloat(descriptor.slice(0, -1));
+      // Scale densities into the width range so `2x` beats `1x` but a real
+      // width (e.g. `350w`) still wins when both styles mix.
+      if (Number.isFinite(density)) score = density * 1000;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = url;
+    }
+  }
+  return bestUrl ?? lastUrl;
+}
+
+/**
+ * Strip a WordPress thumbnail size suffix (`-110x150`, `-193x278`,
+ * `-350x476`) before the file extension to recover the full-size original
+ * (`Read-Manga-4-110x150.jpg` → `Read-Manga-4.jpg`). Query strings and
+ * hashes are preserved; non-matching URLs pass through untouched.
+ */
+export function stripWordPressSizeSuffix(url: string): string {
+  return url.replace(/-\d+x\d+(?=\.[A-Za-z0-9]+(?:[?#]|$))/, '');
+}
+
 /** `<source>` elements of the enclosing `<picture>`, if `el` sits in one. */
 function pictureSources(el: HTMLElement): HTMLElement[] {
   if (el.tagName?.toUpperCase() === 'SOURCE') return [el];
