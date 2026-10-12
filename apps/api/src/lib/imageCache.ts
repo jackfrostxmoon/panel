@@ -253,7 +253,7 @@ export class ImageCache {
   private readonly settingsPath: string;
 
   constructor(private readonly deps: ImageCacheDeps) {
-    this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 16));
+    this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 4));
     this.settingsPath =
       deps.settingsPath ?? join(dirname(deps.dir), '.imagecache-settings.json');
     this.customUpstreamConcurrency = this.loadCustomConcurrency();

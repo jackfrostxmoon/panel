@@ -118,10 +118,10 @@ const envSchema = z.object({
    * whole image in heap, so unbounded concurrency is the transient 300MB+
    * spike. Disk hits bypass the limiter — revisits stay instant. Queued
    * requests wait FIFO; fewer parallel fetches also means fewer source
-   * 429s/retries. Sized together with SOURCE_MAX_IMAGE_BYTES: 8 × 16 MiB
-   * keeps the same worst-case transient heap as the old 16 × 8 MiB.
+   * 429s/retries. Sized together with SOURCE_MAX_IMAGE_BYTES: 4 × 16 MiB
+   * caps the worst-case transient heap at 64 MiB (down from 8 × 16 MiB).
    */
-  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
+  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
 
   /**
    * Split response cap for outbound source traffic. Listings are KBs of
