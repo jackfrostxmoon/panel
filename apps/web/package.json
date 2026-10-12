@@ -6,9 +6,9 @@
   "description": "Panel viewer web client — React 19, Vite 8, TanStack Query.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "bun check && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check",
     "test": "vitest run",
     "test:watch": "vitest"
   },

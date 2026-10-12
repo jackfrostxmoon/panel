@@ -153,7 +153,7 @@ bun run dev:web     # Vite dev server           → http://0.0.0.0:5173
 Other scripts:
 
 ```bash
-bun run typecheck   # tsc --noEmit (TypeScript 7) across all packages
+bun run typecheck   # bun check (TypeScript 7) across all packages
 bun run lint        # oxlint (.oxlintrc.json)
 bun run format      # Prettier
 ```
@@ -538,7 +538,7 @@ no DB). Components are verified via typecheck + lint + manual `bun run dev`.
 ```bash
 bun run test        # vitest run (apps/web) — navigation, shortcuts, chapter markers, format
 bun run test:watch  # or: cd apps/web && bun run test:watch
-bun run typecheck   # tsc --noEmit across shared, api and web
+bun run typecheck   # bun check across shared, api and web
 bun run lint        # oxlint (.oxlintrc.json)
 ```
 
