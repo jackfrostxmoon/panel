@@ -18,7 +18,6 @@ import { SourceError } from '../../lib/errors.js';
 import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
-import { eachWithConcurrency } from '../../lib/concurrency.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
 import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
@@ -69,13 +68,6 @@ export class RawUwUSource implements PanelSource {
    * Absent in tests / standalone use — everything is fetched then.
    */
   private readonly findGenres?: GenreLookup;
-
-  /**
-   * Parallel detail fetches when enriching a listing page. The JSON api is
-   * small but slow per request, and a failed item only loses its genres —
-   * never the page — so this can be generous.
-   */
-  private readonly enrichConcurrency = 8;
 
   constructor(config: SourceConfig, http?: SourceHttpClient, findGenres?: GenreLookup) {
     this.name = config.name;
@@ -214,30 +206,17 @@ export class RawUwUSource implements PanelSource {
 
   /**
    * Genre enrichment for listing results. The search/latest cards carry no
-   * genre markup, so each item's genres are filled from its detail payload
-   * (`getPanel` prefers the lightweight SPA JSON api). Bounded concurrency
-   * + per-item tolerance: one slow or broken detail never fails the listing.
+   * genre markup, so genres are filled from the panel metadata cache only
+   * (panels the user has opened before).
+   *
+   * Deliberately cache-only: a live per-item detail fetch here costs two
+   * fetches per card (HTML page + SPA JSON api) plus a full DOM parse, at
+   * high concurrency — the cold-start memory/CPU spike. Genre-less items
+   * are kept as-is — the service's exclude filter is fail-open and the UI
+   * still narrows client-side, so nothing is over-dropped.
    */
   private async enrichListGenres(items: Array<{ nativeId: string; genres: string[] }>): Promise<void> {
-    // Previously-seen panels resolve from the metadata cache — only the
-    // remainder pays for a detail fetch below.
     await fillGenresFromCache(this.name, items, this.findGenres);
-    await eachWithConcurrency(
-      items.filter((item) => item.genres.length === 0),
-      async (item) => {
-        try {
-          const panel = await this.getPanel(item.nativeId);
-          if (panel.genres.length > 0) item.genres = panel.genres;
-        } catch (error) {
-          logger.debug('Could not enrich RawUwU list-item genres', {
-            source: this.name,
-            nativeId: item.nativeId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
-      this.enrichConcurrency,
-    );
   }
 
   /**
