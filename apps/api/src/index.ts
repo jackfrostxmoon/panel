@@ -148,20 +148,30 @@ const autoReliefTimer = setInterval(() => {
     const heapOver = mem.heapUsed > thresholdBytes;
     const rssOver = mem.rss > rssThresholdBytes;
     if (heapOver || rssOver) {
-      logger.info('Auto memory relief triggered', {
-        heapUsedBytes: mem.heapUsed,
-        thresholdBytes: thresholdBytes,
-        thresholdMb,
-        rssBytes: mem.rss,
-        rssThresholdBytes,
-        rssThresholdMb,
-        heapOver,
-        rssOver,
-      });
+      // Native RSS bloat (rssOver with a small heap) is mostly
+      // allocator-held pages, not JS objects — the default non-blocking
+      // `Bun.gc()` demonstrably collects nothing there, so run a full
+      // forced collection to release everything releasable. Heap-only
+      // events keep the cheap non-blocking call.
+      const blocking = rssOver;
+      logger.info(
+        blocking ? 'Auto memory relief triggered (RSS high-water)' : 'Auto memory relief triggered',
+        {
+          heapUsedBytes: mem.heapUsed,
+          thresholdBytes: thresholdBytes,
+          thresholdMb,
+          rssBytes: mem.rss,
+          rssThresholdBytes,
+          rssThresholdMb,
+          heapOver,
+          rssOver,
+        },
+      );
       panelService.clearCache();
       imageCache.dropMemoryIndex();
-      if (typeof (globalThis as { Bun?: { gc?: () => void } }).Bun?.gc === 'function') {
-        (globalThis as { Bun: { gc: () => void } }).Bun.gc();
+      const bunGc = (globalThis as { Bun?: { gc?: (force?: boolean) => void } }).Bun?.gc;
+      if (typeof bunGc === 'function') {
+        bunGc(blocking ? true : undefined);
       }
     }
   } catch {
