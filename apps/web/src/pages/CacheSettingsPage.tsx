@@ -133,12 +133,12 @@ export function CacheSettingsPage() {
 
   const reliefRssThresholdMb =
     saveCacheSettings.isPending && saveCacheSettings.variables
-      ? Math.max(128, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefRssThresholdMb || 512)))
-      : Math.max(128, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefRssThresholdMb || 512)));
+      ? Math.max(128, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefRssThresholdMb || 256)))
+      : Math.max(128, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefRssThresholdMb || 256)));
   const [rssThresholdInput, setRssThresholdInput] = useState<string>(String(reliefRssThresholdMb));
 
   async function saveRssThreshold() {
-    const mb = Math.round(Number(rssThresholdInput) || 512);
+    const mb = Math.round(Number(rssThresholdInput) || 256);
     if (!Number.isFinite(mb) || mb < 128 || mb > 20000) {
       toast('RSS threshold must be between 128 MB and 20,000 MB.', 'error');
       return;

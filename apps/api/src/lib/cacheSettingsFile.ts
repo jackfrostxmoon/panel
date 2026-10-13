@@ -43,7 +43,7 @@ export function saveCacheSettings(settings: CachePageSettings): CachePageSetting
     autoMemoryReliefThresholdMb: Math.max(20, Math.round(Number(settings.autoMemoryReliefThresholdMb) || 20)),
     autoMemoryReliefRssThresholdMb: Math.max(
       128,
-      Math.round(Number(settings.autoMemoryReliefRssThresholdMb) || 512),
+      Math.round(Number(settings.autoMemoryReliefRssThresholdMb) || 256),
     ),
   };
   if (!existsSync(DATA_DIR)) {

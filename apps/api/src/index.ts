@@ -143,7 +143,7 @@ const autoReliefTimer = setInterval(() => {
     const mem = process.memoryUsage();
     const thresholdMb = Math.max(20, Math.round(settings.autoMemoryReliefThresholdMb || 20));
     const thresholdBytes = thresholdMb * 1024 * 1024;
-    const rssThresholdMb = Math.max(128, Math.round(settings.autoMemoryReliefRssThresholdMb || 512));
+    const rssThresholdMb = Math.max(128, Math.round(settings.autoMemoryReliefRssThresholdMb || 256));
     const rssThresholdBytes = rssThresholdMb * 1024 * 1024;
     const heapOver = mem.heapUsed > thresholdBytes;
     const rssOver = mem.rss > rssThresholdBytes;

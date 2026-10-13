@@ -129,16 +129,16 @@ export interface CachePageSettings {
   autoMemoryRelief: boolean;
   /** Heap relief threshold in MB (default 20). Only used when autoMemoryRelief is true. */
   autoMemoryReliefThresholdMb: number;
-  /** RSS relief threshold in MB (default 512). Only used when autoMemoryRelief is true. */
+  /** RSS relief threshold in MB (default 256). Only used when autoMemoryRelief is true. */
   autoMemoryReliefRssThresholdMb: number;
 }
 
-/** Default: manual refresh only, no auto memory relief, 20 MB heap / 512 MB RSS thresholds. */
+/** Default: manual refresh only, no auto memory relief, 20 MB heap / 256 MB RSS thresholds. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
   autoMemoryRelief: false,
   autoMemoryReliefThresholdMb: 20,
-  autoMemoryReliefRssThresholdMb: 512,
+  autoMemoryReliefRssThresholdMb: 256,
 };
 
 /**

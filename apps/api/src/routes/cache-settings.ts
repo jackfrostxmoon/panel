@@ -24,7 +24,7 @@ export function cacheSettingsRoutes(): Hono {
       : 20;
     const rssThresholdMb = typeof bodyObj.autoMemoryReliefRssThresholdMb === 'number' && !Number.isNaN(bodyObj.autoMemoryReliefRssThresholdMb)
       ? bodyObj.autoMemoryReliefRssThresholdMb
-      : 512;
+      : 256;
     return c.json(
       ok(saveCacheSettings({
         liveRefresh: bodyObj.liveRefresh,
