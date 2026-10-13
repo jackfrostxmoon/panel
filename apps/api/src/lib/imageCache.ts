@@ -1124,8 +1124,10 @@ export class ImageCache {
       if (kind === 'cover' && tagHash) this.coverTagIndex?.set(tagHash, relPath);
       return;
     }
-    const legacyMatch = /^(cover|chapter)-([0-9a-f]{64})\.\w+$/.exec(filename);
+    const legacyMatch = /^(cover|chapter)-([0-9a-f]{56}|[0-9a-f]{64})\.\w+$/.exec(filename);
     if (legacyMatch) {
+      // Tagless writes mint the 56-char URL hash while pre-tag-format
+      // legacy files carry the full 64-char digest — both index here.
       const [, kind, urlHash] = legacyMatch;
       const stem = `${kind}-${urlHash}`;
       this.legacyIndex.set(stem, relPath);
@@ -1133,11 +1135,17 @@ export class ImageCache {
   }
 
   /**
-   * Slow-path recursive scan filtered to a single lookup tuple. Used when
+   * Slow-path scan filtered to a single lookup tuple. Used when
    * the index miss suggests a file might exist that wasn't indexed yet
    * (e.g. written by another process or by a pre-index build).
    * Returns the matching root-relative path or `null`. Adds the
    * discovered file to the index as a side effect.
+   *
+   * The legacy (tagless) branch scans only the flat cache root: tagless
+   * writes always land there (no tag → no panel folder), while
+   * folder-organized legacy files (startup migration) are already in the
+   * warmed index above — so a full recursive tree walk is never needed
+   * to conclude a tagless miss.
    */
   private async readdirFiltered(
     kind: ImageKind,
@@ -1145,6 +1153,10 @@ export class ImageCache {
     stableKey: string | null,
     url: string,
   ): Promise<string | null> {
+    // Legacy lookups (no tag/stableKey) resolve flat — see the doc comment.
+    if (!tag && !stableKey) {
+      return this.readdirFlatLegacy(kind, url);
+    }
     const entries = await this.listFiles();
     const urlHash = url ? this.urlSuffix(url) : '';
     const tagHash = this.tagPrefix(kind, tag);
@@ -1162,15 +1174,41 @@ export class ImageCache {
           this.indexFile(rel);
           return rel;
         }
-      } else {
-        const legacyPrefix = `${kind}-${urlHash}`;
-        if (e.startsWith(legacyPrefix)) {
-          this.indexFile(rel);
-          return rel;
-        }
       }
     }
     return null;
+  }
+
+  /**
+   * Single-directory scan of the flat cache root for a legacy (tagless)
+   * entry. Matches the exact filename shape for either hash length the
+   * writer may have minted (56-char current, 64-char pre-tag-format) —
+   * never a bare prefix, so a longer hash can never shadow a shorter one.
+   */
+  private async readdirFlatLegacy(kind: ImageKind, url: string): Promise<string | null> {
+    const wanted = new Set([`${kind}-${this.urlSuffix(url)}`, `${kind}-${this.urlHashFull(url)}`]);
+    let dirents;
+    try {
+      dirents = await readdir(this.deps.dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const d of dirents) {
+      if (!d.isFile() || d.name.endsWith('.tmp')) continue;
+      if (!/^(cover|chapter)-([0-9a-f]{56}|[0-9a-f]{64})\.\w+$/.test(d.name)) continue;
+      const stem = d.name.slice(0, d.name.lastIndexOf('.'));
+      if (wanted.has(stem)) {
+        this.indexFile(d.name);
+        return d.name;
+      }
+    }
+    return null;
+  }
+
+  /** Full 64-char digest of the upstream URL (same cleaning as urlSuffix). */
+  private urlHashFull(url: string): string {
+    const clean = url.replace(/[?&]_retry=\d+/, '').split('#')[0] ?? url;
+    return createHash('sha256').update(clean).digest('hex');
   }
 
   /** The effective cap: the custom override while set, else the computed disk-relative cap. */
