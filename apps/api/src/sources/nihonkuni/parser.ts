@@ -305,8 +305,7 @@ function publishedTimeFromMeta(root: HTMLElement): string | null {
 /* List pages (search + latest share the same `.manga-card` grid)              */
 /* -------------------------------------------------------------------------- */
 
-export function parseListPage(html: string, baseUrl: string): RawListItem[] {
-  const root = parseHtml(html);
+function listItemsOf(root: HTMLElement, baseUrl: string): RawListItem[] {
   const items: RawListItem[] = [];
 
   for (const card of root.querySelectorAll('.manga-card')) {
@@ -334,9 +333,32 @@ export function parseListPage(html: string, baseUrl: string): RawListItem[] {
 
 /** Pagination: `.page-link.next` is an <a> while results remain; a disabled
  *  `<span class="page-link next">` appears on the last page. */
-export function hasNextPage(html: string): boolean {
-  const root = parseHtml(html);
+function hasNextPageOf(root: HTMLElement): boolean {
   return root.querySelector('a.page-link.next') !== null;
+}
+
+export function parseListPage(html: string, baseUrl: string): RawListItem[] {
+  return listItemsOf(parseHtml(html), baseUrl);
+}
+
+export function hasNextPage(html: string): boolean {
+  return hasNextPageOf(parseHtml(html));
+}
+
+/**
+ * Single-parse list page: cards + pagination from ONE DOM build.
+ *
+ * A manga-list page is the largest listing HTML on this source; building the
+ * DOM twice (once for cards, once for the next-page link) doubles the peak
+ * transient heap per search/latest/genre fetch. Prefer this over calling
+ * `parseListPage` + `hasNextPage` on the same body.
+ */
+export function parseListPageWithPagination(
+  html: string,
+  baseUrl: string,
+): { items: RawListItem[]; hasMore: boolean } {
+  const root = parseHtml(html);
+  return { items: listItemsOf(root, baseUrl), hasMore: hasNextPageOf(root) };
 }
 
 /**
@@ -345,16 +367,7 @@ export function hasNextPage(html: string): boolean {
  * entries are dropped.
  */
 export function parseGenreCatalog(html: string): string[] {
-  const root = parseHtml(html);
-  const seen = new Set<string>();
-  const genres: string[] = [];
-  for (const a of root.querySelectorAll('.genres-grid a.genre-item')) {
-    const label = textOf(a);
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
-    genres.push(label);
-  }
-  return genres;
+  return parseGenreIndex(html, '').catalog;
 }
 
 /**
@@ -363,15 +376,34 @@ export function parseGenreCatalog(html: string): string[] {
  * site URL instead of guessing slugs.
  */
 export function parseGenreLinks(html: string, baseUrl: string): Array<{ label: string; href: string }> {
+  return parseGenreIndex(html, baseUrl).links;
+}
+
+/**
+ * Single-parse genre index: catalog labels + archive links from ONE DOM
+ * build over the navbar `.genres-grid`. The index page (`manga-list.html`)
+ * is fetched once per genre label without this, so a 3-genre filter paid
+ * for 3 full page fetches + 3 DOM builds before fetching any archive.
+ * The adapter memoizes the result — this helper just avoids re-parsing.
+ */
+export function parseGenreIndex(
+  html: string,
+  baseUrl: string,
+): { catalog: string[]; links: Array<{ label: string; href: string }> } {
   const root = parseHtml(html);
+  const seen = new Set<string>();
+  const catalog: string[] = [];
   const links: Array<{ label: string; href: string }> = [];
   for (const a of root.querySelectorAll('.genres-grid a.genre-item')) {
     const label = textOf(a);
+    if (!label) continue;
     const href = absoluteUrl(a.getAttribute('href'), baseUrl);
-    if (!label || !href) continue;
-    links.push({ label, href });
+    if (href) links.push({ label, href });
+    if (seen.has(label)) continue;
+    seen.add(label);
+    catalog.push(label);
   }
-  return links;
+  return { catalog, links };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -379,8 +411,10 @@ export function parseGenreLinks(html: string, baseUrl: string): Array<{ label: s
 /* -------------------------------------------------------------------------- */
 
 export function parsePanelPage(html: string, sourceUrl: string, baseUrl: string): RawPanelDetails {
-  const root = parseHtml(html);
+  return panelDetailsOf(parseHtml(html), sourceUrl, baseUrl);
+}
 
+function panelDetailsOf(root: HTMLElement, sourceUrl: string, baseUrl: string): RawPanelDetails {
   const titleEl = root.querySelector('h1.manga-main-title');
   const title = decodeDataEnc(titleEl?.getAttribute('data-enc') ?? null) ?? textOf(titleEl);
   if (!title) {
@@ -422,7 +456,28 @@ export function parsePanelPage(html: string, sourceUrl: string, baseUrl: string)
 /* -------------------------------------------------------------------------- */
 
 export function parseChapterList(html: string, baseUrl: string): RawChapterItem[] {
+  return chapterItemsOf(parseHtml(html), baseUrl);
+}
+
+/**
+ * Single-parse panel page: details + embedded chapter list from ONE DOM
+ * build. `getPanel`/`getChapters` used to parse the same detail HTML twice
+ * (details, then chapters, then a not-found recheck on empty) — three DOMs
+ * for one page. Prefer this over `parsePanelPage` + `parseChapterList`.
+ */
+export function parsePanelPageWithChapters(
+  html: string,
+  sourceUrl: string,
+  baseUrl: string,
+): { details: RawPanelDetails; chapters: RawChapterItem[] } {
   const root = parseHtml(html);
+  return {
+    details: panelDetailsOf(root, sourceUrl, baseUrl),
+    chapters: chapterItemsOf(root, baseUrl),
+  };
+}
+
+function chapterItemsOf(root: HTMLElement, baseUrl: string): RawChapterItem[] {
   const chapters: RawChapterItem[] = [];
 
   for (const row of root.querySelectorAll('#chapters_raw_data a')) {
@@ -450,27 +505,11 @@ export function parseChapterList(html: string, baseUrl: string): RawChapterItem[
 /* Chapter reader page                                                         */
 /* -------------------------------------------------------------------------- */
 
-export function parseChapterReaderPage(html: string, baseUrl: string): RawChapterPages {
-  const root = parseHtml(html);
-
-  const imageUrls: string[] = [];
-  for (const img of root.querySelectorAll('#chapter_images_container img')) {
-    const src = (img.getAttribute('src') ?? '').trim();
-    const url = absoluteUrl(src || null, baseUrl);
-    if (url) imageUrls.push(url);
-  }
-
-  const coverUrl = absoluteUrl(
-    root.querySelector('meta[property="og:image"]')?.getAttribute('content'),
-    baseUrl,
-  );
-
-  const panelTitle = textOf(root.querySelector('.manga-title-header a'));
-
-  const chapterHeading = textOf(root.querySelector('.chapter-title-header'));
-  // Header reads "Chapter 1190 - Chapter 1190"; keep the first half.
-  const readerLabel = chapterHeading ? chapterHeading.split(' - ')[0]!.trim() : null;
-
+/** Chapter navigation (sidebar list + select fallback) from an already-parsed root. */
+function chapterNavOf(root: HTMLElement): {
+  chapterOptions: Array<{ token: string; title: string }>;
+  currentToken: string | null;
+} {
   // Full chapter navigation lives in the reader sidebar (newest-first).
   const chapterOptions: Array<{ token: string; title: string }> = [];
   let currentToken: string | null = null;
@@ -493,6 +532,68 @@ export function parseChapterReaderPage(html: string, baseUrl: string): RawChapte
       if (option.hasAttribute('selected')) currentToken = ref.token;
     }
   }
+
+  return { chapterOptions, currentToken };
+}
+
+/**
+ * Raw inner slice of the first `<tag class="…">…</tag>` element in `html`,
+ * or null when absent. Lets callers parse a small fragment instead of the
+ * whole page.
+ */
+function sliceElementFragment(html: string, tag: 'ul' | 'select', className: string): string | null {
+  const open = new RegExp(`<${tag}[^>]*${className}[^>]*>`, 'i').exec(html);
+  if (!open || open.index === undefined) return null;
+  const closeTag = `</${tag}>`;
+  const end = html.indexOf(closeTag, open.index);
+  if (end < 0) return null;
+  return html.slice(open.index, end + closeTag.length);
+}
+
+/**
+ * Chapter navigation WITHOUT building a DOM for the whole reader page.
+ *
+ * `getChapters` only needs the sidebar list, but a full
+ * `parseChapterReaderPage` also tokenizes every page image, header and
+ * inline script into heap — on a long series the reader page is the largest
+ * HTML on this source. Slicing the `<ul class="chapters-list-sidebar">`
+ * fragment (falling back to the chapter `<select>`) keeps the transient DOM
+ * to a few KB. Returns empty options (not a throw) when the fragment is
+ * missing — the caller falls back to the embedded chapter slice.
+ */
+export function parseChapterSidebar(
+  html: string,
+): { chapterOptions: Array<{ token: string; title: string }>; currentToken: string | null } {
+  const fragment =
+    sliceElementFragment(html, 'ul', 'chapters-list-sidebar') ??
+    sliceElementFragment(html, 'select', 'chapter-selector');
+  if (!fragment) return { chapterOptions: [], currentToken: null };
+  return chapterNavOf(parseHtml(fragment));
+}
+
+export function parseChapterReaderPage(html: string, baseUrl: string): RawChapterPages {
+  const root = parseHtml(html);
+
+  const imageUrls: string[] = [];
+  for (const img of root.querySelectorAll('#chapter_images_container img')) {
+    const src = (img.getAttribute('src') ?? '').trim();
+    const url = absoluteUrl(src || null, baseUrl);
+    if (url) imageUrls.push(url);
+  }
+
+  const coverUrl = absoluteUrl(
+    root.querySelector('meta[property="og:image"]')?.getAttribute('content'),
+    baseUrl,
+  );
+
+  const panelTitle = textOf(root.querySelector('.manga-title-header a'));
+
+  const chapterHeading = textOf(root.querySelector('.chapter-title-header'));
+  // Header reads "Chapter 1190 - Chapter 1190"; keep the first half.
+  const readerLabel = chapterHeading ? chapterHeading.split(' - ')[0]!.trim() : null;
+
+  // Full chapter navigation lives in the reader sidebar (newest-first).
+  const { chapterOptions, currentToken } = chapterNavOf(root);
 
   if (imageUrls.length === 0 && !readerLabel && chapterOptions.length === 0 && !panelTitle) {
     // Nothing reader-like on the page at all → not a chapter page.

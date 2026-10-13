@@ -83,10 +83,11 @@ const envSchema = z.object({
    * Bound on the in-memory source-response cache (PanelService TtlCache).
    * Each entry can hold a full listing or chapter page list, so an
    * unbounded-feeling 1000 entries pins hundreds of MB after a long browse.
-   * A single-user journey touches dozens of keys — 200 keeps every revisit's
-   * cache hot while capping the heap.
+   * A single-user journey touches dozens of keys — 100 keeps recent
+   * revisits hot while halving the worst-case heap (nihonkuni chapter lists
+   * with 1000+ entries are the largest payloads in this cache).
    */
-  CACHE_MAX_ENTRIES: z.coerce.number().int().min(16).max(5000).default(200),
+  CACHE_MAX_ENTRIES: z.coerce.number().int().min(16).max(5000).default(100),
 
   /**
    * Bound on the in-memory source-response cache in bytes (PanelService
@@ -94,7 +95,7 @@ const envSchema = z.object({
    * evicted past either this or CACHE_MAX_ENTRIES, so one huge chapter
    * payload can't pin the heap.
    */
-  CACHE_MAX_BYTES: z.coerce.number().int().min(1024 * 1024).max(1024 * 1024 * 1024).default(64 * 1024 * 1024),
+  CACHE_MAX_BYTES: z.coerce.number().int().min(1024 * 1024).max(1024 * 1024 * 1024).default(32 * 1024 * 1024),
 
   // On-disk cache for proxied cover / chapter images. Sized relative to the
   // host's available disk at runtime (see ImageCache.computeCap): we
@@ -118,10 +119,10 @@ const envSchema = z.object({
    * whole image in heap, so unbounded concurrency is the transient 300MB+
    * spike. Disk hits bypass the limiter — revisits stay instant. Queued
    * requests wait FIFO; fewer parallel fetches also means fewer source
-   * 429s/retries. Sized together with SOURCE_MAX_IMAGE_BYTES: 4 × 16 MiB
-   * caps the worst-case transient heap at 64 MiB (down from 8 × 16 MiB).
+   * 429s/retries. Sized together with SOURCE_MAX_IMAGE_BYTES: 2 × 16 MiB
+   * caps the worst-case transient heap at 32 MiB.
    */
-  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
 
   /**
    * Split response cap for outbound source traffic. Listings are KBs of

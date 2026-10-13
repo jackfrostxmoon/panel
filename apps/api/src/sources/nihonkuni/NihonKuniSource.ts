@@ -23,15 +23,14 @@ import { fillGenresFromCache } from '../../lib/cachedGenres.js';
 import { unionSearchResults } from '../../lib/searchUnion.js';
 import {
   chapterNumberFromToken,
-  hasNextPage,
   panelNativeIdFromUrl,
   PageNotRecognizedError,
-  parseChapterList,
   parseChapterReaderPage,
-  parseGenreCatalog,
-  parseGenreLinks,
-  parseListPage,
+  parseChapterSidebar,
+  parseGenreIndex,
+  parseListPageWithPagination,
   parsePanelPage,
+  parsePanelPageWithChapters,
   type RawChapterItem,
 } from './parser.js';
 
@@ -162,7 +161,9 @@ export class NihonKuniSource implements PanelSource {
     const url = `${this.baseUrl}/manga-list.html?${params.toString()}`;
     const { body, finalUrl } = await this.http.fetchText(url);
 
-    const items = parseListPage(body, this.baseUrl);
+    // Cards + pagination from a single DOM build (the list page is large;
+    // parsing twice doubles the transient heap per search).
+    const { items, hasMore } = parseListPageWithPagination(body, this.baseUrl);
     if (items.length === 0) {
       // A single exact match can redirect straight to the panel page.
       try {
@@ -195,7 +196,7 @@ export class NihonKuniSource implements PanelSource {
     return {
       results: items.map((item) => this.toPanelSummary(item)),
       page,
-      hasMore: hasNextPage(body),
+      hasMore,
     };
   }
 
@@ -206,12 +207,12 @@ export class NihonKuniSource implements PanelSource {
     const url = `${this.baseUrl}/manga-list.html?${params.toString()}`;
     const { body } = await this.http.fetchText(url);
 
-    const items = parseListPage(body, this.baseUrl);
+    const { items, hasMore } = parseListPageWithPagination(body, this.baseUrl);
     await this.enrichListGenres(items);
     return {
       results: items.map((item) => this.toPanelSummary(item)),
       page,
-      hasMore: hasNextPage(body),
+      hasMore,
     };
   }
 
@@ -231,24 +232,68 @@ export class NihonKuniSource implements PanelSource {
   }
 
   /**
-   * Full genre catalog from the navbar genre grid (present on the manga
-   * list page). Backs the filter dropdowns so they offer every genre, not
-   * just the ones on the current result page.
+   * Memoized navbar genre index (label → archive-url pairs). The index page
+   * (`manga-list.html`) is a full list page — fetching + parsing it once per
+   * genre label turned a 3-genre filter into 3 wasted page loads before any
+   * archive was fetched. Cached for an hour (the navbar changes rarely),
+   * with in-flight dedup so concurrent filters share one fetch.
    */
-  async getGenreList(): Promise<string[]> {
-    this.assertEnabled();
-    const { body } = await this.http.fetchText(`${this.baseUrl}/manga-list.html`);
-    return parseGenreCatalog(body);
+  private genreIndexCache: Array<{ label: string; href: string }> | null = null;
+  private genreIndexExpiresAt = 0;
+  private genreIndexPromise: Promise<Array<{ label: string; href: string }>> | null = null;
+
+  private genreIndex(): Promise<Array<{ label: string; href: string }>> {
+    const now = Date.now();
+    if (this.genreIndexCache && now < this.genreIndexExpiresAt) {
+      return Promise.resolve(this.genreIndexCache);
+    }
+    if (!this.genreIndexPromise) {
+      this.genreIndexPromise = (async () => {
+        const { body } = await this.http.fetchText(`${this.baseUrl}/manga-list.html`);
+        const { links } = parseGenreIndex(body, this.baseUrl);
+        this.genreIndexCache = links;
+        this.genreIndexExpiresAt = Date.now() + 60 * 60_000;
+        return links;
+      })().finally(() => {
+        this.genreIndexPromise = null;
+      });
+    }
+    return this.genreIndexPromise;
   }
 
   /**
-   * Dropdown label → genre archive slug through the navbar genre index
-   * (exact match, case-insensitive). Null when the label isn't indexed —
+   * Full genre catalog from the navbar genre grid (present on the manga
+   * list page). Backs the filter dropdowns so they offer every genre, not
+   * just the ones on the current result page. Served from the memoized
+   * index when warm — otherwise one fetch populates both catalog + index.
+   */
+  async getGenreList(): Promise<string[]> {
+    this.assertEnabled();
+    const now = Date.now();
+    if (this.genreIndexCache && now < this.genreIndexExpiresAt) {
+      const seen = new Set<string>();
+      const catalog: string[] = [];
+      for (const { label } of this.genreIndexCache) {
+        if (seen.has(label)) continue;
+        seen.add(label);
+        catalog.push(label);
+      }
+      return catalog;
+    }
+    const { body } = await this.http.fetchText(`${this.baseUrl}/manga-list.html`);
+    const { catalog, links } = parseGenreIndex(body, this.baseUrl);
+    this.genreIndexCache = links;
+    this.genreIndexExpiresAt = Date.now() + 60 * 60_000;
+    return catalog;
+  }
+
+  /**
+   * Dropdown label → genre archive slug through the memoized navbar genre
+   * index (exact match, case-insensitive). Null when the label isn't indexed —
    * callers fall back to the unfiltered endpoint.
    */
   private async genreSlug(label: string): Promise<string | null> {
-    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/manga-list.html`);
-    const href = parseGenreLinks(indexHtml, this.baseUrl).find(
+    const href = (await this.genreIndex()).find(
       (entry) => entry.label.toLowerCase() === label.toLowerCase(),
     )?.href;
     return href ? (/manga-list-genre-(.+)\.html$/i.exec(href)?.[1] ?? null) : null;
@@ -285,16 +330,25 @@ export class NihonKuniSource implements PanelSource {
           ? `${this.baseUrl}/manga-list-genre-${slug}.html`
           : `${this.baseUrl}/manga-list.html?page=${p}&sort=last_update&sort_type=DESC&genre=${slug}`;
       const { body } = await this.http.fetchText(url);
-      const items = parseListPage(body, this.baseUrl);
+      const { items, hasMore } = parseListPageWithPagination(body, this.baseUrl);
       await this.enrichListGenres(items);
       return {
         results: items.map((item) => this.toPanelSummary(item)),
         page: p,
-        hasMore: hasNextPage(body),
+        hasMore,
       };
     };
     if (slugs.length === 1) return fetchArchive(slugs[0] as string);
-    const settled = await Promise.allSettled(slugs.map((slug) => fetchArchive(slug)));
+    // Sequential: each archive page holds a full DOM in heap, so fanning out
+    // holds N pages + N DOMs at once for the same union result.
+    const settled: PromiseSettledResult<SourceSearchResult>[] = [];
+    for (const slug of slugs) {
+      try {
+        settled.push({ status: 'fulfilled', value: await fetchArchive(slug) });
+      } catch (reason) {
+        settled.push({ status: 'rejected', reason });
+      }
+    }
     return unionSearchResults(settled, p);
   }
 
@@ -329,7 +383,7 @@ export class NihonKuniSource implements PanelSource {
       if (p > 1) params.set('page', String(p));
       const url = `${this.baseUrl}/manga-list.html?${params.toString()}`;
       const { body, finalUrl } = await this.http.fetchText(url);
-      const items = parseListPage(body, this.baseUrl);
+      const { items, hasMore } = parseListPageWithPagination(body, this.baseUrl);
       if (items.length === 0) {
         // A single exact match can redirect straight to the panel page.
         try {
@@ -361,11 +415,19 @@ export class NihonKuniSource implements PanelSource {
       return {
         results: items.map((item) => this.toPanelSummary(item)),
         page: p,
-        hasMore: hasNextPage(body),
+        hasMore,
       };
     };
     if (slugs.length === 1) return fetchGenreSearch(slugs[0] as string);
-    const settled = await Promise.allSettled(slugs.map((slug) => fetchGenreSearch(slug)));
+    // Sequential — same transient-heap reason as latestByGenre above.
+    const settled: PromiseSettledResult<SourceSearchResult>[] = [];
+    for (const slug of slugs) {
+      try {
+        settled.push({ status: 'fulfilled', value: await fetchGenreSearch(slug) });
+      } catch (reason) {
+        settled.push({ status: 'rejected', reason });
+      }
+    }
     return unionSearchResults(settled, p);
   }
 
@@ -375,7 +437,9 @@ export class NihonKuniSource implements PanelSource {
     const { body } = await this.http.fetchText(sourceUrl);
 
     try {
-      const raw = parsePanelPage(body, sourceUrl, this.baseUrl);
+      // Single DOM build (chapters are parsed too but discarded here —
+      // still cheaper than building the DOM twice).
+      const raw = parsePanelPageWithChapters(body, sourceUrl, this.baseUrl).details;
       return {
         ...this.toPanelSummary({
           nativeId: raw.nativeId,
@@ -412,24 +476,26 @@ export class NihonKuniSource implements PanelSource {
     const sourceUrl = this.buildPanelUrl(nativePanelId);
     const { body, finalUrl } = await this.http.fetchText(sourceUrl);
 
-    // 1) The detail page embeds only the latest ~192 chapters.
-    let rawChapters = parseChapterList(body, this.baseUrl);
+    // 1) The detail page embeds only the latest ~192 chapters — details +
+    //    embedded slice from a single DOM build. An unrecognized page throws
+    //    PageNotRecognizedError, which distinguishes "panel does not exist"
+    //    from "no chapters listed" without a second parse.
+    let rawChapters: RawChapterItem[];
+    try {
+      rawChapters = parsePanelPageWithChapters(body, sourceUrl, this.baseUrl).chapters;
+    } catch (error) {
+      if (error instanceof PageNotRecognizedError) {
+        throw new SourceError(
+          this.name,
+          ErrorCodes.PANEL_NOT_FOUND,
+          'The requested panel could not be found.',
+          { nativePanelId },
+        );
+      }
+      throw error;
+    }
 
     if (rawChapters.length === 0) {
-      // Distinguish "panel does not exist" from "no chapters listed".
-      try {
-        parsePanelPage(body, sourceUrl, this.baseUrl);
-      } catch (error) {
-        if (error instanceof PageNotRecognizedError) {
-          throw new SourceError(
-            this.name,
-            ErrorCodes.PANEL_NOT_FOUND,
-            'The requested panel could not be found.',
-            { nativePanelId },
-          );
-        }
-        throw error;
-      }
       logger.warn('Panel page contained no chapters', {
         source: this.name,
         nativePanelId,
@@ -439,13 +505,16 @@ export class NihonKuniSource implements PanelSource {
 
     // 2) The latest chapter's reader page lists every chapter in a sidebar.
     //    Prefer that full list; fall back to the embedded slice on any failure.
+    //    Sidebar-only fragment parse: the reader page is the largest HTML on
+    //    this source and only the chapter list is needed here — a full parse
+    //    would also tokenize every page image + header into heap.
     const latest = rawChapters[0];
     if (latest) {
       try {
         const readerBody = (await this.http.fetchText(latest.sourceUrl)).body;
-        const reader = parseChapterReaderPage(readerBody, this.baseUrl);
-        if (reader.chapterOptions.length > 0) {
-          rawChapters = reader.chapterOptions.map((option): RawChapterItem => ({
+        const sidebar = parseChapterSidebar(readerBody);
+        if (sidebar.chapterOptions.length > 0) {
+          rawChapters = sidebar.chapterOptions.map((option): RawChapterItem => ({
             nativeId: `${nativePanelId}~${option.token}`,
             panelNativeId: nativePanelId,
             chapterToken: option.token,

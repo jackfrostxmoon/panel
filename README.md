@@ -222,13 +222,13 @@ commit real values).
 | `CACHE_TTL_PANEL_MS`                  | `600000`                                             | TTL for panel metadata                          |
 | `CACHE_TTL_CHAPTERS_MS`               | `300000`                                             | TTL for chapter lists                           |
 | `CACHE_TTL_PAGES_MS`                  | `1800000`                                            | TTL for chapter page lists                      |
-| `CACHE_MAX_ENTRIES`                   | `200`                                                | Max entries in the in-memory source-response cache |
+| `CACHE_MAX_ENTRIES`                   | `100`                                                | Max entries in the in-memory source-response cache |
 | `VITE_API_BASE_URL`                   | _(empty)_                                            | Override API origin for the web build (rare)    |
 | `IMAGE_CACHE_DIR`                     | `data/.imagecache`                                   | On-disk cache for proxied cover/chapter images  |
 | `IMAGE_CACHE_MAX_FRACTION`            | `0.5`                                                | Max fraction of available disk the cache may use (clamped between min/max bytes) |
 | `IMAGE_CACHE_MIN_BYTES`               | `268435456`                                          | Cache cap lower bound (256 MiB)                 |
 | `IMAGE_CACHE_MAX_BYTES`               | `8589934592`                                         | Cache cap upper bound (8 GiB)                   |
-| `IMAGE_PROXY_CONCURRENCY`             | `4`                                                  | Max concurrent upstream image-proxy fetches (disk hits bypass) |
+| `IMAGE_PROXY_CONCURRENCY`             | `2`                                                  | Max concurrent upstream image-proxy fetches (disk hits bypass) |
 
 ## Database & migrations
 
