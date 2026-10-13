@@ -283,7 +283,10 @@ export function healthRoutes(
         },
         memory: {
           rssBytes: memory.rss,
+          heapTotalBytes: memory.heapTotal,
           heapUsedBytes: memory.heapUsed,
+          externalBytes: memory.external,
+          arrayBuffersBytes: memory.arrayBuffers,
         },
         requests: { total: requests },
         sourceCache: {
