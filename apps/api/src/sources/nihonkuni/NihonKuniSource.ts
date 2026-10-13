@@ -80,10 +80,21 @@ export class NihonKuniSource implements PanelSource {
       });
   }
 
-  /** Allowlist = the source host itself plus its image CDN (subdomains allowed). */
+  /**
+   * Allowlist = the source host itself plus its image CDNs (subdomains
+   * allowed — covers `j4.jfimv2.xyz`-style hosts). The site rotates CDN
+   * hosts over time (`ihlv1.xyz` → `nicomanga.com` / `jfimv2.xyz`,
+   * observed 2026-10): a missing entry surfaces as 502 cover errors with
+   * "not allowed" in the logs, which is the signal to extend this list.
+   */
   static allowedHostsFor(baseUrl: string): string[] {
     try {
-      return [new URL(baseUrl).hostname.toLowerCase(), 'ihlv1.xyz'];
+      return [
+        new URL(baseUrl).hostname.toLowerCase(),
+        'ihlv1.xyz',
+        'nicomanga.com',
+        'jfimv2.xyz',
+      ];
     } catch {
       return [];
     }
