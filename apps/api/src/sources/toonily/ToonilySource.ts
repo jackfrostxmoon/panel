@@ -92,6 +92,7 @@ export class ToonilySource implements PanelSource {
         //    `toonily-mature=1` (the site's own "Family Mode" toggle cookie)
         //    unlocks the full catalog including adult series.
         headers: { Cookie: 'toonily-mature=1' },
+        isolatedImageFetch: config.isolatedImageFetch,
       });
   }
 

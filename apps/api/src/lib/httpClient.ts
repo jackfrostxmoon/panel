@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SourceError } from './errors.js';
 import { logger } from './logger.js';
 import { recordSourceRequest } from './stats.js';
@@ -81,6 +82,15 @@ export interface SourceHttpClientOptions {
    * SOURCE_REQUEST_RETRY_BASE_DELAY_MS.
    */
   readonly retryBaseDelayMs?: number;
+  /**
+   * Run upstream image fetches (`fetchImageToFile`) in a short-lived child
+   * process instead of in-process. Intermittent ~400 MB native RSS grabs
+   * have been observed on upstream image misses that survive even a forced
+   * full GC — the grab lives below app code. A child contains it: when the
+   * child exits the OS reclaims all of its pages. Defaults to true; set
+   * false (IMAGE_FETCH_ISOLATED=false) to use the legacy in-process path.
+   */
+  readonly isolatedImageFetch?: boolean;
 }
 
 const DEFAULT_UA =
@@ -130,6 +140,22 @@ function backoffMs(base: number, attempt: number): number {
   ) {
     super(message);
     this.name = 'SourceNetworkError';
+  }
+}
+
+/** Path of the isolated image-fetch worker (run as `bun <path> '<json>'`). */
+const FETCH_IMAGE_CHILD_PATH = fileURLToPath(new URL('./fetchImageChild.ts', import.meta.url));
+
+/**
+ * The isolated worker itself failed (spawn error, unparsable output, crash)
+ * — NOT a fetch outcome. The caller falls back to the legacy in-process
+ * streaming path for this fetch. Deliberately distinct from fetch errors so
+ * a 404/definitive failure is never double-fetched.
+ */
+class ChildInfrastructureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChildInfrastructureError';
   }
 }
 
@@ -209,6 +235,8 @@ export class SourceHttpClient {
   private readonly retryCount: number;
   /** Base delay (ms) for the first retry; doubles each attempt + jitter. */
   private readonly retryBaseDelayMs: number;
+  /** Stream upstream image misses through an isolated child process. */
+  private readonly isolatedImageFetch: boolean;
 
   constructor(sourceName: string, options: SourceHttpClientOptions) {
     this.sourceName = sourceName;
@@ -224,6 +252,7 @@ export class SourceHttpClient {
     this.maxImageBytes = options.maxImageBytes ?? 16 * 1024 * 1024;
     this.retryCount = options.retryCount ?? DEFAULT_RETRY_COUNT;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.isolatedImageFetch = options.isolatedImageFetch ?? true;
   }
 
   /** Text-request header block (defaults, or the source's override set). */
@@ -511,6 +540,36 @@ export class SourceHttpClient {
   ): Promise<FetchedImageFile> {
     this.assertAllowedUrl(rawUrl, hosts);
 
+    if (this.isolatedImageFetch) {
+      try {
+        return await this.fetchImageToFileIsolated(rawUrl, init, destPath, hosts, signal);
+      } catch (error) {
+        // Worker infrastructure failure only (spawn/crash/protocol) — fall
+        // back to the legacy in-process path for this fetch. Fetch outcomes
+        // (including definitive failures) never reach here, so a 404 is
+        // never double-fetched.
+        if (!(error instanceof ChildInfrastructureError)) throw error;
+        logger.warn('Isolated image fetch unavailable, using in-process fallback', {
+          url: rawUrl,
+          error: error.message,
+        });
+      }
+    }
+    return this.requestBinaryToFileDirect(rawUrl, init, destPath, hosts, signal);
+  }
+
+  /**
+   * Legacy in-process streaming fetch (also the fallback when the isolated
+   * worker itself is unavailable). Unchanged behavior: chunk-by-chunk to
+   * `destPath` with the byte cap enforced as bytes arrive.
+   */
+  private async requestBinaryToFileDirect(
+    rawUrl: string,
+    init: RequestInit,
+    destPath: string,
+    hosts: readonly string[] = this.allowedHosts,
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
     const startedAt = Date.now();
     const response = await this.fetchWithRetry(rawUrl, init, hosts, signal);
 
@@ -531,8 +590,287 @@ export class SourceHttpClient {
       status: response.status,
       bytes,
       durationMs: Date.now() - startedAt,
+      isolated: false,
     });
     return { bytes, contentType };
+  }
+
+  /**
+   * Upstream image fetch in an isolated child process (see
+   * fetchImageChild.ts). Same allowlist, timeout-per-attempt, retry and
+   * size-cap guards as the in-process path; each attempt spawns a fresh
+   * child, so any native memory grabbed below app code dies with it.
+   */
+  private async fetchImageToFileIsolated(
+    rawUrl: string,
+    init: RequestInit,
+    destPath: string,
+    hosts: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
+    const startedAt = Date.now();
+    try {
+      const result = await this.fetchIsolatedWithRetries(rawUrl, init, destPath, hosts, signal);
+      recordSourceRequest(this.sourceName, Date.now() - startedAt, true);
+      return result;
+    } catch (error) {
+      recordSourceRequest(this.sourceName, Date.now() - startedAt, false);
+      throw error;
+    }
+  }
+
+  /** Retry loop around one isolated fetch per attempt (mirrors doFetchWithRetries). */
+  private async fetchIsolatedWithRetries(
+    rawUrl: string,
+    init: RequestInit,
+    destPath: string,
+    hosts: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
+    for (let attempt = 1; attempt <= this.retryCount + 1; attempt++) {
+      signal?.throwIfAborted();
+      try {
+        return await this.spawnFetchChild(rawUrl, init, destPath, hosts, signal);
+      } catch (error) {
+        if (isClientAbort(error, signal)) throw error;
+        if (!(error instanceof SourceNetworkError) || !isTransientError(error.rootCause, error.status ?? null)) {
+          throw error;
+        }
+        const attemptsLeft = this.retryCount + 1 - attempt;
+        if (attemptsLeft <= 0) throw this.toPublicError(error, rawUrl);
+        const delay = backoffMs(this.retryBaseDelayMs, attempt);
+        logger.warn('Retrying isolated image fetch after transient failure', {
+          url: rawUrl,
+          attempt,
+          maxAttempts: this.retryCount + 1,
+          delayMs: delay,
+          status: error.status,
+          error: error.message,
+        });
+        await sleepOrAbort(delay, signal);
+      }
+    }
+    throw SourceError.unavailable(this.sourceName, rawUrl);
+  }
+
+  /**
+   * One isolated fetch attempt. Resolves the child's outcome; throws
+   * `ChildInfrastructureError` (→ in-process fallback) only when the worker
+   * mechanism itself failed, `SourceNetworkError` for retryable fetch
+   * failures, or a public `SourceError` for definitive ones.
+   */
+  private async spawnFetchChild(
+    rawUrl: string,
+    init: RequestInit,
+    destPath: string,
+    hosts: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<FetchedImageFile> {
+    const rawHeaders = init.headers as Record<string, string> | Headers | undefined;
+    // init.headers is a plain object at every call site, but normalize a
+    // Headers instance defensively — spreading one yields {} and would
+    // silently drop the Referer hotlink-protection header.
+    const headers: Record<string, string> =
+      rawHeaders instanceof Headers ? Object.fromEntries(rawHeaders.entries()) : { ...rawHeaders };
+    const payload = JSON.stringify({
+      url: rawUrl,
+      destPath,
+      maxBytes: this.maxImageBytes,
+      timeoutMs: this.timeoutMs,
+      headers,
+      allowedHosts: [...hosts],
+    });
+    let child: ReturnType<typeof Bun.spawn>;
+    try {
+      child = Bun.spawn([process.execPath, FETCH_IMAGE_CHILD_PATH, payload], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        stdin: 'ignore',
+      });
+    } catch (error) {
+      throw new ChildInfrastructureError(
+        `Failed to spawn image fetch worker: ${error instanceof Error ? error.message : String(error)}.`,
+      );
+    }
+
+    const startedAt = Date.now();
+    try {
+      const outcome = await new Promise<
+        | { kind: 'ok'; bytes: number; contentType: string | null }
+        | { kind: 'transient'; status: number | null; timeout: boolean; message: string }
+        | { kind: 'definitive'; status: number | null; message: string }
+        | { kind: 'infra'; message: string }
+      >((resolve, reject) => {
+        let settled = false;
+        const done = (fn: () => void): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(killer);
+          signal?.removeEventListener('abort', onAbort);
+          fn();
+        };
+        // Backstop: the child enforces timeoutMs itself, but a hung worker
+        // must never hold a proxy slot forever.
+        const killer = setTimeout(() => {
+          try {
+            child.kill();
+          } catch {
+            // Already exited.
+          }
+          done(() =>
+            reject(
+              new SourceNetworkError(
+                `Request to ${rawUrl} timed out (worker backstop)`,
+                undefined,
+                undefined,
+                true,
+              ),
+            ),
+          );
+        }, this.timeoutMs + 10_000);
+        const onAbort = (): void => {
+          try {
+            child.kill();
+          } catch {
+            // Already exited.
+          }
+          done(() => reject(signal?.reason ?? new DOMException('Aborted', 'AbortError')));
+        };
+        if (signal) {
+          if (signal.aborted) {
+            try {
+              child.kill();
+            } catch {
+              // Already exited.
+            }
+            clearTimeout(killer);
+            reject(signal.reason);
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+        void (async () => {
+          try {
+            const stdout = child.stdout;
+            if (!(stdout instanceof ReadableStream)) {
+              done(() => reject(new ChildInfrastructureError('Image fetch worker stdout unavailable.')));
+              return;
+            }
+            const out = await new Response(stdout).text();
+            const exitCode = await child.exited;
+            if (out.length > 65536) {
+              done(() => reject(new ChildInfrastructureError('Image fetch worker printed oversize output.')));
+              return;
+            }
+            let parsed: unknown = null;
+            try {
+              parsed = JSON.parse((out.trim().split('\n')[0] ?? '') || 'null');
+            } catch {
+              parsed = null;
+            }
+            if (!parsed || typeof parsed !== 'object' || (parsed as { ok?: unknown }).ok === undefined) {
+              // Usage bug (exit 2) is ours — definitive. Anything else is a
+              // crash/kill: transient and bounded by the retry count.
+              if (exitCode === 2) {
+                done(() => reject(SourceError.unavailable(this.sourceName, rawUrl)));
+              } else {
+                done(
+                  () =>
+                    reject(
+                      new SourceNetworkError(
+                        `Image fetch worker exited with code ${exitCode}`,
+                        undefined,
+                        undefined,
+                        false,
+                      ),
+                    ),
+                );
+              }
+              return;
+            }
+            const body = parsed as {
+              ok: boolean;
+              bytes?: unknown;
+              contentType?: unknown;
+              transient?: unknown;
+              status?: unknown;
+              timeout?: unknown;
+              message?: unknown;
+            };
+            if (body.ok === true) {
+              const bytes = body.bytes;
+              if (typeof bytes !== 'number') {
+                done(() => reject(new ChildInfrastructureError('Image fetch worker returned malformed success.')));
+                return;
+              }
+              done(() =>
+                resolve({
+                  kind: 'ok',
+                  bytes,
+                  contentType: typeof body.contentType === 'string' ? body.contentType : null,
+                }),
+              );
+              return;
+            }
+            const status = typeof body.status === 'number' ? body.status : null;
+            const message = typeof body.message === 'string' ? body.message : `Request to ${rawUrl} failed.`;
+            if (body.transient === true) {
+              done(() =>
+                reject(new SourceNetworkError(message, undefined, status ?? undefined, body.timeout === true)),
+              );
+            } else {
+              done(() => reject(SourceError.unavailable(this.sourceName, rawUrl, status ?? undefined)));
+            }
+          } catch (error) {
+            done(
+              () =>
+                reject(
+                  new ChildInfrastructureError(
+                    `Image fetch worker I/O failed: ${error instanceof Error ? error.message : String(error)}.`,
+                  ),
+                ),
+            );
+          }
+        })();
+      });
+
+      if (outcome.kind === 'infra') {
+        throw new ChildInfrastructureError(outcome.message);
+      }
+      if (outcome.kind === 'transient') {
+        throw new SourceNetworkError(outcome.message, undefined, outcome.status ?? undefined, outcome.timeout);
+      }
+      if (outcome.kind === 'definitive') {
+        throw SourceError.unavailable(this.sourceName, rawUrl, outcome.status ?? undefined);
+      }
+      // Defense in depth: the child enforces the cap, but verify the landed
+      // file before the cache trusts it.
+      let size = -1;
+      try {
+        size = (await stat(destPath)).size;
+      } catch {
+        size = -1;
+      }
+      if (size < 0 || size !== outcome.bytes || size > this.maxImageBytes) {
+        await rm(destPath, { force: true }).catch(() => undefined);
+        throw SourceError.unavailable(this.sourceName, rawUrl);
+      }
+      logger.debug('Streamed source image to disk', {
+        url: rawUrl,
+        status: 200,
+        bytes: outcome.bytes,
+        durationMs: Date.now() - startedAt,
+        isolated: true,
+      });
+      return { bytes: outcome.bytes, contentType: outcome.contentType };
+    } finally {
+      // Belt and suspenders: never leave a worker behind on any path.
+      try {
+        child.kill();
+      } catch {
+        // Already exited.
+      }
+    }
   }
 
   /**

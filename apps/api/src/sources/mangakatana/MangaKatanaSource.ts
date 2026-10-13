@@ -63,6 +63,7 @@ export class MangaKatanaSource implements PanelSource {
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
         maxTextBytes: config.maxTextBytes,
         maxImageBytes: config.maxImageBytes,
+        isolatedImageFetch: config.isolatedImageFetch,
       });
   }
 

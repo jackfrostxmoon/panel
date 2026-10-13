@@ -230,6 +230,7 @@ commit real values).
 | `IMAGE_CACHE_MIN_BYTES`               | `268435456`                                          | Cache cap lower bound (256 MiB)                 |
 | `IMAGE_CACHE_MAX_BYTES`               | `8589934592`                                         | Cache cap upper bound (8 GiB)                   |
 | `IMAGE_PROXY_CONCURRENCY`             | `2`                                                  | Max concurrent upstream image-proxy fetches (disk hits bypass) |
+| `IMAGE_FETCH_ISOLATED`              | `true`                                               | Stream upstream image misses in an isolated child process (contains native RSS spikes); `false` = legacy in-process path |
 
 ## Database & migrations
 

@@ -177,4 +177,11 @@ export interface SourceConfig {  readonly name: string;
    */
   readonly maxTextBytes?: number;
   readonly maxImageBytes?: number;
+  /**
+   * Stream upstream image misses through an isolated child process instead
+   * of in-process (see fetchImageChild.ts). Contains intermittent native
+   * RSS grabs below app code: the child exits per fetch and the OS reclaims
+   * all of its pages. Kill-switch: IMAGE_FETCH_ISOLATED=false.
+   */
+  readonly isolatedImageFetch: boolean;
 }

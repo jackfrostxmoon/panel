@@ -125,6 +125,15 @@ const envSchema = z.object({
   IMAGE_PROXY_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
 
   /**
+   * Stream upstream image-proxy misses through an isolated short-lived
+   * child process (see lib/fetchImageChild.ts) instead of fetching
+   * in-process. Contains intermittent native RSS grabs below app code —
+   * when the child exits the OS reclaims all of its pages. `false`
+   * restores the legacy in-process streaming path.
+   */
+  IMAGE_FETCH_ISOLATED: boolFromString(true),
+
+  /**
    * Split response cap for outbound source traffic. Listings are KBs of
    * HTML — a rogue multi-MB page used to become a multi-MB JS string. Text
    * (HTML/JSON/sitemap) fails fast above this; images keep the full 16MB —
@@ -353,6 +362,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       nihonkuni: {
         name: 'nk',
@@ -364,6 +374,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       rawkuma: {
         name: 'rk',
@@ -375,6 +386,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       rawsakura: {
         name: 'rs',
@@ -386,6 +398,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       hiperdex: {
         name: 'hd',
@@ -397,6 +410,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       mangaread: {
         name: 'mr',
@@ -408,6 +422,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       toonily: {
         name: 'tn',
@@ -419,6 +434,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       rawdex: {
         name: 'rd',
@@ -430,6 +446,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       kaliscan: {
         name: 'ks',
@@ -441,6 +458,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       rawuwu: {
         name: 'ru',
@@ -452,6 +470,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
       roliascan: {
         name: 'rl',
@@ -463,6 +482,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
         maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
         maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
+        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
       },
     },
     cache: {
