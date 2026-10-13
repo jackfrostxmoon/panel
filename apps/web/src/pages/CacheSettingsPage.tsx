@@ -89,7 +89,7 @@ export function CacheSettingsPage() {
 
   function handleLiveToggle(next: boolean) {
     if (next === liveRefresh) return;
-    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
     if (next) refetchAllRef.current();
   }
 
@@ -100,7 +100,7 @@ export function CacheSettingsPage() {
 
   function handleAutoMemoryReliefToggle(next: boolean) {
     if (next === autoMemoryRelief) return;
-    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
   }
 
   const flushMemoryMutation = useFlushMemory();
@@ -122,11 +122,38 @@ export function CacheSettingsPage() {
         liveRefresh,
         autoMemoryRelief,
         autoMemoryReliefThresholdMb: mb,
+        autoMemoryReliefRssThresholdMb: reliefRssThresholdMb,
       });
       setThresholdInput(String(mb));
       toast(`Memory relief threshold set to ${mb} MB.`, 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not save threshold.', 'error');
+    }
+  }
+
+  const reliefRssThresholdMb =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? Math.max(128, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefRssThresholdMb || 512)))
+      : Math.max(128, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefRssThresholdMb || 512)));
+  const [rssThresholdInput, setRssThresholdInput] = useState<string>(String(reliefRssThresholdMb));
+
+  async function saveRssThreshold() {
+    const mb = Math.round(Number(rssThresholdInput) || 512);
+    if (!Number.isFinite(mb) || mb < 128 || mb > 20000) {
+      toast('RSS threshold must be between 128 MB and 20,000 MB.', 'error');
+      return;
+    }
+    try {
+      await saveCacheSettings.mutateAsync({
+        liveRefresh,
+        autoMemoryRelief,
+        autoMemoryReliefThresholdMb: reliefThresholdMb,
+        autoMemoryReliefRssThresholdMb: mb,
+      });
+      setRssThresholdInput(String(mb));
+      toast(`Memory relief RSS threshold set to ${mb} MB.`, 'success');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not save RSS threshold.', 'error');
     }
   }
 
@@ -156,6 +183,9 @@ export function CacheSettingsPage() {
   useEffect(() => {
     setThresholdInput(String(reliefThresholdMb));
   }, [reliefThresholdMb]);
+  useEffect(() => {
+    setRssThresholdInput(String(reliefRssThresholdMb));
+  }, [reliefRssThresholdMb]);
 
   const clearMutation = useClearImageCache();
   const clearByTagMutation = useClearImageCacheByTag();
@@ -517,6 +547,7 @@ const [panelQuery, setPanelQuery] = useState('');
             />
           </span>
           {autoMemoryRelief && (
+            <>
             <span className="search-filters__switch" style={{ marginLeft: '1rem', alignItems: 'center', gap: '0.5rem' }}>
               <label htmlFor="memory-threshold-mb" className="search-filters__label" style={{ fontSize: '0.85rem' }}>
                 Threshold
@@ -544,6 +575,34 @@ const [panelQuery, setPanelQuery] = useState('');
                 {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
               </button>
             </span>
+            <span className="search-filters__switch" style={{ marginLeft: '1rem', alignItems: 'center', gap: '0.5rem' }}>
+              <label htmlFor="memory-rss-threshold-mb" className="search-filters__label" style={{ fontSize: '0.85rem' }}>
+                RSS threshold
+              </label>
+              <input
+                id="memory-rss-threshold-mb"
+                type="number"
+                min={128}
+                max={20000}
+                step={64}
+                value={rssThresholdInput}
+                onChange={(e) => setRssThresholdInput(e.target.value)}
+                className="cache-settings__limit-input"
+                style={{ width: '5rem', padding: '0.15rem 0.25rem', fontSize: '0.85rem' }}
+                aria-describedby="memory-rss-threshold-meta"
+              />
+              <span id="memory-rss-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => void saveRssThreshold()}
+                disabled={saveCacheSettings.isPending}
+                style={{ marginLeft: '0.25rem' }}
+              >
+                {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </span>
+            </>
           )}
         </div>
       </header>

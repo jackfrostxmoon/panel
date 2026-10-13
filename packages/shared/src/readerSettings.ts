@@ -125,17 +125,20 @@ export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
 export interface CachePageSettings {
   /** Poll cache stats/sizes in the background instead of manual refreshes. */
   liveRefresh: boolean;
-  /** When true, the server automatically flushes the in-memory TTL cache and image index when heap usage exceeds a threshold. */
+  /** When true, the server automatically flushes the in-memory TTL cache and image index when heap or RSS usage exceeds its threshold. */
   autoMemoryRelief: boolean;
-  /** Memory relief threshold in MB (default 20). Only used when autoMemoryRelief is true. */
+  /** Heap relief threshold in MB (default 20). Only used when autoMemoryRelief is true. */
   autoMemoryReliefThresholdMb: number;
+  /** RSS relief threshold in MB (default 512). Only used when autoMemoryRelief is true. */
+  autoMemoryReliefRssThresholdMb: number;
 }
 
-/** Default: manual refresh only, no auto memory relief, 20 MB threshold. */
+/** Default: manual refresh only, no auto memory relief, 20 MB heap / 512 MB RSS thresholds. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
   autoMemoryRelief: false,
   autoMemoryReliefThresholdMb: 20,
+  autoMemoryReliefRssThresholdMb: 512,
 };
 
 /**

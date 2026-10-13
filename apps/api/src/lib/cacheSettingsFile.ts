@@ -25,6 +25,10 @@ export function loadCacheSettings(): CachePageSettings {
         typeof parsed.autoMemoryReliefThresholdMb === 'number' && !Number.isNaN(parsed.autoMemoryReliefThresholdMb)
           ? parsed.autoMemoryReliefThresholdMb
           : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryReliefThresholdMb,
+      autoMemoryReliefRssThresholdMb:
+        typeof parsed.autoMemoryReliefRssThresholdMb === 'number' && !Number.isNaN(parsed.autoMemoryReliefRssThresholdMb)
+          ? parsed.autoMemoryReliefRssThresholdMb
+          : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryReliefRssThresholdMb,
     };
   } catch {
     return { ...DEFAULT_CACHE_PAGE_SETTINGS };
@@ -37,6 +41,10 @@ export function saveCacheSettings(settings: CachePageSettings): CachePageSetting
     liveRefresh: settings.liveRefresh === true,
     autoMemoryRelief: settings.autoMemoryRelief === true,
     autoMemoryReliefThresholdMb: Math.max(20, Math.round(Number(settings.autoMemoryReliefThresholdMb) || 20)),
+    autoMemoryReliefRssThresholdMb: Math.max(
+      128,
+      Math.round(Number(settings.autoMemoryReliefRssThresholdMb) || 512),
+    ),
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

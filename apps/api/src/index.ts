@@ -130,9 +130,10 @@ if (backupTimer !== undefined) {
 }
 
 // Auto memory relief: when enabled in cache settings, periodically check
-// heap usage and flush the in-memory TTL cache + image index if memory
-// pressure exceeds a threshold (60% of the byte budget). Keeps RAM from
-// growing unbounded after long browsing sessions.
+// heap AND native RSS usage and flush the in-memory TTL cache + image index
+// when either exceeds its threshold. Heap alone is blind to native spikes
+// (e.g. a ~400 MB RSS grab with a ~20 MB heap), so RSS gets its own higher
+// threshold. Keeps RAM from growing unbounded after long browsing sessions.
 import { loadCacheSettings } from './lib/cacheSettingsFile.js';
 const AUTO_RELIEF_CHECK_MS = 30_000;
 const autoReliefTimer = setInterval(() => {
@@ -142,11 +143,20 @@ const autoReliefTimer = setInterval(() => {
     const mem = process.memoryUsage();
     const thresholdMb = Math.max(20, Math.round(settings.autoMemoryReliefThresholdMb || 20));
     const thresholdBytes = thresholdMb * 1024 * 1024;
-    if (mem.heapUsed > thresholdBytes) {
+    const rssThresholdMb = Math.max(128, Math.round(settings.autoMemoryReliefRssThresholdMb || 512));
+    const rssThresholdBytes = rssThresholdMb * 1024 * 1024;
+    const heapOver = mem.heapUsed > thresholdBytes;
+    const rssOver = mem.rss > rssThresholdBytes;
+    if (heapOver || rssOver) {
       logger.info('Auto memory relief triggered', {
         heapUsedBytes: mem.heapUsed,
         thresholdBytes: thresholdBytes,
         thresholdMb,
+        rssBytes: mem.rss,
+        rssThresholdBytes,
+        rssThresholdMb,
+        heapOver,
+        rssOver,
       });
       panelService.clearCache();
       imageCache.dropMemoryIndex();
