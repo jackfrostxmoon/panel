@@ -75,6 +75,7 @@ The script prints your LAN address on start. Options:
 bun run lan -- --force-build   # rebuild the web app
 bun run lan -- --port 8080    # fallback if port 80 is blocked (then open http://<ip>:8080)
 bun run lan -- --smol         # low-memory API runtime (smaller JS heap; `lan.bat minimal smol`)
+bun run lan -- --restart-every 6h  # graceful auto-restart cadence (6h / 30m / 90s / 1d)
 ```
 
 Port precedence: `--port` flag > `LAN_PORT` env var > default 80. (The
@@ -83,6 +84,14 @@ generic `PORT` from `.env` is ignored by `bun run lan` so the dev default
 
 To change the on-exit backup scope (default `minimal`), edit `lan.bat`:
 `set "BACKUP_SCOPE=minimal"` → `set "BACKUP_SCOPE=full"` (or pass `lan.bat full`).
+
+Periodic auto-restart (sheds native memory high-water marks that in-process
+relief can't deflate): `bun run lan -- --restart-every 6h`, `LAN_RESTART_EVERY=6h`,
+`lan.bat minimal smol 6h`, or the Cache settings page ("Restart every", hours,
+0 = off). Precedence: flag > env var > Cache setting > off. A due restart
+waits until no chapter downloads are active (pending/running prefetch jobs),
+then shuts the API down gracefully (on-exit backup still runs) and starts it
+again — downloads resume afterwards because jobs persist in the database.
 
 Manual equivalent: `bun run build`, then `PORT=80 bun run start`.
 Notes: on Windows, allow the firewall prompt on first run (use an

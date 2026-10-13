@@ -89,7 +89,7 @@ export function CacheSettingsPage() {
 
   function handleLiveToggle(next: boolean) {
     if (next === liveRefresh) return;
-    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, autoRestartEveryMs: restartEveryMs });
     if (next) refetchAllRef.current();
   }
 
@@ -100,7 +100,7 @@ export function CacheSettingsPage() {
 
   function handleAutoMemoryReliefToggle(next: boolean) {
     if (next === autoMemoryRelief) return;
-    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, autoRestartEveryMs: restartEveryMs });
   }
 
   const flushMemoryMutation = useFlushMemory();
@@ -123,6 +123,7 @@ export function CacheSettingsPage() {
         autoMemoryRelief,
         autoMemoryReliefThresholdMb: mb,
         autoMemoryReliefRssThresholdMb: reliefRssThresholdMb,
+        autoRestartEveryMs: restartEveryMs,
       });
       setThresholdInput(String(mb));
       toast(`Memory relief threshold set to ${mb} MB.`, 'success');
@@ -149,6 +150,7 @@ export function CacheSettingsPage() {
         autoMemoryRelief,
         autoMemoryReliefThresholdMb: reliefThresholdMb,
         autoMemoryReliefRssThresholdMb: mb,
+        autoRestartEveryMs: restartEveryMs,
       });
       setRssThresholdInput(String(mb));
       toast(`Memory relief RSS threshold set to ${mb} MB.`, 'success');
@@ -186,6 +188,37 @@ export function CacheSettingsPage() {
   useEffect(() => {
     setRssThresholdInput(String(reliefRssThresholdMb));
   }, [reliefRssThresholdMb]);
+
+  const restartEveryMs =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? Math.max(0, Math.round(Number(saveCacheSettings.variables.autoRestartEveryMs || 0)))
+      : Math.max(0, Math.round(Number(cacheSettingsQuery.data?.autoRestartEveryMs || 0)));
+  const [restartInput, setRestartInput] = useState<string>(String(restartEveryMs / 3600000));
+
+  async function saveRestart() {
+    const h = Number(restartInput);
+    if (!Number.isFinite(h) || h < 0 || h > 168) {
+      toast('Restart interval must be between 0 (off) and 168 hours.', 'error');
+      return;
+    }
+    const ms = Math.round(h * 3600000);
+    try {
+      await saveCacheSettings.mutateAsync({
+        liveRefresh,
+        autoMemoryRelief,
+        autoMemoryReliefThresholdMb: reliefThresholdMb,
+        autoMemoryReliefRssThresholdMb: reliefRssThresholdMb,
+        autoRestartEveryMs: ms,
+      });
+      setRestartInput(String(h));
+      toast(ms === 0 ? 'Auto restart disabled.' : `Server restarts every ${h} hour(s) once downloads finish.`, 'success');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not save restart interval.', 'error');
+    }
+  }
+  useEffect(() => {
+    setRestartInput(String(restartEveryMs / 3600000));
+  }, [restartEveryMs]);
 
   const clearMutation = useClearImageCache();
   const clearByTagMutation = useClearImageCacheByTag();
@@ -604,6 +637,33 @@ const [panelQuery, setPanelQuery] = useState('');
             </span>
             </>
           )}
+          <span className="search-filters__switch" style={{ marginLeft: '1rem', alignItems: 'center', gap: '0.5rem' }}>
+            <label htmlFor="restart-every-hours" className="search-filters__label" style={{ fontSize: '0.85rem' }}>
+              Restart every
+            </label>
+            <input
+              id="restart-every-hours"
+              type="number"
+              min={0}
+              max={168}
+              step={1}
+              value={restartInput}
+              onChange={(e) => setRestartInput(e.target.value)}
+              className="cache-settings__limit-input"
+              style={{ width: '4rem', padding: '0.15rem 0.25rem', fontSize: '0.85rem' }}
+              aria-describedby="restart-every-meta"
+            />
+            <span id="restart-every-meta" style={{ fontSize: '0.75rem', color: '#888' }}>hours (0 = off)</span>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => void saveRestart()}
+              disabled={saveCacheSettings.isPending}
+              style={{ marginLeft: '0.25rem' }}
+            >
+              {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
+            </button>
+          </span>
         </div>
       </header>
 

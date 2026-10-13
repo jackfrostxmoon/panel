@@ -29,6 +29,10 @@ export function loadCacheSettings(): CachePageSettings {
         typeof parsed.autoMemoryReliefRssThresholdMb === 'number' && !Number.isNaN(parsed.autoMemoryReliefRssThresholdMb)
           ? parsed.autoMemoryReliefRssThresholdMb
           : DEFAULT_CACHE_PAGE_SETTINGS.autoMemoryReliefRssThresholdMb,
+      autoRestartEveryMs:
+        typeof parsed.autoRestartEveryMs === 'number' && !Number.isNaN(parsed.autoRestartEveryMs)
+          ? Math.max(0, Math.round(parsed.autoRestartEveryMs))
+          : DEFAULT_CACHE_PAGE_SETTINGS.autoRestartEveryMs,
     };
   } catch {
     return { ...DEFAULT_CACHE_PAGE_SETTINGS };
@@ -45,6 +49,7 @@ export function saveCacheSettings(settings: CachePageSettings): CachePageSetting
       128,
       Math.round(Number(settings.autoMemoryReliefRssThresholdMb) || 256),
     ),
+    autoRestartEveryMs: Math.max(0, Math.round(Number(settings.autoRestartEveryMs) || 0)),
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
