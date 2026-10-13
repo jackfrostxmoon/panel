@@ -74,6 +74,7 @@ The script prints your LAN address on start. Options:
 ```bash
 bun run lan -- --force-build   # rebuild the web app
 bun run lan -- --port 8080    # fallback if port 80 is blocked (then open http://<ip>:8080)
+bun run lan -- --smol         # low-memory API runtime (smaller JS heap; `lan.bat minimal smol`)
 ```
 
 Port precedence: `--port` flag > `LAN_PORT` env var > default 80. (The
