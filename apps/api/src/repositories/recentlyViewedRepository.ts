@@ -53,15 +53,21 @@ export class RecentlyViewedRepository {
     return { row, created: true };
   }
 
-  /** Drop everything but the newest `keep` rows (the rail only shows 10). */
+  /**
+   * Drop everything but the newest `keep` rows (the rail only shows 10).
+   *
+   * Deliberately OFFSET-free: the installed Drizzle version drops
+   * `.limit(-1)` from the emitted SQL, leaving a bare `OFFSET ?` that
+   * SQLite rejects — which 500'd every panel visit. The table is tiny
+   * (bounded by `keep` plus whatever accumulated while prune was
+   * broken), so select-all + slice is cheap and dialect-proof.
+   */
   async prune(keep: number): Promise<number> {
-    const overflow = await this.db
+    const rows = await this.db
       .select({ id: recentlyViewed.id })
       .from(recentlyViewed)
-      .orderBy(desc(recentlyViewed.viewedAt))
-      // SQLite rejects bare OFFSET without LIMIT — LIMIT -1 means "no limit".
-      .limit(-1)
-      .offset(keep);
+      .orderBy(desc(recentlyViewed.viewedAt));
+    const overflow = rows.slice(Math.max(0, keep));
     if (overflow.length === 0) return 0;
     const deleted = await this.db
       .delete(recentlyViewed)
