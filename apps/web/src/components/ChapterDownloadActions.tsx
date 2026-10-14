@@ -59,6 +59,12 @@ interface ChapterDownloadActionsProps {
   readerSettings: ReaderSettings;
   /** Effective pages-in-flight, resolved by the parent. */
   effectivePageConcurrency: number;
+  /**
+   * Performance mode (cache-settings toggle). While on, batches run at max
+   * width with no chapter pacing — the pacing controls below lock to
+   * reflect that instead of silently ignoring edits.
+   */
+  performanceMode?: boolean;
 }
 
 /**
@@ -85,6 +91,7 @@ export function ChapterDownloadActions({
   onDownloadSettingsChange,
   readerSettings,
   effectivePageConcurrency,
+  performanceMode = false,
 }: ChapterDownloadActionsProps) {
   const { toast } = useToast();
   const [confirmStop, setConfirmStop] = useState(false);
@@ -114,7 +121,7 @@ export function ChapterDownloadActions({
       }
       try {
         const result = await downloader.downloadChapters(batch, {
-          chapterIntervalMs: downloadSettings.chapterIntervalMs,
+          chapterIntervalMs: performanceMode ? 0 : downloadSettings.chapterIntervalMs,
           pageConcurrency: effectivePageConcurrency,
           order,
         });
@@ -143,7 +150,7 @@ export function ChapterDownloadActions({
         toast(error instanceof Error ? error.message : 'Download failed.', 'error');
       }
     },
-    [downloader, downloadSettings.chapterIntervalMs, effectivePageConcurrency, toast],
+    [downloader, downloadSettings.chapterIntervalMs, effectivePageConcurrency, performanceMode, toast],
   );
 
   /* Both bulk buttons open the direction prompt instead of downloading
@@ -227,7 +234,7 @@ export function ChapterDownloadActions({
     { value: 'follow-reader', label: 'Follow reader' },
     { value: 'custom', label: 'Custom' },
   ];
-  const widthSummary = describeDownloadWidth(effectivePageConcurrency, readerSettings, downloadSettings);
+  const widthSummary = describeDownloadWidth(effectivePageConcurrency, readerSettings, downloadSettings, { performanceMode });
 
   return (
     <div className="chapter-download-actions" aria-label="Bulk chapter download actions">
@@ -315,6 +322,7 @@ export function ChapterDownloadActions({
                 role="radio"
                 aria-checked={active}
                 className={`segmented__option${active ? ' segmented__option--active' : ''}`}
+                disabled={performanceMode}
                 onClick={() => onDownloadSettingsChange({ chapterIntervalMs: preset.value })}
               >
                 <span>{preset.label}</span>
@@ -334,6 +342,7 @@ export function ChapterDownloadActions({
             step={1}
             inputMode="numeric"
             value={Math.round(downloadSettings.chapterIntervalMs / 1000)}
+            disabled={performanceMode}
             onChange={(event) => {
               const raw = event.target.value;
               if (raw === '') {
@@ -356,6 +365,7 @@ export function ChapterDownloadActions({
         <p className="download-settings__help">
           Pauses between chapters so a bulk run doesn't hammer the upstream source. 0 = off
           (back-to-back). Stops immediately if you cancel mid-wait.
+          {performanceMode ? ' Performance mode forces no wait and max width.' : ''}
         </p>
       </div>
 

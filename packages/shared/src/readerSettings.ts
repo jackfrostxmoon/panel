@@ -131,14 +131,23 @@ export interface CachePageSettings {
   autoMemoryReliefThresholdMb: number;
   /** RSS relief threshold in MB (default 256). Only used when autoMemoryRelief is true. */
   autoMemoryReliefRssThresholdMb: number;
+  /**
+   * Performance mode: lift the low-memory throttles (max image-proxy
+   * concurrency, enlarged in-memory cache + longer TTLs, no auto memory
+   * relief, max download width) for maximum throughput at the cost of
+   * higher RAM/disk churn and more upstream load. Not OS-level CPU/NIC
+   * control — the app can only widen its own parallelism, not pin hardware.
+   */
+  performanceMode: boolean;
 }
 
-/** Default: manual refresh only, no auto memory relief, 20 MB heap / 256 MB RSS thresholds. */
+/** Default: manual refresh only, no auto memory relief, 20 MB heap / 256 MB RSS thresholds, standard throughput. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
   autoMemoryRelief: false,
   autoMemoryReliefThresholdMb: 20,
   autoMemoryReliefRssThresholdMb: 256,
+  performanceMode: false,
 };
 
 /**

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { BULK_CHAPTER_LIMIT, parseGlobalId, type Chapter } from '@panel/shared';
-import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel } from '../api/hooks';
+import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings } from '../api/hooks';
 import { ShareDialog } from '../components/ShareDialog';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -162,10 +162,12 @@ export function PanelDetailsPage() {
       window.removeEventListener('storage', onStorage);
     };
   }, []);
-  /** Effective pages-in-flight for every download started from this page. */
+  /** Effective pages-in-flight for every download started from this page. Performance mode pins the 16-page maximum with no chapter pacing. */
+  const cacheSettings = useCacheSettings();
+  const performanceMode = cacheSettings.data?.performanceMode ?? false;
   const effectivePageConcurrency = useMemo(
-    () => resolveDownloadPageConcurrency(readerSettings, downloadSettingsState.settings),
-    [readerSettings, downloadSettingsState.settings],
+    () => resolveDownloadPageConcurrency(readerSettings, downloadSettingsState.settings, { performanceMode }),
+    [readerSettings, downloadSettingsState.settings, performanceMode],
   );
   /**
    * Push mid-run pacing changes to the in-flight batch. Jobs snapshot the
@@ -173,7 +175,7 @@ export function PanelDetailsPage() {
    * chapter 1 downloads still chains chapter 2 instantly. No-op while
    * idle; failures are swallowed inside `updateInterval` (best-effort).
    */
-  const pacingMs = downloadSettingsState.settings.chapterIntervalMs;
+  const pacingMs = performanceMode ? 0 : downloadSettingsState.settings.chapterIntervalMs;
   const isBatchDownloading = downloader.isDownloading;
   const pushPacing = downloader.updateInterval;
   useEffect(() => {
@@ -534,7 +536,7 @@ const filteredAndSortedChapters = useMemo(() => {
       }
       try {
         const result = await downloader.downloadChapters(batch, {
-          chapterIntervalMs: downloadSettingsState.settings.chapterIntervalMs,
+          chapterIntervalMs: pacingMs,
           pageConcurrency: effectivePageConcurrency,
           order,
         });
@@ -569,7 +571,7 @@ const filteredAndSortedChapters = useMemo(() => {
     [
       selectedChapters,
       downloader,
-      downloadSettingsState.settings.chapterIntervalMs,
+      pacingMs,
       effectivePageConcurrency,
       toast,
       handleClearSelection,
@@ -1554,6 +1556,7 @@ const filteredAndSortedChapters = useMemo(() => {
               onDownloadSettingsChange={downloadSettingsState.update}
               readerSettings={readerSettings}
               effectivePageConcurrency={effectivePageConcurrency}
+              performanceMode={performanceMode}
             />
             {/* Once selection mode is on, the multi-select toolbar
                 (Select all / Bookmark N / Download N / Cancel) swaps in

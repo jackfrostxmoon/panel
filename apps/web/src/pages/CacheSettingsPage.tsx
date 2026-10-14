@@ -89,7 +89,7 @@ export function CacheSettingsPage() {
 
   function handleLiveToggle(next: boolean) {
     if (next === liveRefresh) return;
-    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh: next, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, performanceMode });
     if (next) refetchAllRef.current();
   }
 
@@ -100,7 +100,35 @@ export function CacheSettingsPage() {
 
   function handleAutoMemoryReliefToggle(next: boolean) {
     if (next === autoMemoryRelief) return;
-    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb });
+    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief: next, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, performanceMode });
+  }
+
+  /**
+   * Performance mode — max-throughput profile for the whole app (max
+   * image-proxy concurrency, enlarged in-memory cache + longer TTLs, no
+   * automatic memory relief, max download width with no pacing). It lifts
+   * the app's own throttles; it canNOT pin the OS CPU/RAM/NIC — no web app
+   * can. Pending-wins like the other toggles so the switch flips instantly.
+   */
+  const performanceMode =
+    saveCacheSettings.isPending && saveCacheSettings.variables
+      ? (saveCacheSettings.variables.performanceMode ?? false)
+      : (cacheSettingsQuery.data?.performanceMode ?? false);
+  /** Confirm dialog before enabling (it intentionally undoes the low-memory protections). */
+  const [confirmPerf, setConfirmPerf] = useState(false);
+
+  function handlePerformanceToggle(next: boolean) {
+    if (next === performanceMode) return;
+    if (!next) {
+      saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, performanceMode: false });
+      return;
+    }
+    setConfirmPerf(true);
+  }
+
+  function confirmEnablePerformance() {
+    setConfirmPerf(false);
+    saveCacheSettings.mutate({ liveRefresh, autoMemoryRelief, autoMemoryReliefThresholdMb: reliefThresholdMb, autoMemoryReliefRssThresholdMb: reliefRssThresholdMb, performanceMode: true });
   }
 
   const flushMemoryMutation = useFlushMemory();
@@ -123,6 +151,7 @@ export function CacheSettingsPage() {
         autoMemoryRelief,
         autoMemoryReliefThresholdMb: mb,
         autoMemoryReliefRssThresholdMb: reliefRssThresholdMb,
+        performanceMode,
       });
       setThresholdInput(String(mb));
       toast(`Memory relief threshold set to ${mb} MB.`, 'success');
@@ -149,6 +178,7 @@ export function CacheSettingsPage() {
         autoMemoryRelief,
         autoMemoryReliefThresholdMb: reliefThresholdMb,
         autoMemoryReliefRssThresholdMb: mb,
+        performanceMode,
       });
       setRssThresholdInput(String(mb));
       toast(`Memory relief RSS threshold set to ${mb} MB.`, 'success');
@@ -530,7 +560,7 @@ const [panelQuery, setPanelQuery] = useState('');
           <h2 id="cache-preferences-heading" className="section-title">Preferences</h2>
         </header>
         <p className="cache-settings__help">
-          Control live refresh and automatic memory relief thresholds.
+          Control live refresh, automatic memory relief thresholds, and performance mode.
         </p>
 
         <div className="cache-settings__limit-row">
@@ -549,8 +579,27 @@ const [panelQuery, setPanelQuery] = useState('');
             onChange={handleAutoMemoryReliefToggle}
             labelledBy="cache-auto-memory-label"
             size="sm"
+            disabled={performanceMode}
           />
         </div>
+
+        <div className="cache-settings__limit-row">
+          <span className="search-filters__label" id="cache-performance-mode-label">Performance mode</span>
+          <Switch
+            checked={performanceMode}
+            onChange={handlePerformanceToggle}
+            labelledBy="cache-performance-mode-label"
+            size="sm"
+          />
+        </div>
+        <p className="cache-settings__help">
+          Performance mode runs every page at max throughput: 32 concurrent image fetches
+          (instead of 2), a 1000-entry / 256&nbsp;MB hot cache with 4× longer lifetimes,
+          no automatic memory relief, and 16-pages-at-once downloads with no pacing.
+          It lifts the app&apos;s own throttles — it cannot force the OS to spend more
+          CPU, RAM, or network bandwidth than the machine has. Sources may rate-limit
+          you (HTTP 429) under full load; use &ldquo;Flush memory&rdquo; below if RAM climbs.
+        </p>
 
         {autoMemoryRelief && (
           <>
@@ -608,7 +657,7 @@ const [panelQuery, setPanelQuery] = useState('');
         )}
 
         <p className="cache-settings__limit-meta" id="cache-preferences-meta">
-          {liveRefresh ? 'Live refresh is enabled. Stats and inventory update automatically.' : 'Live refresh is off; stats refresh on page load only.'}{autoMemoryRelief ? ' Auto memory relief is active.' : ''}
+          {liveRefresh ? 'Live refresh is enabled. Stats and inventory update automatically.' : 'Live refresh is off; stats refresh on page load only.'}{autoMemoryRelief && !performanceMode ? ' Auto memory relief is active.' : ''}{performanceMode ? ' Performance mode is on: max throughput, no auto memory relief.' : ''}
         </p>
       </section>
 
@@ -993,6 +1042,16 @@ const [panelQuery, setPanelQuery] = useState('');
 
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmPerf}
+        title="Enable performance mode?"
+        message="Every page runs at max throughput (32 image fetches at once, large hot cache, 16-pages-at-once downloads with no pacing) and automatic memory relief stands down. This raises RAM use and upstream load — sources may rate-limit you. Your custom concurrency setting is kept and restored when you switch back off."
+        confirmLabel="Enable"
+        cancelLabel="Cancel"
+        onConfirm={() => void confirmEnablePerformance()}
+        onCancel={() => setConfirmPerf(false)}
+      />
 
       <ConfirmDialog
         open={pendingClear === 'both'}

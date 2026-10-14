@@ -80,6 +80,19 @@ function genreKeyFragment(labels: string[] | null): string {
 }
 
 /**
+ * Performance-mode profile for the in-memory source-response cache.
+ * Widens the budgets the low-memory defaults (`CACHE_MAX_ENTRIES=100`,
+ * `CACHE_MAX_BYTES=32MiB`) deliberately constrain, and stretches TTLs so
+ * hot listings survive longer without an upstream re-fetch — maximum
+ * throughput at the cost of higher heap. Applied at runtime via
+ * `setPerformanceMode` (no restart); reverted the same way.
+ */
+export const PERF_CACHE_MAX_ENTRIES = 1000;
+export const PERF_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+/** Multiplier applied to every cache TTL while performance mode is on. */
+export const PERF_TTL_MULTIPLIER = 4;
+
+/**
  * PanelService — the only door between HTTP routes and panel sources.
  *
  * Adds three cross-cutting concerns on top of the raw source adapters:
@@ -94,6 +107,15 @@ function genreKeyFragment(labels: string[] | null): string {
 export class PanelService {
   private readonly cache: TtlCache<unknown>;
   private readonly inFlight = new InFlight<unknown>();
+  /**
+   * Performance-mode flag (toggled at runtime from the cache-settings
+   * page). While on, the cache budgets widen to the PERF_* constants and
+   * every TTL is stretched by PERF_TTL_MULTIPLIER — maximum throughput at
+   * the cost of higher heap. The manual flush (`clearCache`, memory-flush
+   * button) still works while on; only the automatic relief timer stands
+   * down (see index.ts).
+   */
+  private performanceMode = false;
 
   constructor(
     private readonly registry: SourceRegistry,
@@ -106,6 +128,29 @@ export class PanelService {
       Math.max(16, Math.floor(cacheConfig.maxEntries)),
       Math.max(1024 * 1024, Math.floor(cacheConfig.maxBytes)),
     );
+  }
+
+  /** Runtime performance-mode switch — no restart needed. */
+  setPerformanceMode(on: boolean): void {
+    this.performanceMode = on;
+    if (on) {
+      this.cache.resize(PERF_CACHE_MAX_ENTRIES, PERF_CACHE_MAX_BYTES);
+    } else {
+      this.cache.resize(
+        Math.max(16, Math.floor(this.cacheConfig.maxEntries)),
+        Math.max(1024 * 1024, Math.floor(this.cacheConfig.maxBytes)),
+      );
+    }
+  }
+
+  /** Whether the max-throughput profile is currently applied. */
+  isPerformanceMode(): boolean {
+    return this.performanceMode;
+  }
+
+  /** TTL for a fresh cache write — stretched while performance mode is on. */
+  private ttlFor(baseMs: number): number {
+    return this.performanceMode ? baseMs * PERF_TTL_MULTIPLIER : baseMs;
   }
 
   /** Flush the in-memory TTL cache, drop in-flight dedup state, and trigger GC. */
@@ -134,9 +179,12 @@ export class PanelService {
       return hit as T;
     }
     recordSourceCacheMiss();
+    // Performance mode stretches every TTL so hot entries survive longer
+    // without an upstream re-fetch (fewer source hits = faster revisits).
+    const effectiveTtlMs = this.ttlFor(ttlMs);
     return (await this.inFlight.dedupe(key, async () => {
       const value = await loader();
-      this.cache.set(key, value, ttlMs, PanelService.sizeOf(value));
+      this.cache.set(key, value, effectiveTtlMs, PanelService.sizeOf(value));
       return value;
     })) as T;
   }
@@ -403,7 +451,7 @@ export class PanelService {
       ...panel,
       genres: panel.genres.map((g) => cleanGenreLabel(g)).filter(Boolean),
     };
-    this.cache.set(`panel:${globalId}`, cleanedPanel, this.cacheConfig.panelMs, PanelService.sizeOf(cleanedPanel));
+    this.cache.set(`panel:${globalId}`, cleanedPanel, this.ttlFor(this.cacheConfig.panelMs), PanelService.sizeOf(cleanedPanel));
     await this.panelCache
       .upsertPanel({
         source: cleanedPanel.source,
@@ -482,7 +530,7 @@ export class PanelService {
   private async refreshChapters(globalId: string): Promise<void> {
     const { source, nativeId } = this.registry.forGlobalId(globalId);
     const chapters = await source.getChapters(nativeId);
-    this.cache.set(`chapters:${globalId}`, chapters, this.cacheConfig.chaptersMs, PanelService.sizeOf(chapters));
+    this.cache.set(`chapters:${globalId}`, chapters, this.ttlFor(this.cacheConfig.chaptersMs), PanelService.sizeOf(chapters));
     const panelRow = await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined);
     if (!panelRow) return;
     await this.panelCache
@@ -551,7 +599,7 @@ export class PanelService {
   private async refreshChapterPages(globalChapterId: string): Promise<void> {
     const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
     const pages = await source.getChapterPages(nativeId);
-    this.cache.set(`pages:${globalChapterId}`, pages, this.cacheConfig.pagesMs, PanelService.sizeOf(pages));
+    this.cache.set(`pages:${globalChapterId}`, pages, this.ttlFor(this.cacheConfig.pagesMs), PanelService.sizeOf(pages));
     const panelGlobalId = globalChapterId.slice(0, globalChapterId.lastIndexOf('~'));
     const panelRow = panelGlobalId
       ? await this.panelCache.findPanelByGlobalId(panelGlobalId).catch(() => undefined)

@@ -62,11 +62,15 @@ function clampFollowSequential(value: unknown): number {
  * - `custom` mode returns the stored custom value verbatim (clamped 1–16).
  * - `follow-reader` (default) mirrors the reader: data-saver → 1,
  *   parallel → 8, sequential → `preloadAhead` clamped to 1–8.
+ * - `performanceMode` (the cache-settings toggle) pins the width at the
+ *   16-page maximum regardless of the above, for max download throughput.
  */
 export function resolveDownloadPageConcurrency(
   reader: ReaderWidth,
   download: DownloadWidth,
+  opts?: { performanceMode?: boolean },
 ): number {
+  if (opts?.performanceMode === true) return DOWNLOAD_PAGE_CONCURRENCY_MAX;
   if (download.pageConcurrencyMode === 'custom') {
     return clampDownloadPageConcurrency(download.pageConcurrency);
   }
@@ -84,8 +88,10 @@ export function describeDownloadWidth(
   effective: number,
   reader: ReaderWidth,
   download: DownloadWidth,
+  opts?: { performanceMode?: boolean },
 ): string {
   const pages = effective === 1 ? '1 page at once' : `${effective} pages at once`;
+  if (opts?.performanceMode === true) return `${pages} (performance mode)`;
   if (download.pageConcurrencyMode === 'custom') return `${pages} (custom)`;
   if (reader.dataSaver === true) return `${pages} (follows Reader: Data saver)`;
   if (reader.imageLoad === 'parallel') return `${pages} (follows Reader: All at once)`;

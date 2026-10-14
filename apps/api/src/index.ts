@@ -10,6 +10,8 @@ import { writeBackup } from './db/backup.js';
 import { acquireInstanceLock } from './lib/instanceLock.js';
 import { logger } from './lib/logger.js';
 import { migrateImageCacheToFolders } from './lib/imageCacheFolders.js';
+import { loadCacheSettings } from './lib/cacheSettingsFile.js';
+import { applyPerformanceProfile } from './routes/cache-settings.js';
 import { createSourceRegistry } from './sources/registry.js';
 import { PanelCacheRepository } from './repositories/panelCacheRepository.js';
 
@@ -75,6 +77,24 @@ const registry = createSourceRegistry(config, {
 });
 const { app, prefetchWorker, panelService, imageCache } = createApp({ config, db, registry });
 
+// Re-apply the persisted performance-mode profile (max proxy concurrency,
+// widened TTL cache + stretched TTLs). The runtime profile does not live
+// in env, so without this a restart would silently drop back to standard
+// limits while the settings file still says ON.
+try {
+  const persisted = loadCacheSettings();
+  if (persisted.performanceMode) {
+    await applyPerformanceProfile({ panelService, imageCache }, true);
+    logger.info('Performance mode enabled (restored from cache settings)', {
+      proxyConcurrency: imageCache.getUpstreamConcurrency(),
+    });
+  }
+} catch (error) {
+  logger.warn('Performance-mode restore failed (standard limits apply)', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 // One-time, best-effort organization of pre-existing flat cache files
 // into per-panel folders (runs before the prefetch worker starts so no
 // write can race a rename). Unknown files stay flat and keep serving.
@@ -134,11 +154,14 @@ if (backupTimer !== undefined) {
 // when either exceeds its threshold. Heap alone is blind to native spikes
 // (e.g. a ~400 MB RSS grab with a ~20 MB heap), so RSS gets its own higher
 // threshold. Keeps RAM from growing unbounded after long browsing sessions.
-import { loadCacheSettings } from './lib/cacheSettingsFile.js';
 const AUTO_RELIEF_CHECK_MS = 30_000;
 const autoReliefTimer = setInterval(() => {
   try {
     const settings = loadCacheSettings();
+    // Performance mode keeps caches hot by design — the relief flush would
+    // undo exactly what the toggle promises. Manual "Flush memory" still
+    // works while on; automatic relief resumes when the toggle goes off.
+    if (settings.performanceMode) return;
     if (!settings.autoMemoryRelief) return;
     const mem = process.memoryUsage();
     const thresholdMb = Math.max(20, Math.round(settings.autoMemoryReliefThresholdMb || 20));

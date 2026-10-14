@@ -16,13 +16,24 @@ interface CacheEntry<V> {
 
 export class TtlCache<V> {
   private readonly store = new Map<string, CacheEntry<V>>();
-  private readonly maxEntries: number;
-  private readonly maxBytes: number;
+  private maxEntries: number;
+  private maxBytes: number;
   private bytes = 0;
 
   constructor(maxEntries = 500, maxBytes = Number.POSITIVE_INFINITY) {
     this.maxEntries = maxEntries;
     this.maxBytes = maxBytes;
+  }
+
+  /**
+   * Resize the budgets at runtime (e.g. performance mode widens them,
+   * standard mode restores them). Shrinking evicts oldest-first down to
+   * the new budget immediately; growing never moves entries.
+   */
+  resize(maxEntries: number, maxBytes: number): void {
+    this.maxEntries = maxEntries;
+    this.maxBytes = maxBytes;
+    this.evict();
   }
 
   get(key: string): V | undefined {

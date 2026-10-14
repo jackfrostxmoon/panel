@@ -283,6 +283,14 @@ export class ImageCache {
   /** Startup value — the fallback when no override is set. */
   private readonly defaultUpstreamConcurrency: number;
   private readonly settingsPath: string;
+  /**
+   * Performance-mode boost (runtime only, never persisted). While on, the
+   * proxy runs at MAX_UPSTREAM_CONCURRENCY regardless of the persisted
+   * custom override — so enabling performance mode can't clobber a user's
+   * hand-tuned concurrency, and disabling restores it exactly. Survives
+   * restarts via the cache-settings file (re-applied at boot in index.ts).
+   */
+  private performanceBoost = false;
 
   constructor(private readonly deps: ImageCacheDeps) {
     this.defaultUpstreamConcurrency = Math.max(1, Math.floor(deps.maxUpstreamConcurrency ?? 4));
@@ -1231,6 +1239,25 @@ export class ImageCache {
     return this.upstreamSlots;
   }
 
+  /**
+   * Toggle the performance-mode boost. ON pins the proxy at
+   * MAX_UPSTREAM_CONCURRENCY (max cover/chapter throughput); OFF restores
+   * the persisted custom override (or the env default). The custom value
+   * itself is never touched. Returns the effective concurrency.
+   */
+  setPerformanceBoost(on: boolean): number {
+    this.performanceBoost = on;
+    this.upstreamSlots = on
+      ? MAX_UPSTREAM_CONCURRENCY
+      : (this.customUpstreamConcurrency ?? this.defaultUpstreamConcurrency);
+    return this.upstreamSlots;
+  }
+
+  /** Whether the performance-mode concurrency boost is currently applied. */
+  isPerformanceBoost(): boolean {
+    return this.performanceBoost;
+  }
+
   /** The persisted concurrency override, or null when the env default applies. */
   getCustomUpstreamConcurrency(): number | null {
     return this.customUpstreamConcurrency;
@@ -1258,7 +1285,11 @@ export class ImageCache {
       }
     }
     this.customUpstreamConcurrency = n;
-    this.upstreamSlots = n ?? this.defaultUpstreamConcurrency;
+    // A live performance boost keeps pinning the slots at max — the custom
+    // value is still stored (and restored when the boost turns off).
+    this.upstreamSlots = this.performanceBoost
+      ? MAX_UPSTREAM_CONCURRENCY
+      : (n ?? this.defaultUpstreamConcurrency);
     await this.persistSettings();
     return this.upstreamSlots;
   }
