@@ -64,6 +64,14 @@ export class RawUwUSource implements PanelSource {
   private readonly http: SourceHttpClient;
 
   /**
+   * Runtime max-throughput profile for the performance-mode toggle —
+   * see SourceHttpClient.setPerformanceMode. Restores exact defaults OFF.
+   */
+  setPerformanceMode(on: boolean): void {
+    this.http.setPerformanceMode(on);
+  }
+
+  /**
    * Bulk genre lookup (panel metadata cache), wired by the registry.
    * Lets enrichment skip detail fetches for previously-seen panels.
    * Absent in tests / standalone use — everything is fetched then.

@@ -11,7 +11,7 @@ import type { PanelPage, SaveProgressInput } from '@panel/shared';
 import { parseGlobalId, splitNativeChapterId, toGlobalId } from '@panel/shared';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { queryKeys, useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
+import { queryKeys, useCacheSettings, useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
 import { api } from '../api/client';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -22,7 +22,7 @@ import { PagedReader } from '../reader/PagedReader';
 import { GalleryReader, type GalleryReaderHandle } from '../reader/GalleryReader';
 import { ReaderSettingsPanel } from '../reader/ReaderSettingsPanel';
 import { ReaderToolbar, useChapterBookmarkToggle } from '../reader/ReaderToolbar';
-import { nextReadingMode, scrollSpeedPx, DEFAULT_READER_SETTINGS, type ReaderSettings, type ReadingMode, type GlidePreset } from '../reader/settings';
+import { nextReadingMode, resolveEffectiveReaderSettings, scrollSpeedPx, DEFAULT_READER_SETTINGS, type ReaderSettings, type ReadingMode, type GlidePreset } from '../reader/settings';
 import { VerticalReader, type VerticalReaderHandle } from '../reader/VerticalReader';
 import { proxiedPageUrl } from '../utils/format';
 import {
@@ -197,13 +197,28 @@ export function ReaderPage() {
    */
   const toggleBookmarkRef = useRef(toggleBookmark);
   toggleBookmarkRef.current = toggleBookmark;
-  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  const [storedSettings, setStoredSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+
+  /**
+   * Performance-mode override (cache-settings toggle): forces parallel
+   * loading with max preload and data-saver off for max throughput. The
+   * stored prefs above are never rewritten, so turning the toggle off
+   * restores prior behavior automatically. Every `settings.*` use below
+   * reads this effective object; `update`/`switchMode` keep writing the
+   * stored one (which the settings panel edits).
+   */
+  const cacheSettings = useCacheSettings();
+  const performanceMode = cacheSettings.data?.performanceMode ?? false;
+  const settings = useMemo(
+    () => resolveEffectiveReaderSettings(storedSettings, { performanceMode }),
+    [storedSettings, performanceMode],
+  );
 
   /** Reload settings from the server file (cross-tab sync target). */
   const reloadSettings = useCallback(() => {
     api.getReaderSettings()
       .then((saved) => {
-        setSettings(saved);
+        setStoredSettings(saved);
       })
       .catch(() => {
         // Keep current settings if the file is missing.
@@ -231,7 +246,7 @@ export function ReaderPage() {
 
   const update = useCallback(
     (patch: Partial<ReaderSettings>) => {
-      setSettings((current) => {
+      setStoredSettings((current) => {
         const next = { ...current, ...patch };
         // Auto-instant save: write to file immediately, then ping other
         // tabs so they reload (see the storage listener above).
@@ -243,7 +258,7 @@ export function ReaderPage() {
   );
   const switchMode = useCallback(
     (mode: ReadingMode) => {
-      setSettings((current) => {
+      setStoredSettings((current) => {
         const next = { ...current, mode };
         // Persist like any other change so the mode survives refreshes and
         // syncs to other open tabs (previously this was session-local).
@@ -1413,7 +1428,8 @@ export function ReaderPage() {
 
         {settingsEverOpened && (
           <ReaderSettingsPanel
-            settings={settings}
+            settings={storedSettings}
+            performanceMode={performanceMode}
             onUpdate={update}
             onClose={() => setSettingsOpen(false)}
             open={settingsOpen}

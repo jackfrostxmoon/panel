@@ -240,3 +240,34 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   glidePreset: 'quick',
   showScrollbar: false,
 };
+
+/** Forced pages-ahead while performance mode is on (the allowed maximum). */
+export const PERF_READER_PRELOAD_AHEAD: PreloadAhead = PRELOAD_AHEAD_MAX;
+
+/**
+ * Effective reader settings under performance mode (the cache-settings
+ * toggle). When ON, image loading is forced to parallel with maximum
+ * preload and data-saver off for max throughput — without touching the
+ * stored prefs, so turning the toggle off restores prior behavior with no
+ * bookkeeping. Returns the stored object untouched (same reference) when
+ * OFF or already maxed.
+ */
+export function resolveEffectiveReaderSettings(
+  stored: ReaderSettings,
+  opts?: { performanceMode?: boolean },
+): ReaderSettings {
+  if (opts?.performanceMode !== true) return stored;
+  if (
+    stored.imageLoad === 'parallel' &&
+    stored.dataSaver !== true &&
+    stored.preloadAhead >= PRELOAD_AHEAD_MAX
+  ) {
+    return stored;
+  }
+  return {
+    ...stored,
+    imageLoad: 'parallel',
+    preloadAhead: PERF_READER_PRELOAD_AHEAD,
+    dataSaver: false,
+  };
+}

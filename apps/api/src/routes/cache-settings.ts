@@ -4,10 +4,12 @@ import { AppError } from '../lib/errors.js';
 import { loadCacheSettings, saveCacheSettings } from '../lib/cacheSettingsFile.js';
 import type { ImageCache } from '../lib/imageCache.js';
 import type { PanelService } from '../services/panelService.js';
+import type { SourceRegistry } from '../sources/registry.js';
 
 export interface CacheSettingsDeps {
   panelService: PanelService;
   imageCache: ImageCache;
+  registry: SourceRegistry;
 }
 
 /**
@@ -20,6 +22,7 @@ export interface CacheSettingsDeps {
 export async function applyPerformanceProfile(deps: CacheSettingsDeps, on: boolean): Promise<void> {
   deps.panelService.setPerformanceMode(on);
   deps.imageCache.setPerformanceBoost(on);
+  deps.registry.setPerformanceModeAll(on);
 }
 
 export function cacheSettingsRoutes(deps?: CacheSettingsDeps): Hono {

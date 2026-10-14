@@ -49,6 +49,22 @@ export class SourceRegistry {
   list(): PanelSource[] {
     return [...this.sources.values()];
   }
+
+  /**
+   * Fan out the runtime performance-mode profile to every adapter (see
+   * `PanelSource.setPerformanceMode`). Adapters without the hook keep
+   * their construction values — never throws, so one adapter can never
+   * break the toggle for the rest.
+   */
+  setPerformanceModeAll(on: boolean): void {
+    for (const source of this.sources.values()) {
+      try {
+        source.setPerformanceMode?.(on);
+      } catch {
+        // Best-effort per adapter.
+      }
+    }
+  }
 }
 
 export function createSourceRegistry(

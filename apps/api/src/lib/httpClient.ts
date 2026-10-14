@@ -102,6 +102,19 @@ const DEFAULT_RETRY_COUNT = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 
 /**
+ * Performance-mode profile for outbound source traffic (the cache-settings
+ * toggle). Slow panel CDNs stall to the per-attempt timeout and then pay
+ * the full retry backoff — under max throughput that idle time is the
+ * bottleneck. While on, attempts get twice the timeout budget (slow
+ * sources finish instead of timing out and wasting a retry) and retries
+ * fire sooner. Retry *count*, size caps, the allowlist and isolated fetch
+ * are safety knobs, not throttles, and stay exactly as configured.
+ */
+export const PERF_TIMEOUT_MULTIPLIER = 2;
+/** Retry backoff floor while performance mode is on (never raised above base). */
+export const PERF_RETRY_BASE_DELAY_MS = 100;
+
+/**
  * Decide whether a fetch-level error is worth retrying.
  *
  * Retried: timeout/abort, connection/DNS/TLS failures, and HTTP 429 + 5xx —
@@ -223,7 +236,9 @@ function isClientAbort(error: unknown, signal?: AbortSignal): boolean {
 
 export class SourceHttpClient {
   private readonly allowedHosts: readonly string[];
-  private readonly timeoutMs: number;
+  /** Per-attempt timeout — widened ×2 while performance mode is on. */
+  private timeoutMs: number;
+  private readonly baseTimeoutMs: number;
   private readonly userAgent: string;
   private readonly headers: Record<string, string> | null;
   private readonly maxTextBytes: number;
@@ -233,8 +248,9 @@ export class SourceHttpClient {
   private readonly imageHosts: readonly string[];
   /** Retries per transient failure (0 = no retry). */
   private readonly retryCount: number;
-  /** Base delay (ms) for the first retry; doubles each attempt + jitter. */
-  private readonly retryBaseDelayMs: number;
+  /** Base retry delay — shrunk to the perf floor while performance mode is on. */
+  private retryBaseDelayMs: number;
+  private readonly baseRetryBaseDelayMs: number;
   /** Stream upstream image misses through an isolated child process. */
   private readonly isolatedImageFetch: boolean;
 
@@ -246,13 +262,29 @@ export class SourceHttpClient {
     // aren't SSRF-blocked when a source declares only its CDN here.
     this.imageHosts = [...this.allowedHosts, ...(options.imageHosts ?? []).map((h) => h.toLowerCase())];
     this.timeoutMs = options.timeoutMs;
+    this.baseTimeoutMs = options.timeoutMs;
     this.userAgent = options.userAgent ?? DEFAULT_UA;
     this.headers = options.headers ?? null;
     this.maxTextBytes = options.maxTextBytes ?? 3 * 1024 * 1024;
     this.maxImageBytes = options.maxImageBytes ?? 16 * 1024 * 1024;
     this.retryCount = options.retryCount ?? DEFAULT_RETRY_COUNT;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.baseRetryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.isolatedImageFetch = options.isolatedImageFetch ?? true;
+  }
+
+  /**
+   * Runtime max-throughput profile for the performance-mode toggle — no
+   * restart needed, and OFF restores the exact construction values. Every
+   * consumer reads these fields at call time (attempt signals, retry
+   * backoffs, isolated-child payloads), so the switch takes effect on the
+   * very next request, including in-flight retry loops' next attempt.
+   */
+  setPerformanceMode(on: boolean): void {
+    this.timeoutMs = on ? this.baseTimeoutMs * PERF_TIMEOUT_MULTIPLIER : this.baseTimeoutMs;
+    this.retryBaseDelayMs = on
+      ? Math.min(this.baseRetryBaseDelayMs, PERF_RETRY_BASE_DELAY_MS)
+      : this.baseRetryBaseDelayMs;
   }
 
   /** Text-request header block (defaults, or the source's override set). */

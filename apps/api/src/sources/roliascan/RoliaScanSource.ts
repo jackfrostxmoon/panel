@@ -47,6 +47,14 @@ export class RoliaScanSource implements PanelSource {
 
   private readonly http: SourceHttpClient;
 
+  /**
+   * Runtime max-throughput profile for the performance-mode toggle —
+   * see SourceHttpClient.setPerformanceMode. Restores exact defaults OFF.
+   */
+  setPerformanceMode(on: boolean): void {
+    this.http.setPerformanceMode(on);
+  }
+
   constructor(config: SourceConfig, http?: SourceHttpClient) {
     this.name = config.name;
     this.label = config.label;

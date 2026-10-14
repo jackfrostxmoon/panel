@@ -113,6 +113,14 @@ export class HiperdexSource implements PanelSource {
   readonly enabled: boolean;
 
   private readonly http: SourceHttpClient;
+
+  /**
+   * Runtime max-throughput profile for the performance-mode toggle —
+   * see SourceHttpClient.setPerformanceMode. Restores exact defaults OFF.
+   */
+  setPerformanceMode(on: boolean): void {
+    this.http.setPerformanceMode(on);
+  }
   private sitemapChapterUrls: string[] | null = null;
   /** nativeId → { title, coverUrl, genres, status } for latest(); null = negative cache. */
   private readonly seriesMeta = new TtlCache<{

@@ -66,6 +66,14 @@ export interface PanelSource {
     opts?: { signal?: AbortSignal },
   ): Promise<StreamedImage>;
 
+  /**
+   * Optional: runtime max-throughput profile for the performance-mode
+   * toggle (longer attempt timeouts, snappier retries). The registry fans
+   * it out to every adapter; adapters without it simply keep their
+   * construction values. Must restore exact defaults when OFF.
+   */
+  setPerformanceMode?(on: boolean): void;
+
   /** Canonical source URL for a panel (the source owns its URL layout). */
   buildPanelUrl(nativePanelId: string): string;
 

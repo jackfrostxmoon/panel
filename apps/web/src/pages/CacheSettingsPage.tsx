@@ -595,9 +595,11 @@ const [panelQuery, setPanelQuery] = useState('');
         <p className="cache-settings__help">
           Performance mode runs every page at max throughput: 32 concurrent image fetches
           (instead of 2), a 1000-entry / 256&nbsp;MB hot cache with 4× longer lifetimes,
-          no automatic memory relief, and 16-pages-at-once downloads with no pacing.
-          It lifts the app&apos;s own throttles — it cannot force the OS to spend more
-          CPU, RAM, or network bandwidth than the machine has. Sources may rate-limit
+          longer source timeouts with snappier retries, no automatic memory relief,
+          16-pages-at-once downloads with no pacing, and a forced reader (parallel
+          loading, 50-page preload, data-saver off). It lifts the app&apos;s own
+          throttles — it cannot force the OS to spend more CPU, RAM, or network
+          bandwidth than the machine has. Sources may rate-limit
           you (HTTP 429) under full load; use &ldquo;Flush memory&rdquo; below if RAM climbs.
         </p>
 
@@ -1046,7 +1048,7 @@ const [panelQuery, setPanelQuery] = useState('');
       <ConfirmDialog
         open={confirmPerf}
         title="Enable performance mode?"
-        message="Every page runs at max throughput (32 image fetches at once, large hot cache, 16-pages-at-once downloads with no pacing) and automatic memory relief stands down. This raises RAM use and upstream load — sources may rate-limit you. Your custom concurrency setting is kept and restored when you switch back off."
+        message="Every page runs at max throughput (32 image fetches at once, large hot cache, longer timeouts with faster retries, 16-pages-at-once downloads with no pacing, forced parallel reader) and automatic memory relief stands down. This raises RAM use and upstream load — sources may rate-limit you. Your custom concurrency setting is kept and restored when you switch back off."
         confirmLabel="Enable"
         cancelLabel="Cancel"
         onConfirm={() => void confirmEnablePerformance()}

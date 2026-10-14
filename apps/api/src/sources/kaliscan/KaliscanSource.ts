@@ -58,6 +58,14 @@ export class KaliscanSource implements PanelSource {
   private readonly http: SourceHttpClient;
 
   /**
+   * Runtime max-throughput profile for the performance-mode toggle —
+   * see SourceHttpClient.setPerformanceMode. Restores exact defaults OFF.
+   */
+  setPerformanceMode(on: boolean): void {
+    this.http.setPerformanceMode(on);
+  }
+
+  /**
    * Mirror bases tried in order when the configured base is unreachable.
    * KaliScan hops TLDs to dodge blocks and its `.io` registration expired
    * in 2026, so every text/JSON fetch fails over across these (configured

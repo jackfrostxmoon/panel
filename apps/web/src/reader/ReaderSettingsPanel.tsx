@@ -67,6 +67,7 @@ import {
  */
 export function ReaderSettingsPanel({
   settings,
+  performanceMode = false,
   onUpdate,
   onClose,
   open,
@@ -78,6 +79,13 @@ export function ReaderSettingsPanel({
   onChapterSelect,
 }: {
   settings: ReaderSettings;
+  /**
+   * Performance mode (cache-settings toggle). While on, the reader runs
+   * forced parallel loading with max preload and data-saver off — the
+   * three controls below lock to reflect that. `settings` still carries
+   * the stored prefs underneath, so turning the toggle off restores them.
+   */
+  performanceMode?: boolean;
   onUpdate: (patch: Partial<ReaderSettings>) => void;
   onClose: () => void;
   /** Whether the sidebar is open (controls the slide transform + backdrop). */
@@ -310,6 +318,13 @@ export function ReaderSettingsPanel({
         </div>
 
         <div className="reader-settings__body">
+          {performanceMode && (
+            <p className="reader-settings__sub-hint" role="status">
+              Performance mode is on: parallel loading, 50-page preload and no data-saver
+              are forced, and server concurrency is pinned at 32. Your saved values below
+              are kept and return when you switch it off.
+            </p>
+          )}
           {activeTab === 'simple' ? (
             <>
           <SettingGroup
@@ -551,11 +566,13 @@ export function ReaderSettingsPanel({
             id="rs-dataSaver"
             title="Data saver"
             hint="Loads pages one at a time as you reach them and skips background prefetch. Best for metered connections."
+            disabled={performanceMode}
           >
             <Switch
               checked={settings.dataSaver}
               labelledBy="rs-dataSaver"
               onChange={(dataSaver) => onUpdate({ dataSaver })}
+              disabled={performanceMode}
             />
             <label id="rs-dataSaver" className="reader-settings__switch-label">
               Limit image loading to save data
@@ -689,6 +706,7 @@ export function ReaderSettingsPanel({
             id="rs-imageLoad"
             title="Image loading"
             hint="All at once preloads every page for instant turns (uses more data). While scrolling fetches pages only as you reach them."
+            disabled={performanceMode}
           >
             <Segmented<ImageLoadMode>
               labelledBy="rs-imageLoad"
@@ -698,6 +716,7 @@ export function ReaderSettingsPanel({
               ]}
               value={settings.imageLoad}
               onChange={(imageLoad) => onUpdate({ imageLoad })}
+              disabled={performanceMode}
             />
           </SettingGroup>
 
@@ -706,6 +725,7 @@ export function ReaderSettingsPanel({
               id="rs-preloadAhead"
               title="Preload ahead"
               hint="While scrolling, how many upcoming pages stay pre-fetched. Higher means fewer waits but more data. Pick a preset or type a custom 1–50 value."
+              disabled={performanceMode}
             >
               <Segmented<string>
                 labelledBy="rs-preloadAhead"
@@ -716,6 +736,7 @@ export function ReaderSettingsPanel({
                 ]}
                 value={String(settings.preloadAhead)}
                 onChange={(value) => onUpdate({ preloadAhead: Number(value) as PreloadAhead })}
+                disabled={performanceMode}
               />
               <div className="reader-settings__size-row">
                 <NumberField
@@ -725,6 +746,7 @@ export function ReaderSettingsPanel({
                   max={PRELOAD_AHEAD_MAX}
                   step={PRELOAD_AHEAD_STEP}
                   unit="pages"
+                  disabled={performanceMode}
                   onChange={(preloadAhead) =>
                     onUpdate({
                       preloadAhead:
@@ -740,6 +762,7 @@ export function ReaderSettingsPanel({
             id="rs-downloadConcurrency"
             title="Download concurrency"
             hint="How many images the server fetches from the source at once. Higher warms All at once chapters faster but spikes memory and can trip source rate limits. Applies server-wide immediately and survives restarts."
+            disabled={performanceMode}
           >
             <Segmented<string>
               labelledBy="rs-downloadConcurrency"
@@ -751,6 +774,7 @@ export function ReaderSettingsPanel({
               ]}
               value={String(displayConcurrency)}
               onChange={(value) => saveConcurrency.mutate(Number(value))}
+              disabled={performanceMode}
             />
             <div className="reader-settings__size-row">
               <NumberField
@@ -760,15 +784,23 @@ export function ReaderSettingsPanel({
                 max={concurrencyMax}
                 step={1}
                 unit="fetches"
+                disabled={performanceMode}
                 onChange={(concurrency) => {
                   if (concurrency !== null) saveConcurrency.mutate(concurrency);
                 }}
               />
             </div>
+            {performanceMode && (
+              <p className="reader-settings__sub-hint" role="status">
+                Pinned at 32 by performance mode — your custom value is kept and returns
+                when you switch it off.
+              </p>
+            )}
             {concurrencyInfo?.customConcurrency != null && (
               <button
                 type="button"
                 className="btn btn--ghost btn--sm"
+                disabled={performanceMode}
                 onClick={() => saveConcurrency.mutate(null)}
               >
                 Reset to server default ({concurrencyInfo.defaultConcurrency})
@@ -1294,10 +1326,13 @@ function Switch({
   checked,
   onChange,
   labelledBy,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   labelledBy: string;
+  /** Disabled state (e.g. forced off by performance mode). */
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -1305,7 +1340,8 @@ function Switch({
       role="switch"
       aria-checked={checked}
       aria-labelledby={labelledBy}
-      className={`switch${checked ? ' switch--on' : ''}`}
+      disabled={disabled}
+      className={`switch${checked ? ' switch--on' : ''}${disabled ? ' switch--disabled' : ''}`}
       onClick={() => onChange(!checked)}
     >
       <span className="switch__thumb" />
@@ -1356,6 +1392,7 @@ function NumberField({
   max,
   step = 10,
   unit = 'px',
+  disabled = false,
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
@@ -1365,6 +1402,8 @@ function NumberField({
   step?: number;
   /** Unit shown beside the input (`px` for sizes, `pages` for preload). */
   unit?: string;
+  /** Disabled state (e.g. forced by performance mode). */
+  disabled?: boolean;
 }) {
   const id = useId();
   const clamp = (n: number) =>
@@ -1377,6 +1416,7 @@ function NumberField({
       type="button"
       className="reader-settings__number-btn"
       aria-label={labelText}
+      disabled={disabled}
       onClick={() => onChange(stepFrom(value, delta))}
     >
       {glyph}
@@ -1397,6 +1437,7 @@ function NumberField({
           min={min}
           max={max}
           inputMode="numeric"
+          disabled={disabled}
           onChange={(event) => {
             const raw = event.target.value;
             if (raw === '') {

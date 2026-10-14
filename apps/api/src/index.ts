@@ -84,7 +84,7 @@ const { app, prefetchWorker, panelService, imageCache } = createApp({ config, db
 try {
   const persisted = loadCacheSettings();
   if (persisted.performanceMode) {
-    await applyPerformanceProfile({ panelService, imageCache }, true);
+    await applyPerformanceProfile({ panelService, imageCache, registry }, true);
     logger.info('Performance mode enabled (restored from cache settings)', {
       proxyConcurrency: imageCache.getUpstreamConcurrency(),
     });
