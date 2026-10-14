@@ -59,6 +59,28 @@ export interface DownloadChaptersResult {
 /** How often the hook polls GET /api/prefetch/jobs while jobs are tracked. */
 const POLL_INTERVAL_MS = 500;
 
+/**
+ * No chapter settling for this long while jobs are still tracked reads
+ * as stalled — the server is wedged or crawling (throttled source,
+ * wedged `running` row) rather than making progress.
+ */
+export const DOWNLOAD_STALL_AFTER_MS = 120_000;
+
+/**
+ * Pure stall check (exported for unit tests): stalled when at least one
+ * job is tracked but nothing settled within the threshold.
+ */
+export function isDownloadStalled(
+  activeCount: number,
+  lastActivityAtMs: number,
+  nowMs: number,
+  thresholdMs: number = DOWNLOAD_STALL_AFTER_MS,
+): boolean {
+  if (activeCount <= 0) return false;
+  if (!Number.isFinite(lastActivityAtMs) || !Number.isFinite(nowMs)) return false;
+  return nowMs - lastActivityAtMs > thresholdMs;
+}
+
 interface TrackedJob {
   jobId: string;
 }
@@ -148,6 +170,13 @@ export function useChapterDownloader() {
    * "Waiting 1:32 before next chapter…" countdown.
    */
   const [intervalRemainingMs, setIntervalRemainingMs] = useState<number | null>(null);
+  /**
+   * Last wall-clock time a tracked chapter settled (or a batch started).
+   * Drives `isStalled`: while jobs are tracked but nothing settles for
+   * `DOWNLOAD_STALL_AFTER_MS`, the UI tells the user the run is stuck
+   * instead of showing a silently frozen progress bar.
+   */
+  const [lastActivityAt, setLastActivityAt] = useState<number>(() => Date.now());
 
   const queryClient = useQueryClient();
   /** Refresh the persisted per-row badges after runs settle. The
@@ -209,6 +238,7 @@ export function useChapterDownloader() {
           waiter.failedPages += final.failedPages;
         }
       }
+      setLastActivityAt(Date.now());
       untrack(chapterId);
       settleWaiters();
       bumpSnapshots();
@@ -233,6 +263,7 @@ export function useChapterDownloader() {
         waiter.failed += 1;
         waiter.failedPages += failedPages;
       }
+      setLastActivityAt(Date.now());
       untrack(chapterId);
       settleWaiters();
       bumpSnapshots();
@@ -460,6 +491,7 @@ export function useChapterDownloader() {
       if (chapters.length === 0) return { done: 0, failed: 0, cancelled: false, failedPages: 0 };
       setDoneCount(0);
       setFailedCount(0);
+      setLastActivityAt(Date.now());
       setIntervalRemainingMs(null);
       const intervalMs = Math.max(0, Math.trunc(options?.chapterIntervalMs ?? 0));
       const delayFirstMs = Math.max(0, Math.trunc(options?.delayFirstMs ?? 0));
@@ -642,6 +674,13 @@ export function useChapterDownloader() {
     failedCount,
     /** True while a batch is running. */
     isDownloading: activeChapterIds.length > 0,
+    /**
+     * True while jobs are tracked but nothing settled for
+     * `DOWNLOAD_STALL_AFTER_MS` — the run is wedged or crawling, not
+     * progressing. The actions panel renders a hint from this instead
+     * of a silently frozen progress bar.
+     */
+    isStalled: isDownloadStalled(activeChapterIds.length, lastActivityAt, Date.now()),
     /**
      * Milliseconds left before the next tracked chapter becomes
      * claimable, or `null` when nothing is waiting. The UI renders the

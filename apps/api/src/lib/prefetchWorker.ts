@@ -43,6 +43,27 @@ import type { PrefetchJobRow } from '../db/schema.js';
  */
 export const PREFETCH_PAGE_CONCURRENCY_FALLBACK = 3;
 const PROGRESS_PERSIST_EVERY = 3;
+/**
+ * A `running` job older than this without settling is wedged (crash
+ * between claim and finish, or a terminal-mark write that failed) and
+ * gets reaped to `failed` by the tick watchdog. Generous on purpose: a
+ * legitimately slow chapter (width-1 data-saver against a source that
+ * times every page out) can run for tens of minutes. Reaped jobs read
+ * as failed and a re-run resumes them cheaply via `onlyMissing`.
+ */
+const STALE_RUNNING_MS = 90 * 60_000;
+/** Minimum gap between watchdog reap scans (the tick itself fires every 500ms). */
+const WATCHDOG_INTERVAL_MS = 60_000;
+/** Consecutive job-level failures before the worker pauses claiming. */
+const FAILURE_BACKOFF_AFTER = 3;
+/** First pause after repeated failures; doubles per further failure. */
+const FAILURE_BACKOFF_BASE_MS = 30_000;
+/** Longest the failure backoff ever pauses claiming. */
+const FAILURE_BACKOFF_MAX_MS = 120_000;
+/** Consecutive `claimNext` errors before the worker pauses claiming. */
+const CLAIM_ERROR_BACKOFF_AFTER = 5;
+/** Pause after repeated claim errors (DB hiccup — self-heals on retry). */
+const CLAIM_ERROR_BACKOFF_MS = 30_000;
 
 /** Internal control-flow error: the user cancelled mid-run. Never surfaced. */
 class JobCancelledError extends Error {
@@ -72,6 +93,19 @@ export class PrefetchWorker {
    * The queue is intentionally single-flight per process.
    */
   private processing = false;
+  /**
+   * Politeness + self-healing state. `consecutiveFailures` counts
+   * back-to-back job-level failures (upstream 429/5xx/timeouts); past
+   * the threshold the worker pauses claiming briefly so an unpaced bulk
+   * run stops hammering a struggling source and burning the whole batch
+   * into failures. Any success resets the count. `pausedUntil` is the
+   * timestamp claiming resumes (failure backoff or claim-error backoff).
+   * `lastWatchdogAt` throttles the stale-`running` reap scan.
+   */
+  private consecutiveFailures = 0;
+  private pausedUntil = 0;
+  private lastWatchdogAt = 0;
+  private claimErrors = 0;
 
   constructor(private readonly deps: PrefetchWorkerDeps) {
     this.repo = new PrefetchJobRepository(deps.db);
@@ -114,17 +148,80 @@ export class PrefetchWorker {
   }
 
   /** Called from the API's setInterval. No-ops when the worker has
-   *  nothing to do, is shutting down, or is already processing a job. */
+   *  nothing to do, is shutting down, is backing off, or is already
+   *  processing a job. */
   async tick(): Promise<void> {
     if (!this.running || this.stopRequested || this.processing) return;
+    if (Date.now() < this.pausedUntil) return;
     this.processing = true;
     try {
-      const claimed = await this.repo.claimNext();
+      // Throttled reap of jobs wedged in `running` (claimed but never
+      // settled). Without this one stuck row freezes every client
+      // tracking it: the claim query only picks `pending` rows and the
+      // UI's batch promise resolves only when all tracked chapters
+      // settle — the classic "bulk download stopped with no toast".
+      const now = Date.now();
+      if (now - this.lastWatchdogAt >= WATCHDOG_INTERVAL_MS) {
+        this.lastWatchdogAt = now;
+        try {
+          const reaped = await this.repo.failStaleRunning(STALE_RUNNING_MS);
+          if (reaped > 0) {
+            this.consecutiveFailures = 0;
+            logger.warn('PrefetchWorker reaped stale running jobs', { reaped });
+          }
+        } catch (error) {
+          logger.warn('PrefetchWorker watchdog scan failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      let claimed: Awaited<ReturnType<PrefetchJobRepository['claimNext']>>;
+      try {
+        claimed = await this.repo.claimNext();
+        this.claimErrors = 0;
+      } catch (error) {
+        // A persistently throwing claim (DB hiccup) must not hot-loop
+        // every 500ms forever — pause briefly, then self-heal on retry.
+        this.claimErrors += 1;
+        if (this.claimErrors >= CLAIM_ERROR_BACKOFF_AFTER) {
+          this.claimErrors = 0;
+          this.pausedUntil = Date.now() + CLAIM_ERROR_BACKOFF_MS;
+          logger.error('PrefetchWorker claim failed repeatedly, pausing', {
+            error: error instanceof Error ? error.message : String(error),
+            pauseMs: CLAIM_ERROR_BACKOFF_MS,
+          });
+        }
+        return;
+      }
       if (!claimed) return;
       await this.process(claimed);
     } finally {
       this.processing = false;
     }
+  }
+
+  /**
+   * Record a job-level failure (the whole chapter errored, not just
+   * some pages). Past the threshold, pause claiming with an escalating
+   * backoff so an unpaced bulk run against a throttling source backs
+   * off instead of burning every remaining chapter into `failed`.
+   */
+  private noteJobFailure(): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= FAILURE_BACKOFF_AFTER) {
+      const step = Math.min(this.consecutiveFailures - FAILURE_BACKOFF_AFTER, 2);
+      const pauseMs = Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** step, FAILURE_BACKOFF_MAX_MS);
+      this.pausedUntil = Date.now() + pauseMs;
+      logger.warn('PrefetchWorker backing off after consecutive job failures', {
+        consecutiveFailures: this.consecutiveFailures,
+        pauseMs,
+      });
+    }
+  }
+
+  /** A chapter settled (completed, even with per-page failures): the upstream is alive. */
+  private noteJobSuccess(): void {
+    this.consecutiveFailures = 0;
   }
 
   private async process(job: PrefetchJobRow): Promise<void> {
@@ -181,6 +278,7 @@ export class PrefetchWorker {
 
       if (total === 0) {
         const completed = await this.repo.complete(jobId, { cachedPages: 0, failedPages: 0, failed: [] });
+        if (completed) this.noteJobSuccess();
         log(completed ? 'completed (empty chapter)' : 'cancelled (empty chapter)');
         return;
       }
@@ -347,11 +445,26 @@ export class PrefetchWorker {
       }
 
       await persist();
-      const completed = await this.repo.complete(jobId, { cachedPages, failedPages, failed });
+      let completed: boolean;
+      try {
+        completed = await this.repo.complete(jobId, { cachedPages, failedPages, failed });
+      } catch (error) {
+        // A failed terminal write must not wedge the job in `running`
+        // (one stuck row freezes every tracking client). Retry once;
+        // a second failure falls through to the `fail()` path below,
+        // and if that fails too the tick watchdog reaps the row.
+        logger.warn('prefetch terminal-mark failed, retrying', {
+          jobId,
+          chapterId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        completed = await this.repo.complete(jobId, { cachedPages, failedPages, failed });
+      }
       if (!completed) {
         log('cancelled at finish (cancel won the race)');
         return;
       }
+      this.noteJobSuccess();
       log('completed', { cachedPages, failedPages });
     } catch (error) {
       if (error instanceof JobCancelledError) {
@@ -364,7 +477,24 @@ export class PrefetchWorker {
         chapterId,
         error: error instanceof Error ? error.message : String(error),
       });
-      await this.repo.fail(jobId, error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        await this.repo.fail(jobId, message);
+      } catch (failError) {
+        logger.error('prefetch terminal-mark failed, retrying', {
+          jobId,
+          chapterId,
+          error: failError instanceof Error ? failError.message : String(failError),
+        });
+        try {
+          await this.repo.fail(jobId, message);
+        } catch {
+          // Last resort: the tick watchdog reaps stale `running` rows,
+          // so the batch still settles instead of freezing forever.
+          logger.error('prefetch job left running; watchdog will reap it', { jobId, chapterId });
+        }
+      }
+      this.noteJobFailure();
     } finally {
       this.inflightAbort = null;
       if (this.inflightJobId === jobId) this.inflightJobId = null;

@@ -276,6 +276,17 @@ export function ChapterDownloadActions({
         </p>
       )}
 
+      {downloader.isStalled && (
+        <p
+          className="chapter-download-actions__progress chapter-download-actions__progress--stalled"
+          role="status"
+          aria-live="polite"
+        >
+          Still working — no chapter has finished for a while. The source may be slowing responses; the
+          download continues in the background and you can stop it at any time.
+        </p>
+      )}
+
       <div
         className="download-settings"
         role="group"

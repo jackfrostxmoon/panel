@@ -475,6 +475,37 @@ export class PrefetchJobRepository {
     return updated.length;
   }
 
+  /**
+   * Reap jobs wedged in `running` — claimed but never settled (a crash
+   * between claim and finish without a restart, or a terminal-mark write
+   * that failed). A wedged job freezes every client tracking it: the
+   * worker only claims `pending` rows and the UI's batch promise resolves
+   * only when all tracked chapters settle, so one stuck row reads as
+   * "bulk download stopped" with no toast. A legitimately slow chapter
+   * (worst case: width-1 data-saver against a timing-out source) can run
+   * for tens of minutes, so callers pass a generous threshold (tens of
+   * minutes, not seconds); reaped jobs read as `failed` and a re-run
+   * resumes them cheaply via `onlyMissing`. Rows with no `startedAt`
+   * never passed through `claimNext` and are always stale.
+   *
+   * Returns the number of jobs reaped.
+   */
+  async failStaleRunning(staleMs: number): Promise<number> {
+    if (!Number.isFinite(staleMs) || staleMs <= 0) return 0;
+    const cutoff = new Date(Date.now() - staleMs);
+    const reaped = await this.db
+      .update(prefetchJobs)
+      .set({ status: 'failed', finishedAt: new Date() })
+      .where(
+        and(
+          eq(prefetchJobs.status, 'running'),
+          or(isNull(prefetchJobs.startedAt), lte(prefetchJobs.startedAt, cutoff)),
+        ),
+      )
+      .returning({ id: prefetchJobs.id });
+    return reaped.length;
+  }
+
   /** True when the job row is currently `cancelled` (or gone). */
   async isCancelled(id: string): Promise<boolean> {
     const [row] = await this.db

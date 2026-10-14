@@ -2127,6 +2127,10 @@ input::placeholder {
   font-variant-numeric: tabular-nums;
 }
 
+.chapter-download-actions__progress--stalled {
+  color: var(--warning, #b7791f);
+}
+
 .chapter-download-actions__help {
   flex-basis: 100%;
   margin: 0;
