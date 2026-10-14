@@ -144,8 +144,9 @@ export class HiperdexSource implements PanelSource {
       http ??
       new SourceHttpClient(config.name, {
         allowedHosts: HiperdexSource.allowedHostsFor(config.baseUrl),
-        // Chapter images live on the r2d2storage.com CDN, not hiperdex.com.
-        imageHosts: ['r2d2storage.com'],
+        // Chapter images live on the r2d2storage.com CDN (and some series
+        // serve from i.imgur.com instead), not hiperdex.com.
+        imageHosts: ['r2d2storage.com', 'imgur.com'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
