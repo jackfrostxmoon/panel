@@ -136,10 +136,6 @@ if (backupTimer !== undefined) {
 // threshold. Keeps RAM from growing unbounded after long browsing sessions.
 import { loadCacheSettings } from './lib/cacheSettingsFile.js';
 const AUTO_RELIEF_CHECK_MS = 30_000;
-/** Consecutive ticks with rssOver (reset on any clean tick). */
-let rssOverStreak = 0;
-/** Ticks of rssOver that escalate to a restart recommendation (once per streak). */
-const RSS_OVER_ESCALATE_TICKS = 3;
 const autoReliefTimer = setInterval(() => {
   try {
     const settings = loadCacheSettings();
@@ -177,23 +173,6 @@ const autoReliefTimer = setInterval(() => {
       if (typeof bunGc === 'function') {
         bunGc(blocking ? true : undefined);
       }
-      // Escalate a stuck native high-water mark: relief clears caches and
-      // forces GC, but allocator-held pages may never return to the OS. If
-      // RSS stays over the line across consecutive ticks, say once that a
-      // restart is the only remaining lever.
-      if (rssOver) {
-        rssOverStreak += 1;
-        if (rssOverStreak === RSS_OVER_ESCALATE_TICKS) {
-          logger.warn('RSS high-water persistent across reliefs — restart recommended', {
-            rssBytes: mem.rss,
-            rssThresholdMb,
-            streakTicks: rssOverStreak,
-          });
-        }
-      }
-    }
-    if (!rssOver) {
-      rssOverStreak = 0;
     }
   } catch {
     // Best-effort; never crash the server for a settings-file read error.

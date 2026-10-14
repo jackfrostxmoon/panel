@@ -18,13 +18,7 @@ if not "%~2"=="" if /i not "%~2"=="smol" (
   echo Unknown option "%~2". Use "smol" or leave empty.
   exit /b 1
 )
-rem Optional third argument: auto-restart cadence, e.g. "6h" (90s, 30m, 1d,
-rem or plain ms). The restart waits for active chapter downloads to finish
-rem first. Example: lan.bat minimal smol 6h
-set "RESTART_ENV="
-if not "%~3"=="" set "RESTART_ENV=$env:LAN_RESTART_EVERY='%~3';"
 :launch
 echo.
 echo Using backup scope: %BACKUP_SCOPE%
-if not "%~3"=="" echo Auto restart every: %~3 (once downloads are idle)
-powershell -NoProfile -Command "$env:BACKUP_SCOPE='%BACKUP_SCOPE%'; %SMOL_ARG% %RESTART_ENV% bun run lan --silent"
+powershell -NoProfile -Command "$env:BACKUP_SCOPE='%BACKUP_SCOPE%'; %SMOL_ARG% bun run lan --silent"

@@ -131,23 +131,14 @@ export interface CachePageSettings {
   autoMemoryReliefThresholdMb: number;
   /** RSS relief threshold in MB (default 256). Only used when autoMemoryRelief is true. */
   autoMemoryReliefRssThresholdMb: number;
-  /**
-   * Automatic server restart interval in ms (default 0 = disabled). The lan
-   * supervisor (`bun run lan`) gracefully restarts the API on this cadence
-   * to shed native memory high-water marks, waiting out active chapter
-   * downloads first. An explicit `--restart-every` flag / LAN_RESTART_EVERY
-   * env var always wins over this value.
-   */
-  autoRestartEveryMs: number;
 }
 
-/** Default: manual refresh only, no auto memory relief, 20 MB heap / 256 MB RSS thresholds, no auto restart. */
+/** Default: manual refresh only, no auto memory relief, 20 MB heap / 256 MB RSS thresholds. */
 export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
   liveRefresh: false,
   autoMemoryRelief: false,
   autoMemoryReliefThresholdMb: 20,
   autoMemoryReliefRssThresholdMb: 256,
-  autoRestartEveryMs: 0,
 };
 
 /**
