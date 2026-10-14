@@ -1558,6 +1558,11 @@ input::placeholder {
   text-align: center;
 }
 
+.chapter-order-dialog__scope {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
 /* --- Backup export options (Bookmarks page Export dialog) ----------------- */
 
 .export-options {

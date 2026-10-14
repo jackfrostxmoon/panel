@@ -526,8 +526,8 @@ const filteredAndSortedChapters = useMemo(() => {
      download order, and `selectedChapters` carries the list's display order,
      so without this the Newest/Oldest view toggle would decide it silently. */
   const handleDownloadSelected = useCallback(
-    async (order: ChapterOrder) => {
-      const batch = sortChaptersForDownload(selectedChapters, order);
+    async (order: ChapterOrder, batchOverride?: Chapter[]) => {
+      const batch = sortChaptersForDownload(batchOverride ?? selectedChapters, order);
       if (batch.length === 0) {
         toast('No chapters selected', 'info');
         return;
@@ -1549,6 +1549,7 @@ const filteredAndSortedChapters = useMemo(() => {
               chapters={filteredAndSortedChapters}
               readChapterIds={readChapterIds}
               downloader={downloader}
+              isChapterDone={chapterListDownloader.isDone}
               downloadSettings={downloadSettingsState.settings}
               onDownloadSettingsChange={downloadSettingsState.update}
               readerSettings={readerSettings}
@@ -1559,12 +1560,12 @@ const filteredAndSortedChapters = useMemo(() => {
                 below the main action row. */}
             <ChapterOrderDialog
               open={selectedOrderPrompt}
-              count={selectedChapters.length}
               batchLabel={selectedChapters.length === 1 ? 'selected chapter' : 'selected chapters'}
               chapters={selectedChapters}
-              onPick={(order) => {
+              isDone={chapterListDownloader.isDone}
+              onPick={(order, scoped) => {
                 setSelectedOrderPrompt(false);
-                void handleDownloadSelected(order);
+                void handleDownloadSelected(order, scoped);
               }}
               onCancel={() => setSelectedOrderPrompt(false)}
             />

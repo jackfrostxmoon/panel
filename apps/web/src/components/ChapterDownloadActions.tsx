@@ -41,6 +41,11 @@ interface ChapterDownloadActionsProps {
   readChapterIds?: Set<string>;
   /** Live download state from the parent's `useChapterDownloader`. */
   downloader: ChapterDownloader;
+  /**
+   * Done-check (same signal as the per-row badges) powering the order
+   * dialog's `Uncached only` scope. Omit to hide the scope toggle.
+   */
+  isChapterDone?: (chapterId: string) => boolean;
   /** Pacing settings owned by the parent; surfaced inline so the user
    *  can tune the wait between chapters without leaving the panel page. */
   downloadSettings: DownloadSettings;
@@ -75,6 +80,7 @@ export function ChapterDownloadActions({
   chapters,
   readChapterIds,
   downloader,
+  isChapterDone,
   downloadSettings,
   onDownloadSettingsChange,
   readerSettings,
@@ -163,15 +169,15 @@ export function ChapterDownloadActions({
       batch: unreadChapters,
     });
   };
-  /** Direction chosen — sort here too so the toast/progress agree with the run. */
+  /** Direction chosen — the dialog hands us the already-scoped batch, so the toast/progress agree with the run. */
   const handlePickOrder = useCallback(
-    (order: ChapterOrder) => {
+    (order: ChapterOrder, scoped: Chapter[]) => {
       const pending = pendingOrder;
       setPendingOrder(null);
       if (!pending) return;
       void runBatch(
         pending.label,
-        sortChaptersForDownload(pending.batch, order),
+        sortChaptersForDownload(scoped, order),
         order,
       );
     },
@@ -426,9 +432,9 @@ export function ChapterDownloadActions({
 
       <ChapterOrderDialog
         open={pendingOrder !== null}
-        count={pendingOrder?.batch.length ?? 0}
         batchLabel={pendingOrder?.label ?? 'chapters'}
         chapters={pendingOrder?.batch ?? []}
+        isDone={isChapterDone}
         onPick={handlePickOrder}
         onCancel={() => setPendingOrder(null)}
       />
