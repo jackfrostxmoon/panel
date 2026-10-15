@@ -106,9 +106,33 @@ export class PrefetchWorker {
   private pausedUntil = 0;
   private lastWatchdogAt = 0;
   private claimErrors = 0;
+  /**
+   * Performance-mode profile (toggled via `setPerformanceMode`, wired
+   * through the cache-settings route like PanelService/ImageCache): max
+   * intra-chapter width, no failure/claim backoffs, no batch pacing.
+   * Single-flight is kept (one chapter at a time) to avoid 429s — only
+   * the pages within the chapter fan out wider. OFF restores exact
+   * defaults with no restart.
+   */
+  private performanceMode = false;
 
   constructor(private readonly deps: PrefetchWorkerDeps) {
     this.repo = new PrefetchJobRepository(deps.db);
+  }
+
+  /** Runtime max-throughput switch — no restart needed. */
+  setPerformanceMode(on: boolean): void {
+    this.performanceMode = on;
+    if (on) {
+      this.pausedUntil = 0;
+      this.consecutiveFailures = 0;
+      this.claimErrors = 0;
+    }
+  }
+
+  /** Whether the max-throughput profile is currently applied. */
+  isPerformanceMode(): boolean {
+    return this.performanceMode;
   }
 
   /** Start the drain loop. First cancels jobs stranded `pending`/`running`
@@ -152,7 +176,7 @@ export class PrefetchWorker {
    *  processing a job. */
   async tick(): Promise<void> {
     if (!this.running || this.stopRequested || this.processing) return;
-    if (Date.now() < this.pausedUntil) return;
+    if (!this.performanceMode && Date.now() < this.pausedUntil) return;
     this.processing = true;
     try {
       // Throttled reap of jobs wedged in `running` (claimed but never
@@ -182,6 +206,8 @@ export class PrefetchWorker {
       } catch (error) {
         // A persistently throwing claim (DB hiccup) must not hot-loop
         // every 500ms forever — pause briefly, then self-heal on retry.
+        // Performance mode skips the pause for throughput (retries next tick).
+        if (this.performanceMode) return;
         this.claimErrors += 1;
         if (this.claimErrors >= CLAIM_ERROR_BACKOFF_AFTER) {
           this.claimErrors = 0;
@@ -208,6 +234,9 @@ export class PrefetchWorker {
    */
   private noteJobFailure(): void {
     this.consecutiveFailures += 1;
+    // Performance mode never pauses claiming for throughput — failures
+    // still count, but the batch keeps draining instead of backing off.
+    if (this.performanceMode) return;
     if (this.consecutiveFailures >= FAILURE_BACKOFF_AFTER) {
       const step = Math.min(this.consecutiveFailures - FAILURE_BACKOFF_AFTER, 2);
       const pauseMs = Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** step, FAILURE_BACKOFF_MAX_MS);
@@ -421,10 +450,14 @@ export class PrefetchWorker {
         typeof (job as { pageConcurrency?: unknown }).pageConcurrency === 'number'
           ? (job as { pageConcurrency?: number }).pageConcurrency!
           : PREFETCH_PAGE_CONCURRENCY_FALLBACK;
-      const pageConcurrency = Math.min(
-        16,
-        Math.max(1, Math.trunc(rawConcurrency) || PREFETCH_PAGE_CONCURRENCY_FALLBACK),
-      );
+      // Performance mode pins the width at max regardless of the job's
+      // stored value (client already sends 16, this covers legacy rows).
+      const pageConcurrency = this.performanceMode
+        ? 16
+        : Math.min(
+            16,
+            Math.max(1, Math.trunc(rawConcurrency) || PREFETCH_PAGE_CONCURRENCY_FALLBACK),
+          );
       try {
         await Promise.all(
           Array.from({ length: Math.min(pageConcurrency, toFetch.length) }, () => next()),
@@ -517,6 +550,9 @@ export class PrefetchWorker {
     // snapshot) so a mid-run preset change (Off → 30s while chapter 1
     // downloads) takes effect on the very next transition. A deleted row
     // falls back to the snapshot.
+    // Performance mode skips batch pacing entirely for throughput —
+    // chapters chain immediately (client already sends intervalMs 0).
+    if (this.performanceMode) return;
     if (!controller.signal.aborted && job.batchId) {
       let intervalMs = job.intervalMs;
       try {

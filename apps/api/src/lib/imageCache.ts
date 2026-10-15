@@ -181,6 +181,13 @@ export class ImageCache {
    */
   private static readonly EVICT_MIN_INTERVAL_MS = 30_000;
   private static readonly EVICT_MIN_WRITES = 20;
+  /**
+   * Performance-mode eviction throttle: fewer full dir walks during bulk
+   * downloads at the cost of temporary over-cap. Applied while
+   * `performanceBoost` is on; OFF restores the standard values exactly.
+   */
+  private static readonly PERF_EVICT_MIN_INTERVAL_MS = 120_000;
+  private static readonly PERF_EVICT_MIN_WRITES = 100;
   private lastEvictAt = 0;
   private writesSinceEvict = 0;
 
@@ -194,6 +201,11 @@ export class ImageCache {
    * just ride the TTL (the badge undercounts for a few seconds — fine).
    */
   private static readonly SIZE_TTL_MS = 10_000;
+  /**
+   * Performance-mode size memo: longer TTL means fewer full walks while
+   * the badge polls during bulk downloads (slightly stalers stats).
+   */
+  private static readonly PERF_SIZE_TTL_MS = 30_000;
   private readonly sizeMemo = new Map<ImageKind, { at: number; info: ImageCacheSizeInfo }>();
   private readonly sizeInflight = new Map<ImageKind, Promise<ImageCacheSizeInfo>>();
 
@@ -666,10 +678,13 @@ export class ImageCache {
     this.writesSinceEvict += 1;
     if (!force) {
       const now = Date.now();
-      if (
-        now - this.lastEvictAt < ImageCache.EVICT_MIN_INTERVAL_MS &&
-        this.writesSinceEvict < ImageCache.EVICT_MIN_WRITES
-      ) {
+      const minInterval = this.performanceBoost
+        ? ImageCache.PERF_EVICT_MIN_INTERVAL_MS
+        : ImageCache.EVICT_MIN_INTERVAL_MS;
+      const minWrites = this.performanceBoost
+        ? ImageCache.PERF_EVICT_MIN_WRITES
+        : ImageCache.EVICT_MIN_WRITES;
+      if (now - this.lastEvictAt < minInterval && this.writesSinceEvict < minWrites) {
         return;
       }
     }
@@ -1454,7 +1469,8 @@ export class ImageCache {
   async sizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
     const now = Date.now();
     const memo = this.sizeMemo.get(kind);
-    if (memo && now - memo.at < ImageCache.SIZE_TTL_MS) return memo.info;
+    const ttl = this.performanceBoost ? ImageCache.PERF_SIZE_TTL_MS : ImageCache.SIZE_TTL_MS;
+    if (memo && now - memo.at < ttl) return memo.info;
     const inflight = this.sizeInflight.get(kind);
     if (inflight) return inflight;
     const work = this.computeSizeInfo(kind).then(

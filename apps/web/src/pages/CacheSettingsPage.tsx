@@ -594,9 +594,10 @@ const [panelQuery, setPanelQuery] = useState('');
         </div>
         <p className="cache-settings__help">
           Performance mode runs every page at max throughput: 32 concurrent image fetches
-          (instead of 2), a 1000-entry / 256&nbsp;MB hot cache with 4× longer lifetimes,
-          longer source timeouts with snappier retries, no automatic memory relief,
-          16-pages-at-once downloads with no pacing, and a forced reader (parallel
+          (instead of 2) streamed in-process (no per-miss child spawn), a 1000-entry /
+          256&nbsp;MB hot cache with 4× longer lifetimes, longer source timeouts with
+          snappier retries, no automatic memory relief, 16-pages-at-once downloads with
+          no backoff/pacing, relaxed cache eviction, and a forced reader (parallel
           loading, 50-page preload, data-saver off). It lifts the app&apos;s own
           throttles — it cannot force the OS to spend more CPU, RAM, or network
           bandwidth than the machine has. Sources may rate-limit

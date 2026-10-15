@@ -133,10 +133,12 @@ export interface CachePageSettings {
   autoMemoryReliefRssThresholdMb: number;
   /**
    * Performance mode: lift the low-memory throttles (max image-proxy
-   * concurrency, enlarged in-memory cache + longer TTLs, no auto memory
-   * relief, max download width) for maximum throughput at the cost of
-   * higher RAM/disk churn and more upstream load. Not OS-level CPU/NIC
-   * control — the app can only widen its own parallelism, not pin hardware.
+   * concurrency, enlarged in-memory cache + longer TTLs, in-process image
+   * fetches, max prefetch width with no backoff/pacing, relaxed eviction,
+   * no auto memory relief, max download width) for maximum throughput at
+   * the cost of higher RAM/disk churn and more upstream load. Not OS-level
+   * CPU/NIC control — the app can only widen its own parallelism, not pin
+   * hardware.
    */
   performanceMode: boolean;
 }

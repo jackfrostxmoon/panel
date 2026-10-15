@@ -78,13 +78,14 @@ const registry = createSourceRegistry(config, {
 const { app, prefetchWorker, panelService, imageCache } = createApp({ config, db, registry });
 
 // Re-apply the persisted performance-mode profile (max proxy concurrency,
-// widened TTL cache + stretched TTLs). The runtime profile does not live
+// widened TTL cache + stretched TTLs, in-process image fetches, max
+// prefetch width with no backoff/pacing). The runtime profile does not live
 // in env, so without this a restart would silently drop back to standard
 // limits while the settings file still says ON.
 try {
   const persisted = loadCacheSettings();
   if (persisted.performanceMode) {
-    await applyPerformanceProfile({ panelService, imageCache, registry }, true);
+    await applyPerformanceProfile({ panelService, imageCache, registry, prefetchWorker }, true);
     logger.info('Performance mode enabled (restored from cache settings)', {
       proxyConcurrency: imageCache.getUpstreamConcurrency(),
     });

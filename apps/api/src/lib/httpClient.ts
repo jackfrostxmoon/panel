@@ -253,6 +253,13 @@ export class SourceHttpClient {
   private readonly baseRetryBaseDelayMs: number;
   /** Stream upstream image misses through an isolated child process. */
   private readonly isolatedImageFetch: boolean;
+  /**
+   * Performance-mode bypass: when ON, image misses stream in-process even
+   * when `isolatedImageFetch` is true (saves a `bun` spawn per miss at the
+   * cost of the native RSS spikes isolation contains). Toggled by
+   * `setPerformanceMode`; OFF restores construction behavior exactly.
+   */
+  private performanceBypassIsolation = false;
 
   constructor(sourceName: string, options: SourceHttpClientOptions) {
     this.sourceName = sourceName;
@@ -285,6 +292,7 @@ export class SourceHttpClient {
     this.retryBaseDelayMs = on
       ? Math.min(this.baseRetryBaseDelayMs, PERF_RETRY_BASE_DELAY_MS)
       : this.baseRetryBaseDelayMs;
+    this.performanceBypassIsolation = on;
   }
 
   /** Text-request header block (defaults, or the source's override set). */
@@ -572,7 +580,7 @@ export class SourceHttpClient {
   ): Promise<FetchedImageFile> {
     this.assertAllowedUrl(rawUrl, hosts);
 
-    if (this.isolatedImageFetch) {
+    if (this.isolatedImageFetch && !this.performanceBypassIsolation) {
       try {
         return await this.fetchImageToFileIsolated(rawUrl, init, destPath, hosts, signal);
       } catch (error) {

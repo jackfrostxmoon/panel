@@ -4,12 +4,15 @@ import { AppError } from '../lib/errors.js';
 import { loadCacheSettings, saveCacheSettings } from '../lib/cacheSettingsFile.js';
 import type { ImageCache } from '../lib/imageCache.js';
 import type { PanelService } from '../services/panelService.js';
+import type { PrefetchWorker } from '../lib/prefetchWorker.js';
 import type { SourceRegistry } from '../sources/registry.js';
 
 export interface CacheSettingsDeps {
   panelService: PanelService;
   imageCache: ImageCache;
   registry: SourceRegistry;
+  /** Optional so test apps calling `cacheSettingsRoutes()` without deps keep working. */
+  prefetchWorker?: Pick<PrefetchWorker, 'setPerformanceMode'>;
 }
 
 /**
@@ -23,6 +26,7 @@ export async function applyPerformanceProfile(deps: CacheSettingsDeps, on: boole
   deps.panelService.setPerformanceMode(on);
   deps.imageCache.setPerformanceBoost(on);
   deps.registry.setPerformanceModeAll(on);
+  deps.prefetchWorker?.setPerformanceMode(on);
 }
 
 export function cacheSettingsRoutes(deps?: CacheSettingsDeps): Hono {
