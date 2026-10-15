@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type { Bookmark, Chapter } from '@panel/shared';
 import {
@@ -64,6 +64,158 @@ type ClearKind = 'cover' | 'chapter' | 'both';
 
 /** Live-refresh poll interval — matches the page's freshness expectations. */
 const LIVE_REFRESH_MS = 5_000;
+
+/**
+ * Isolated number rows. Each owns its draft text so keystrokes re-render
+ * only the row — previously the drafts lived in the page component, so
+ * every keystroke re-rendered the whole 1600-line page (bookmark list,
+ * per-row hashes, sort) and typing lagged for seconds. Server sync skips
+ * while the field is focused so background refetches never clobber typing.
+ */
+const CacheLimitRow = memo(function CacheLimitRow({
+  serverText,
+  disabled,
+  saving,
+  hasCustom,
+  onSave,
+  onClear,
+}: {
+  serverText: string;
+  disabled: boolean;
+  saving: boolean;
+  hasCustom: boolean;
+  onSave: (text: string) => void;
+  onClear: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? serverText;
+  useEffect(() => {
+    if (document.activeElement?.id !== 'cache-limit-gb') setDraft(null);
+  }, [serverText]);
+  return (
+    <div className="cache-settings__limit-row">
+      <label className="cache-settings__limit-label" htmlFor="cache-limit-gb">
+        Limit (GB)
+      </label>
+      <input
+        id="cache-limit-gb"
+        className="cache-settings__limit-input"
+        type="number"
+        min={0.0625}
+        step={0.1}
+        inputMode="decimal"
+        value={shown}
+        onChange={(e) => setDraft(e.target.value)}
+        disabled={disabled}
+        aria-describedby="cache-limit-mode"
+      />
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={() => onSave(shown)}
+        disabled={disabled}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      {hasCustom && (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={onClear}
+          disabled={disabled}
+        >
+          Use automatic
+        </button>
+      )}
+    </div>
+  );
+});
+
+const MemoryThresholdRow = memo(function MemoryThresholdRow({
+  serverMb,
+  saving,
+  onSave,
+}: {
+  serverMb: number;
+  saving: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(serverMb);
+  useEffect(() => {
+    if (document.activeElement?.id !== 'memory-threshold-mb') setDraft(null);
+  }, [serverMb]);
+  return (
+    <div className="cache-settings__limit-row">
+      <label htmlFor="memory-threshold-mb" className="search-filters__label">
+        Memory relief threshold
+      </label>
+      <input
+        id="memory-threshold-mb"
+        type="number"
+        min={20}
+        max={20000}
+        step={20}
+        value={shown}
+        onChange={(e) => setDraft(e.target.value)}
+        className="cache-settings__limit-input"
+        aria-describedby="memory-threshold-meta"
+      />
+      <span id="memory-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={() => onSave(shown)}
+        disabled={saving}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+  );
+});
+
+const RssThresholdRow = memo(function RssThresholdRow({
+  serverMb,
+  saving,
+  onSave,
+}: {
+  serverMb: number;
+  saving: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(serverMb);
+  useEffect(() => {
+    if (document.activeElement?.id !== 'memory-rss-threshold-mb') setDraft(null);
+  }, [serverMb]);
+  return (
+    <div className="cache-settings__limit-row">
+      <label htmlFor="memory-rss-threshold-mb" className="search-filters__label">
+        RSS threshold
+      </label>
+      <input
+        id="memory-rss-threshold-mb"
+        type="number"
+        min={128}
+        max={20000}
+        step={64}
+        value={shown}
+        onChange={(e) => setDraft(e.target.value)}
+        className="cache-settings__limit-input"
+        aria-describedby="memory-rss-threshold-meta"
+      />
+      <span id="memory-rss-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={() => onSave(shown)}
+        disabled={saving}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+  );
+});
 
 export function CacheSettingsPage() {
   useDocumentTitle('Image cache');
@@ -137,10 +289,9 @@ export function CacheSettingsPage() {
     saveCacheSettings.isPending && saveCacheSettings.variables
       ? Math.max(20, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefThresholdMb || 20)))
       : Math.max(20, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefThresholdMb || 20)));
-  const [thresholdInput, setThresholdInput] = useState<string>(String(reliefThresholdMb));
 
-  async function saveThreshold() {
-    const mb = Math.round(Number(thresholdInput) || 20);
+  async function saveThreshold(text: string) {
+    const mb = Math.round(Number(text) || 20);
     if (!Number.isFinite(mb) || mb < 20 || mb > 20000) {
       toast('Threshold must be between 20 MB and 20,000 MB.', 'error');
       return;
@@ -153,7 +304,6 @@ export function CacheSettingsPage() {
         autoMemoryReliefRssThresholdMb: reliefRssThresholdMb,
         performanceMode,
       });
-      setThresholdInput(String(mb));
       toast(`Memory relief threshold set to ${mb} MB.`, 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not save threshold.', 'error');
@@ -164,10 +314,9 @@ export function CacheSettingsPage() {
     saveCacheSettings.isPending && saveCacheSettings.variables
       ? Math.max(128, Math.round(Number(saveCacheSettings.variables.autoMemoryReliefRssThresholdMb || 256)))
       : Math.max(128, Math.round(Number(cacheSettingsQuery.data?.autoMemoryReliefRssThresholdMb || 256)));
-  const [rssThresholdInput, setRssThresholdInput] = useState<string>(String(reliefRssThresholdMb));
 
-  async function saveRssThreshold() {
-    const mb = Math.round(Number(rssThresholdInput) || 256);
+  async function saveRssThreshold(text: string) {
+    const mb = Math.round(Number(text) || 256);
     if (!Number.isFinite(mb) || mb < 128 || mb > 20000) {
       toast('RSS threshold must be between 128 MB and 20,000 MB.', 'error');
       return;
@@ -180,7 +329,6 @@ export function CacheSettingsPage() {
         autoMemoryReliefRssThresholdMb: mb,
         performanceMode,
       });
-      setRssThresholdInput(String(mb));
       toast(`Memory relief RSS threshold set to ${mb} MB.`, 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not save RSS threshold.', 'error');
@@ -210,12 +358,6 @@ export function CacheSettingsPage() {
     const id = window.setInterval(() => refetchAllRef.current(), LIVE_REFRESH_MS);
     return () => window.clearInterval(id);
   }, [liveRefresh]);
-  useEffect(() => {
-    setThresholdInput(String(reliefThresholdMb));
-  }, [reliefThresholdMb]);
-  useEffect(() => {
-    setRssThresholdInput(String(reliefRssThresholdMb));
-  }, [reliefRssThresholdMb]);
 
   const clearMutation = useClearImageCache();
   const clearByTagMutation = useClearImageCacheByTag();
@@ -268,12 +410,12 @@ const [panelQuery, setPanelQuery] = useState('');
    */
   const customLimitBytes = limitQuery.data?.customMaxBytes ?? null;
   const computedLimitBytes = limitQuery.data?.computedCapBytes ?? 0;
-  const [limitGb, setLimitGb] = useState<string | null>(null);
-  const shownLimitGb =
-    limitGb ?? String(Math.round(((customLimitBytes ?? computedLimitBytes) / 1024 ** 3) * 100) / 100);
+  const serverLimitGbText = String(
+    Math.round(((customLimitBytes ?? computedLimitBytes) / 1024 ** 3) * 100) / 100,
+  );
 
-  async function doSaveLimit() {
-    const gb = Number.parseFloat(shownLimitGb);
+  async function doSaveLimit(text: string) {
+    const gb = Number.parseFloat(text);
     if (!Number.isFinite(gb)) {
       toast('Enter a limit size in GB (e.g. 8).', 'error');
       return;
@@ -285,7 +427,6 @@ const [panelQuery, setPanelQuery] = useState('');
     }
     try {
       await setLimitMutation.mutateAsync(bytes);
-      setLimitGb(null);
       toast(`Cache size limit set to ${formatBytes(bytes)}.`, 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not update the cache size limit.', 'error');
@@ -295,7 +436,6 @@ const [panelQuery, setPanelQuery] = useState('');
   async function doClearLimit() {
     try {
       await setLimitMutation.mutateAsync(null);
-      setLimitGb(null);
       toast('Cache size limit is automatic again.', 'success');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not update the cache size limit.', 'error');
@@ -606,56 +746,16 @@ const [panelQuery, setPanelQuery] = useState('');
 
         {autoMemoryRelief && (
           <>
-            <div className="cache-settings__limit-row">
-              <label htmlFor="memory-threshold-mb" className="search-filters__label">
-                Memory relief threshold
-              </label>
-              <input
-                id="memory-threshold-mb"
-                type="number"
-                min={20}
-                max={20000}
-                step={20}
-                value={thresholdInput}
-                onChange={(e) => setThresholdInput(e.target.value)}
-                className="cache-settings__limit-input"
-                aria-describedby="memory-threshold-meta"
-              />
-              <span id="memory-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => void saveThreshold()}
-                disabled={saveCacheSettings.isPending}
-              >
-                {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-            <div className="cache-settings__limit-row">
-              <label htmlFor="memory-rss-threshold-mb" className="search-filters__label">
-                RSS threshold
-              </label>
-              <input
-                id="memory-rss-threshold-mb"
-                type="number"
-                min={128}
-                max={20000}
-                step={64}
-                value={rssThresholdInput}
-                onChange={(e) => setRssThresholdInput(e.target.value)}
-                className="cache-settings__limit-input"
-                aria-describedby="memory-rss-threshold-meta"
-              />
-              <span id="memory-rss-threshold-meta" style={{ fontSize: '0.75rem', color: '#888' }}>MB</span>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => void saveRssThreshold()}
-                disabled={saveCacheSettings.isPending}
-              >
-                {saveCacheSettings.isPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+            <MemoryThresholdRow
+              serverMb={reliefThresholdMb}
+              saving={saveCacheSettings.isPending}
+              onSave={(text) => void saveThreshold(text)}
+            />
+            <RssThresholdRow
+              serverMb={reliefRssThresholdMb}
+              saving={saveCacheSettings.isPending}
+              onSave={(text) => void saveRssThreshold(text)}
+            />
           </>
         )}
 
@@ -726,41 +826,14 @@ const [panelQuery, setPanelQuery] = useState('');
               set a custom limit to pin it. Lowering the cap below current usage
               evicts the coldest entries immediately.
             </p>
-            <div className="cache-settings__limit-row">
-              <label className="cache-settings__limit-label" htmlFor="cache-limit-gb">
-                Limit (GB)
-              </label>
-              <input
-                id="cache-limit-gb"
-                className="cache-settings__limit-input"
-                type="number"
-                min={0.0625}
-                step={0.1}
-                inputMode="decimal"
-                value={shownLimitGb}
-                onChange={(e) => setLimitGb(e.target.value)}
-                disabled={limitQuery.isPending || setLimitMutation.isPending}
-                aria-describedby="cache-limit-mode"
-              />
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                onClick={() => void doSaveLimit()}
-                disabled={limitQuery.isPending || setLimitMutation.isPending}
-              >
-                {setLimitMutation.isPending ? 'Saving…' : 'Save'}
-              </button>
-              {customLimitBytes !== null && (
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={() => void doClearLimit()}
-                  disabled={limitQuery.isPending || setLimitMutation.isPending}
-                >
-                  Use automatic
-                </button>
-              )}
-            </div>
+            <CacheLimitRow
+              serverText={serverLimitGbText}
+              disabled={limitQuery.isPending || setLimitMutation.isPending}
+              saving={setLimitMutation.isPending}
+              hasCustom={customLimitBytes !== null}
+              onSave={(text) => void doSaveLimit(text)}
+              onClear={() => void doClearLimit()}
+            />
             <p className="cache-settings__limit-meta" id="cache-limit-mode">
               {customLimitBytes !== null
                 ? `Custom limit ${formatBytes(customLimitBytes)} (automatic would be ${formatBytes(computedLimitBytes)})`
