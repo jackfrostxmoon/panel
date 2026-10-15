@@ -154,7 +154,23 @@ export function sha256Hex(input: string): string {
 /**
  * 8-hex-char cache tag prefix for an image-cache provenance id, matching
  * the server-side `ImageCache.tagPrefix` (`sha256(tag).slice(0, 8)`).
+ *
+ * Memoized: the cache page hashes every panel id on every render (plus
+ * per sort comparison), so without this hundreds of titles re-pay the
+ * synchronous hash on each keystroke/focus and typing lags for seconds.
+ * Bounded (FIFO eviction past the cap) so a huge library can't pin memory.
  */
+const tagPrefixMemo = new Map<string, string>();
+const TAG_PREFIX_MEMO_MAX = 5000;
+
 export function cacheTagPrefix(tag: string): string {
-  return sha256Hex(tag).slice(0, 8);
+  const hit = tagPrefixMemo.get(tag);
+  if (hit !== undefined) return hit;
+  const prefix = sha256Hex(tag).slice(0, 8);
+  tagPrefixMemo.set(tag, prefix);
+  if (tagPrefixMemo.size > TAG_PREFIX_MEMO_MAX) {
+    const oldest = tagPrefixMemo.keys().next();
+    if (!oldest.done) tagPrefixMemo.delete(oldest.value);
+  }
+  return prefix;
 }

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import type { Bookmark, Chapter } from '@panel/shared';
 import {
@@ -214,6 +214,91 @@ const RssThresholdRow = memo(function RssThresholdRow({
         {saving ? 'Saving…' : 'Save'}
       </button>
     </div>
+  );
+});
+
+/**
+ * One Your-panel row. Memoized so parent renders caused by unrelated
+ * state (input focus, threshold drafts, stats polls) skip reconciling
+ * every row's buttons — previously each focus re-rendered all rows.
+ */
+const PanelRow = memo(function PanelRow({
+  entry,
+  total,
+  index,
+  isPending,
+  onDrill,
+  onClearCover,
+  onClearChapter,
+}: {
+  entry: Bookmark;
+  total: ImageCacheTagSummary;
+  index: number;
+  isPending: boolean;
+  onDrill: (entry: Bookmark) => void;
+  onClearCover: (entry: Bookmark) => void;
+  onClearChapter: (entry: Bookmark) => void;
+}) {
+  const isCached = total.entryCount > 0;
+  return (
+    <li
+      key={entry.id}
+      className={
+        'cache-settings__panel-row' +
+        (isCached ? '' : ' cache-settings__panel-row--uncached')
+      }
+      style={{ '--row-index': index } as CSSProperties}
+    >
+      <button
+        type="button"
+        className="cache-settings__panel-info"
+        onClick={() => onDrill(entry)}
+        aria-label={`Open chapter breakdown for ${entry.title}`}
+      >
+        <span className="cache-settings__panel-text">
+          <span className="cache-settings__panel-title">{entry.title}</span>
+          <span className="cache-settings__panel-meta">
+            <span className="cache-settings__source-code">{entry.source}</span>
+            <span className="cache-settings__source-name">{sourceLabel(entry.source)}</span>
+          </span>
+        </span>
+        <IconChevronRight className="cache-settings__panel-chevron" size={14} />
+      </button>
+
+      <div className="cache-settings__panel-footprint">
+        <strong className="cache-settings__panel-bytes">
+          {formatBytes(total.totalBytes)}
+        </strong>
+        <span className="cache-settings__panel-files">
+          {isCached
+            ? `${total.entryCount.toLocaleString()} ${total.entryCount === 1 ? 'file' : 'files'}`
+            : 'Not cached'}
+        </span>
+      </div>
+
+      <div className="cache-settings__panel-actions">
+          <button
+            type="button"
+            className="cache-settings__row-action"
+            disabled={isPending}
+            onClick={() => onClearCover(entry)}
+            aria-label={`Clear cached cover for ${entry.title}`}
+          >
+          <IconTrash size={12} aria-hidden="true" />
+          <span>Clear cover</span>
+        </button>
+          <button
+            type="button"
+            className="cache-settings__row-action"
+            disabled={isPending}
+            onClick={() => onClearChapter(entry)}
+            aria-label={`Clear cached chapter pages for ${entry.title}`}
+          >
+          <IconTrash size={12} aria-hidden="true" />
+          <span>Clear chapters</span>
+        </button>
+      </div>
+    </li>
   );
 });
 
@@ -527,17 +612,39 @@ const [panelQuery, setPanelQuery] = useState('');
     return m;
   }, [tagsSizeQuery.data]);
 
+  /**
+   * Per-panel footprint keyed by panel id (not tag hash): hashed ONCE per
+   * size payload instead of once per row per render (plus per sort
+   * comparison). `panelTotal` below is then a cheap lookup, so focusing or
+   * typing in any input no longer re-pays hundreds of synchronous hashes.
+   */
+  const panelSizeById = useMemo(() => {
+    const m = new Map<string, ImageCacheTagSummary>();
+    for (const entry of yourPanel) {
+      const tag = cacheTagPrefix(entry.panelId);
+      const hit = panelSizeByTag.get(tag);
+      m.set(
+        entry.panelId,
+        hit ?? { tag, entryCount: 0, totalBytes: 0 },
+      );
+    }
+    return m;
+  }, [yourPanel, panelSizeByTag]);
+
   /** Look up a row's total cached footprint (cover + chapter pages). */
   const panelTotal = (entry: Bookmark): ImageCacheTagSummary => {
+    const cached = panelSizeById.get(entry.panelId);
+    if (cached) return cached;
     const tag = cacheTagPrefix(entry.panelId);
-    return (
-      panelSizeByTag.get(tag) ?? {
-        tag,
-        entryCount: 0,
-        totalBytes: 0,
-      }
-    );
+    return { tag, entryCount: 0, totalBytes: 0 };
   };
+
+  /**
+   * Deferred filter text: the input stays controlled by `panelQuery` (so
+   * focus/typing is instant) while the heavy list filters/sorts against
+   * the deferred value a beat later instead of blocking each keystroke.
+   */
+  const deferredPanelQuery = useDeferredValue(panelQuery);
 
   /** Filtered + sorted view of `yourPanel` — matches the trimmed query against the
       title, the source code (mk/nk/rk/…) and the friendly source label
@@ -548,7 +655,7 @@ const [panelQuery, setPanelQuery] = useState('');
       total cached footprint (stable — ties keep the server's recent-first
       order); `recent` skips the sort entirely. */
   const filteredYourPanel = useMemo<Bookmark[]>(() => {
-    const needle = panelQuery.trim().toLowerCase();
+    const needle = deferredPanelQuery.trim().toLowerCase();
     const textFiltered = !needle
       ? yourPanel
       : yourPanel.filter((entry) => {
@@ -560,26 +667,33 @@ const [panelQuery, setPanelQuery] = useState('');
     const visible =
       !hideUncached || tagsSizeQuery.data == null
         ? textFiltered
-        : textFiltered.filter((entry) => panelTotal(entry).entryCount > 0);
+        : textFiltered.filter(
+            (entry) => (panelSizeById.get(entry.panelId)?.entryCount ?? 0) > 0,
+          );
     if (panelSort === 'recent') return visible;
     return [...visible].sort((a, b) => {
-      const diff = panelTotal(a).totalBytes - panelTotal(b).totalBytes;
+      const diff =
+        (panelSizeById.get(a.panelId)?.totalBytes ?? 0) -
+        (panelSizeById.get(b.panelId)?.totalBytes ?? 0);
       return panelSort === 'largest' ? -diff : diff;
     });
-    // panelTotal reads the size map (driven by tagsSizeQuery.data), which
-    // the linter can't see through the function boundary.
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [yourPanel, panelQuery, hideUncached, panelSort, tagsSizeQuery.data]);
+  }, [yourPanel, deferredPanelQuery, hideUncached, panelSort, tagsSizeQuery.data, panelSizeById]);
 
   /** True only when the filter is hiding rows — drives the result-count
       chip and the "no matches" empty state. */
-  const isFiltering = panelQuery.trim().length > 0;
+  const isFiltering = deferredPanelQuery.trim().length > 0;
 
   /** Titles with at least one cached file — the summary's "n cached" tag.
       Mirrors the ghosted/uncached rows below. */
-  const cachedPanelCount = yourPanel.reduce(
-    (count, entry) => count + (panelTotal(entry).entryCount > 0 ? 1 : 0),
-    0,
+  const cachedPanelCount = useMemo(
+    () => {
+      let count = 0;
+      for (const entry of yourPanel) {
+        if ((panelSizeById.get(entry.panelId)?.entryCount ?? 0) > 0) count += 1;
+      }
+      return count;
+    },
+    [yourPanel, panelSizeById],
   );
 
   async function doClear(what: ClearKind) {
@@ -622,6 +736,29 @@ const [panelQuery, setPanelQuery] = useState('');
       toast(error instanceof Error ? error.message : 'Could not clear the image cache.', 'error');
     }
   }
+
+  /**
+   * Stable row callbacks so `PanelRow` memo actually skips rows whose
+   * entry/total didn't change — inline closures would be new every render
+   * and defeat the memo, re-reconciling every row on each keystroke/focus.
+   */
+  const handleDrillRow = useCallback((entry: Bookmark) => setDrillPanel(entry), []);
+  const handleClearCoverRow = useCallback(
+    (entry: Bookmark) => {
+      void doClearByTag('cover', entry.panelId, entry.title);
+    },
+    // doClearByTag is re-created per render but only reads the stable
+    // mutation + toast; depend on those directly for a stable identity.
+    // oxlint-disable-next-line react/exhaustive-deps
+    [clearByTagMutation],
+  );
+  const handleClearChapterRow = useCallback(
+    (entry: Bookmark) => {
+      void doClearByTag('chapter', entry.panelId, entry.title);
+    },
+    // oxlint-disable-next-line react/exhaustive-deps
+    [clearByTagMutation],
+  );
 
   /**
    * Clear a hand-picked list of chapter global ids (the rows the user
@@ -1046,70 +1183,18 @@ const [panelQuery, setPanelQuery] = useState('');
                   </p>
                 ) : (
                   <ul className="cache-settings__panel-list" role="list">
-                    {filteredYourPanel.map((entry, index) => {
-                      const total = panelTotal(entry);
-                      const isCached = total.entryCount > 0;
-                      return (
-                        <li
-                          key={entry.id}
-                          className={
-                            'cache-settings__panel-row' +
-                            (isCached ? '' : ' cache-settings__panel-row--uncached')
-                          }
-                          style={{ '--row-index': index } as CSSProperties}
-                        >
-                          <button
-                            type="button"
-                            className="cache-settings__panel-info"
-                            onClick={() => setDrillPanel(entry)}
-                            aria-label={`Open chapter breakdown for ${entry.title}`}
-                          >
-                            <span className="cache-settings__panel-text">
-                              <span className="cache-settings__panel-title">{entry.title}</span>
-                              <span className="cache-settings__panel-meta">
-                                <span className="cache-settings__source-code">{entry.source}</span>
-                                <span className="cache-settings__source-name">{sourceLabel(entry.source)}</span>
-                              </span>
-                            </span>
-                            <IconChevronRight className="cache-settings__panel-chevron" size={14} />
-                          </button>
-
-                          <div className="cache-settings__panel-footprint">
-                            <strong className="cache-settings__panel-bytes">
-                              {formatBytes(total.totalBytes)}
-                            </strong>
-                            <span className="cache-settings__panel-files">
-                              {isCached
-                                ? `${total.entryCount.toLocaleString()} ${total.entryCount === 1 ? 'file' : 'files'}`
-                                : 'Not cached'}
-                            </span>
-                          </div>
-
-                          <div className="cache-settings__panel-actions">
-                            <button
-                              type="button"
-                              className="cache-settings__row-action"
-                              disabled={isPending}
-                              onClick={() => doClearByTag('cover', entry.panelId, entry.title)}
-                              aria-label={`Clear cached cover for ${entry.title}`}
-                            >
-                              <IconTrash size={12} aria-hidden="true" />
-                              <span>Clear cover</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="cache-settings__row-action"
-                              disabled={isPending}
-                              onClick={() => doClearByTag('chapter', entry.panelId, entry.title)}
-                              aria-label={`Clear cached chapter pages for ${entry.title}`}
-                            >
-                              <IconTrash size={12} aria-hidden="true" />
-                              <span>Clear chapters</span>
-                            </button>
-                          </div>
-                        </li>
-                      );
-                    })}
+                    {filteredYourPanel.map((entry, index) => (
+                      <PanelRow
+                        key={entry.id}
+                        entry={entry}
+                        total={panelTotal(entry)}
+                        index={index}
+                        isPending={isPending}
+                        onDrill={handleDrillRow}
+                        onClearCover={handleClearCoverRow}
+                        onClearChapter={handleClearChapterRow}
+                      />
+                    ))}
                   </ul>
                 )}
               </div>

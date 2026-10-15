@@ -801,9 +801,24 @@ export function useCachedChapterIds(): string[] {
   const [, forceRender] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
+    let lastKey = '';
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (event.query.queryKey[0] !== 'chapterPages') return;
-      forceRender();
+      // Only re-render when the id SET actually changes — previously every
+      // chapterPages cache event (fetch state, progress save, prefetch
+      // tick) force-rendered the whole cache page and its heavy panel list,
+      // keeping the main thread busy while the user just focuses an input.
+      const ids: string[] = [];
+      for (const query of queryClient.getQueryCache().getAll()) {
+        if (query.queryKey[0] !== 'chapterPages') continue;
+        const data = query.state.data as ChapterPages | undefined;
+        if (data?.chapterId) ids.push(data.chapterId);
+      }
+      const key = ids.sort().join('|');
+      if (key !== lastKey) {
+        lastKey = key;
+        forceRender();
+      }
     });
     return unsubscribe;
   }, [queryClient]);
