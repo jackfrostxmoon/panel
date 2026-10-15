@@ -212,7 +212,20 @@ export class ImageCache {
   /** Drop memoized kind sizes (called after explicit deletes). */
   private invalidateSizeMemo(): void {
     this.sizeMemo.clear();
+    this.tagsMemo.clear();
+    this.tagsSizeMemo.clear();
   }
+
+  /**
+   * Memo for the tag-breakdown reads (`listTags`, `sizeInfoByTagSum`):
+   * same TTL as `sizeInfo` — without it every live-refresh tick and every
+   * back-and-forth to the cache page re-pays a full walk + stat per file,
+   * which is what stalls the homepage behind the cache page on Bun's
+   * single-threaded loop. New writes ride the TTL; explicit deletes
+   * invalidate immediately via `invalidateSizeMemo`.
+   */
+  private readonly tagsMemo = new Map<string, { at: number; rows: ImageCacheTagSummary[] }>();
+  private readonly tagsSizeMemo = new Map<string, { at: number; rows: ImageCacheTagSummary[] }>();
 
   /**
    * In-memory index of every cached file's stem → relative path.
@@ -467,9 +480,10 @@ export class ImageCache {
    * per-panel folders with per-chapter subfolders plus the legacy flat
    * root — one recursive walk covers all of it.
    */
-  private async listFiles(): Promise<string[]> {
+  private async listFiles(signal?: AbortSignal): Promise<string[]> {
     const out: string[] = [];
     const walk = async (absDir: string, relDir: string): Promise<void> => {
+      signal?.throwIfAborted();
       let dirents;
       try {
         dirents = await readdir(absDir, { withFileTypes: true });
@@ -524,11 +538,15 @@ export class ImageCache {
    */
   private static readonly BULK_CONCURRENCY = 64;
 
-  private async statSizesParallel(rels: readonly string[]): Promise<{ entryCount: number; totalBytes: number }> {
+  private async statSizesParallel(
+    rels: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<{ entryCount: number; totalBytes: number }> {
     let entryCount = 0;
     let totalBytes = 0;
     const C = ImageCache.BULK_CONCURRENCY;
     for (let i = 0; i < rels.length; i += C) {
+      signal?.throwIfAborted();
       const chunk = rels.slice(i, i + C);
       const sizes = await Promise.allSettled(chunk.map((rel) => stat(join(this.deps.dir, rel))));
       for (const r of sizes) {
@@ -1466,14 +1484,15 @@ export class ImageCache {
     }
   }
 
-  async sizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
+  async sizeInfo(kind: ImageKind, signal?: AbortSignal): Promise<ImageCacheSizeInfo> {
     const now = Date.now();
     const memo = this.sizeMemo.get(kind);
     const ttl = this.performanceBoost ? ImageCache.PERF_SIZE_TTL_MS : ImageCache.SIZE_TTL_MS;
     if (memo && now - memo.at < ttl) return memo.info;
     const inflight = this.sizeInflight.get(kind);
     if (inflight) return inflight;
-    const work = this.computeSizeInfo(kind).then(
+    signal?.throwIfAborted();
+    const work = this.computeSizeInfo(kind, signal).then(
       (info) => {
         this.sizeMemo.set(kind, { at: Date.now(), info });
         this.sizeInflight.delete(kind);
@@ -1488,15 +1507,16 @@ export class ImageCache {
     return work;
   }
 
-  private async computeSizeInfo(kind: ImageKind): Promise<ImageCacheSizeInfo> {
+  private async computeSizeInfo(kind: ImageKind, signal?: AbortSignal): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
+    signal?.throwIfAborted();
     const matching: string[] = [];
-    for (const rel of await this.listFiles()) {
+    for (const rel of await this.listFiles(signal)) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
       matching.push(rel);
     }
-    return this.statSizesParallel(matching);
+    return this.statSizesParallel(matching, signal);
   }
 
   /**
@@ -1508,11 +1528,15 @@ export class ImageCache {
    * hash because it's not necessary for clear-by-tag — we filter by
    * prefix/suffix instead). Legacy files (no tag prefix) are skipped.
    */
-  async listTags(kind: ImageKind): Promise<ImageCacheTagSummary[]> {
+  async listTags(kind: ImageKind, signal?: AbortSignal): Promise<ImageCacheTagSummary[]> {
     await this.ensureDirs();
+    signal?.throwIfAborted();
+    const ttl = this.performanceBoost ? ImageCache.PERF_SIZE_TTL_MS : ImageCache.SIZE_TTL_MS;
+    const memo = this.tagsMemo.get(kind);
+    if (memo && Date.now() - memo.at < ttl) return memo.rows;
     const tagMap = new Map<string, { entryCount: number; totalBytes: number }>();
     const bucket = new Map<string, string[]>();
-    for (const rel of await this.listFiles()) {
+    for (const rel of await this.listFiles(signal)) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
       // Tag hash from the `<kind>-` filename prefix, or from the chapter
@@ -1527,8 +1551,10 @@ export class ImageCache {
     }
     const C = ImageCache.BULK_CONCURRENCY;
     for (const [tagHash, rels] of bucket) {
+      signal?.throwIfAborted();
       const row = { entryCount: 0, totalBytes: 0 };
       for (let i = 0; i < rels.length; i += C) {
+        signal?.throwIfAborted();
         const sizes = await Promise.allSettled(rels.slice(i, i + C).map((rel) => stat(join(this.deps.dir, rel))));
         for (const r of sizes) {
           if (r.status === 'fulfilled') {
@@ -1539,23 +1565,30 @@ export class ImageCache {
       }
       tagMap.set(tagHash, row);
     }
-    return Array.from(tagMap.entries())
+    const rows = Array.from(tagMap.entries())
       .map(([tag, v]) => ({ tag, ...v }))
       .sort((a, b) => b.totalBytes - a.totalBytes);
+    this.tagsMemo.set(kind, { at: Date.now(), rows });
+    return rows;
   }
 
   /** Size of every file matching the given tag (filename prefix or chapter folder). */
-  async sizeInfoByTag(kind: ImageKind, tag: string): Promise<ImageCacheSizeInfo> {
+  async sizeInfoByTag(
+    kind: ImageKind,
+    tag: string,
+    signal?: AbortSignal,
+  ): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
+    signal?.throwIfAborted();
     const tagHash = this.tagPrefix(kind, tag);
     const matching: string[] = [];
-    for (const rel of await this.listFiles()) {
+    for (const rel of await this.listFiles(signal)) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
       if (this.attributeTagHash(kind, rel, e) !== tagHash) continue;
       matching.push(rel);
     }
-    return this.statSizesParallel(matching);
+    return this.statSizesParallel(matching, signal);
   }
 
   /**
@@ -1571,8 +1604,14 @@ export class ImageCache {
   async sizeInfoByTagSum(
     kind: ImageKind,
     tags: readonly string[],
+    signal?: AbortSignal,
   ): Promise<ImageCacheTagSummary[]> {
     await this.ensureDirs();
+    signal?.throwIfAborted();
+    const ttl = this.performanceBoost ? ImageCache.PERF_SIZE_TTL_MS : ImageCache.SIZE_TTL_MS;
+    const memoKey = `${kind}:${[...tags].sort().join(',')}`;
+    const memo = this.tagsSizeMemo.get(memoKey);
+    if (memo && Date.now() - memo.at < ttl) return memo.rows;
     const wanted = new Set(tags.map((t) => this.tagPrefix(kind, t)));
     const result = new Map<string, ImageCacheTagSummary>();
     const bucket = new Map<string, string[]>();
@@ -1581,7 +1620,7 @@ export class ImageCache {
       result.set(hash, { tag: hash, entryCount: 0, totalBytes: 0 });
       bucket.set(hash, []);
     }
-    for (const rel of await this.listFiles()) {
+    for (const rel of await this.listFiles(signal)) {
       const e = pathBasename(rel);
       if (this.fileKind(rel, e) !== kind) continue;
       // Tag hash from the filename prefix, or from the chapter folder
@@ -1593,8 +1632,10 @@ export class ImageCache {
     }
     const C = ImageCache.BULK_CONCURRENCY;
     for (const [hash, rels] of bucket) {
+      signal?.throwIfAborted();
       const row = result.get(hash)!;
       for (let i = 0; i < rels.length; i += C) {
+        signal?.throwIfAborted();
         const sizes = await Promise.allSettled(rels.slice(i, i + C).map((rel) => stat(join(this.deps.dir, rel))));
         for (const r of sizes) {
           if (r.status === 'fulfilled') {
@@ -1604,7 +1645,9 @@ export class ImageCache {
         }
       }
     }
-    return Array.from(result.values());
+    const rows = Array.from(result.values());
+    this.tagsSizeMemo.set(memoKey, { at: Date.now(), rows });
+    return rows;
   }
 
   async clear(kind: ImageKind): Promise<ImageCacheSizeInfo> {

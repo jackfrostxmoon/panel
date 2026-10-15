@@ -111,13 +111,16 @@ export type ChaptersByPanelsResolver = (
  * Size both cache kinds concurrently — one poll pays one walk latency
  * instead of two back-to-back (the walks themselves are memoized too).
  */
-async function imageCacheSizeBoth(imageCache: ImageCache): Promise<{
+async function imageCacheSizeBoth(
+  imageCache: ImageCache,
+  signal?: AbortSignal,
+): Promise<{
   cover: ImageCacheSizeInfo;
   chapter: ImageCacheSizeInfo;
 }> {
   const [cover, chapter] = await Promise.all([
-    imageCache.sizeInfo('cover'),
-    imageCache.sizeInfo('chapter'),
+    imageCache.sizeInfo('cover', signal),
+    imageCache.sizeInfo('chapter', signal),
   ]);
   return { cover, chapter };
 }
@@ -393,10 +396,13 @@ return new Response(Bun.file(entry.path), {
     }
     // The two kind walks run concurrently so one poll pays one walk
     // latency instead of two back-to-back (plus the cache's own memo).
+    // Aborted when the client navigates away (Back to home) so the walk
+    // stops instead of blocking the homepage's own size read.
+    const signal = c.req.raw.signal;
     const info =
       what === 'both'
-        ? await imageCacheSizeBoth(imageCache)
-        : { [what]: await imageCache.sizeInfo(what) };
+        ? await imageCacheSizeBoth(imageCache, signal)
+        : { [what]: await imageCache.sizeInfo(what, signal) };
     // Flat shape the client can read directly: total across all kinds.
     const cover = info.cover ?? { entryCount: 0, totalBytes: 0 };
     const chapter = info.chapter ?? { entryCount: 0, totalBytes: 0 };
@@ -551,7 +557,7 @@ return new Response(Bun.file(entry.path), {
         'Parameter "kind" must be one of: cover, chapter.',
       );
     }
-    return c.json(ok({ kind, tags: await imageCache.listTags(kind) }));
+    return c.json(ok({ kind, tags: await imageCache.listTags(kind, c.req.raw.signal) }));
   });
 
   /**
@@ -574,7 +580,7 @@ return new Response(Bun.file(entry.path), {
         'Missing or invalid "tag" parameter.',
       );
     }
-    return c.json(ok({ kind, tag, ...(await imageCache.sizeInfoByTag(kind, tag)) }));
+    return c.json(ok({ kind, tag, ...(await imageCache.sizeInfoByTag(kind, tag, c.req.raw.signal)) }));
   });
 
   /**
@@ -628,9 +634,10 @@ return new Response(Bun.file(entry.path), {
     for (const [chapterId, panelId] of chapterToPanel) {
       chapterHashToPanelHash.set(imageCache.tagHash(chapterId), imageCache.tagHash(panelId));
     }
+    const signal = c.req.raw.signal;
     const [cover, chapter] = await Promise.all([
-      imageCache.sizeInfoByTagSum('cover', uniquePanel),
-      imageCache.sizeInfoByTagSum('chapter', uniqueChapters),
+      imageCache.sizeInfoByTagSum('cover', uniquePanel, signal),
+      imageCache.sizeInfoByTagSum('chapter', uniqueChapters, signal),
     ]);
     // Merge the two kinds per panel so the client gets one row per panel.
     // Cover rows are keyed by the panel id hash directly — keep them as-is.
@@ -654,7 +661,7 @@ return new Response(Bun.file(entry.path), {
     // panel total. Sweep every on-disk chapter tag and attribute the ones
     // still uncounted via the metadata cache's chapter rows for the
     // requested panels.
-    const onDiskChapterTags = await imageCache.listTags('chapter');
+    const onDiskChapterTags = await imageCache.listTags('chapter', signal);
     const onDiskByHash = new Map(onDiskChapterTags.map((row) => [row.tag, row]));
     const chaptersByPanel = await resolveChaptersByPanels(uniquePanel);
     for (const [panelId, chapterIds] of chaptersByPanel) {

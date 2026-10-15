@@ -978,7 +978,10 @@ export function useRemoveBookmarkFromFolder() {
 export function useImageCacheStats() {
   return useQuery<ImageCacheSizeInfo, ApiClientError>({
     queryKey: queryKeys.imageCacheStats(),
-    queryFn: () => api.getImageCacheSize('both'),
+    // Abortable: leaving the cache page (Back to home) cancels the walk
+    // instead of letting it block the homepage's own size read on Bun's
+    // single-threaded loop.
+    queryFn: ({ signal }) => api.getImageCacheSize('both', signal),
     staleTime: 2_000,
   });
 }
@@ -1076,7 +1079,7 @@ export function usePruneLegacyImageCache() {
 export function useImageCacheTags(kind: 'cover' | 'chapter') {
   return useQuery<ImageCacheTagSummary[], ApiClientError>({
     queryKey: ['imageCache', 'tags', kind],
-    queryFn: async () => (await api.listImageCacheTags(kind)).tags,
+    queryFn: async ({ signal }) => (await api.listImageCacheTags(kind, signal)).tags,
     staleTime: 5_000,
   });
 }
@@ -1098,8 +1101,8 @@ export function useImageCacheTagsSize(
 ) {
   return useQuery<ImageCacheTagSummary[], ApiClientError>({
     queryKey: queryKeys.imageCacheTagsSize(panelIds, chapterTags),
-    queryFn: async () =>
-      (await api.getImageCacheTagsSize(panelIds, chapterTags)).sizes,
+    queryFn: async ({ signal }) =>
+      (await api.getImageCacheTagsSize(panelIds, chapterTags, signal)).sizes,
     enabled: panelIds.length > 0,
     staleTime: 2_000,
   });

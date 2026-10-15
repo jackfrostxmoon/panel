@@ -603,9 +603,10 @@ export const api = {
    * Read how many cached images are on disk, by kind (cover / chapter /
    * both — both returns the sum). Best-effort: failures are ignored by the UI.
    */
-  getImageCacheSize: (what: 'cover' | 'chapter' | 'both' = 'both') =>
+  getImageCacheSize: (what: 'cover' | 'chapter' | 'both' = 'both', signal?: AbortSignal) =>
     request<ImageCacheSizeInfo>(
       `/api/source-image/cache?what=${what}`,
+      { signal },
     ),
 
   /**
@@ -648,9 +649,10 @@ export const api = {
    * these hashes with the tags it has sent (via the source list and the
    * recently-viewed rail) to display "which panel takes how much space".
    */
-  listImageCacheTags: (kind: 'cover' | 'chapter') =>
+  listImageCacheTags: (kind: 'cover' | 'chapter', signal?: AbortSignal) =>
     request<{ kind: 'cover' | 'chapter'; tags: ImageCacheTagSummary[] }>(
       `/api/source-image/cache/tags?kind=${kind}`,
+      { signal },
     ),
 
   /**
@@ -658,9 +660,10 @@ export const api = {
    * string. Used by the chapter-drill-in modal to show "this chapter is
    * X MB / Y pages" before the user decides to clear it.
    */
-  getImageCacheTagSize: (kind: 'cover' | 'chapter', tag: string) =>
+  getImageCacheTagSize: (kind: 'cover' | 'chapter', tag: string, signal?: AbortSignal) =>
     request<ImageCacheSizeInfo & { kind: 'cover' | 'chapter'; tag: string }>(
       `/api/source-image/cache/tag?kind=${kind}&tag=${encodeURIComponent(tag)}`,
+      { signal },
     ),
 
   /**
@@ -679,18 +682,29 @@ export const api = {
    * back — with hundreds of bookmarks a single unbatched request used to 400
    * and made every "Your panel" row read as 0 B.
    */
-  getImageCacheTagsSize: async (panelTags: readonly string[], chapterTags: readonly string[]) => {
+  getImageCacheTagsSize: async (
+    panelTags: readonly string[],
+    chapterTags: readonly string[],
+    signal?: AbortSignal,
+  ) => {
     const batches = buildTagsSizeBatches(panelTags, chapterTags);
     if (batches.length === 0) return { sizes: [] as ImageCacheTagSummary[] };
-    const results = await Promise.all(
-      batches.map((batch) =>
-        request<{ sizes: ImageCacheTagSummary[] }>('/api/source-image/cache/tags-size', {
+    // Sequential so Back navigation aborts between batches instead of
+    // leaving N walks running on the server while the homepage loads.
+    const all: ImageCacheTagSummary[] = [];
+    for (const batch of batches) {
+      signal?.throwIfAborted();
+      const page = await request<{ sizes: ImageCacheTagSummary[] }>(
+        '/api/source-image/cache/tags-size',
+        {
           method: 'POST',
           body: JSON.stringify(batch),
-        }),
-      ),
-    );
-    return { sizes: mergeTagSummaries(results.flatMap((r) => r.sizes)) };
+          signal,
+        },
+      );
+      all.push(...page.sizes);
+    }
+    return { sizes: mergeTagSummaries(all) };
   },
 
   /**

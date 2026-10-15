@@ -293,10 +293,11 @@ export function HomePage() {
     let timer = 0;
     let sameCount = 0;
     let lastBytes: number | null = null;
+    const controller = new AbortController();
 
     const read = () =>
       api
-        .getImageCacheSize('both')
+        .getImageCacheSize('both', controller.signal)
         .then((info) => {
           if (!alive) return;
           setCacheSize(info.totalBytes);
@@ -335,6 +336,7 @@ export function HomePage() {
     window.addEventListener('focus', onReturn);
     return () => {
       alive = false;
+      controller.abort();
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onReturn);
       window.removeEventListener('focus', onReturn);
