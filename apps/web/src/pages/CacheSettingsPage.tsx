@@ -66,6 +66,14 @@ type ClearKind = 'cover' | 'chapter' | 'both';
 const LIVE_REFRESH_MS = 5_000;
 
 /**
+ * Render window into the Your-panel list. Filter/sort run on the full
+ * array, but only this many rows are mounted — a 500-title library used
+ * to mount every row (and reconcile all of them on each input focus),
+ * which is what made every input on the page lag for seconds.
+ */
+const PANEL_PAGE_SIZE = 50;
+
+/**
  * Isolated number rows. Each owns its draft text so keystrokes re-render
  * only the row — previously the drafts lived in the page component, so
  * every keystroke re-rendered the whole 1600-line page (bookmark list,
@@ -696,6 +704,42 @@ const [panelQuery, setPanelQuery] = useState('');
     [yourPanel, panelSizeById],
   );
 
+  /**
+   * Render window into `filteredYourPanel` (same marker pattern as the
+   * bookmarks page): only these rows are mounted, the sentinel appends
+   * more on scroll. Fresh filter/sort/hide identity rewinds to the first
+   * window; data refetches alone don't (that would yank scroll position).
+   */
+  const [panelVisibleCount, setPanelVisibleCount] = useState(PANEL_PAGE_SIZE);
+  const panelSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setPanelVisibleCount(PANEL_PAGE_SIZE);
+  }, [deferredPanelQuery, hideUncached, panelSort, yourPanel.length]);
+
+  const renderedYourPanel = useMemo(
+    () => filteredYourPanel.slice(0, panelVisibleCount),
+    [filteredYourPanel, panelVisibleCount],
+  );
+  const hasMorePanels = panelVisibleCount < filteredYourPanel.length;
+
+  useEffect(() => {
+    if (!hasMorePanels || renderedYourPanel.length === 0) return;
+    const sentinel = panelSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setPanelVisibleCount((count) =>
+            Math.min(count + PANEL_PAGE_SIZE, filteredYourPanel.length),
+          );
+        }
+      },
+      { rootMargin: '600px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMorePanels, renderedYourPanel.length, filteredYourPanel.length]);
+
   async function doClear(what: ClearKind) {
     try {
       const result = await clearMutation.mutateAsync(what);
@@ -1182,20 +1226,42 @@ const [panelQuery, setPanelQuery] = useState('');
                     )}
                   </p>
                 ) : (
-                  <ul className="cache-settings__panel-list" role="list">
-                    {filteredYourPanel.map((entry, index) => (
-                      <PanelRow
-                        key={entry.id}
-                        entry={entry}
-                        total={panelTotal(entry)}
-                        index={index}
-                        isPending={isPending}
-                        onDrill={handleDrillRow}
-                        onClearCover={handleClearCoverRow}
-                        onClearChapter={handleClearChapterRow}
-                      />
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="cache-settings__panel-list" role="list">
+                      {renderedYourPanel.map((entry, index) => (
+                        <PanelRow
+                          key={entry.id}
+                          entry={entry}
+                          total={panelTotal(entry)}
+                          index={index}
+                          isPending={isPending}
+                          onDrill={handleDrillRow}
+                          onClearCover={handleClearCoverRow}
+                          onClearChapter={handleClearChapterRow}
+                        />
+                      ))}
+                    </ul>
+                    {/* Scroll window: pulls the next PANEL_PAGE_SIZE rows
+                        into view (same marker pattern as the bookmarks
+                        page). The button covers no-observer / keyboard
+                        users. */}
+                    <div ref={panelSentinelRef} aria-hidden="true" />
+                    {hasMorePanels && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={() =>
+                          setPanelVisibleCount((count) =>
+                            Math.min(count + PANEL_PAGE_SIZE, filteredYourPanel.length),
+                          )
+                        }
+                      >
+                        Show {(filteredYourPanel.length - panelVisibleCount).toLocaleString()} more (
+                        {renderedYourPanel.length.toLocaleString()} of{' '}
+                        {filteredYourPanel.length.toLocaleString()})
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
