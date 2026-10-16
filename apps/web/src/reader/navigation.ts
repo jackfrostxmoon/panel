@@ -83,7 +83,8 @@ export function isEditableKeyTarget(
  *   S / ↓   → "stepDown"     (vertical: next page; gallery: step scroll down)
  *   G      → "toggleGap"     (bare press only — toggle breathing room between images)
  *   V      → "toggleBookmark" (bare press only — bookmark / unbookmark the current chapter)
- *   C      → "toggleFitHeight" (bare press only — paged mode only: fit the page to the viewport height)
+  *   C      → "toggleFitHeight" in paged mode (fit the page to the viewport height)
+  *          → "toggleFitWidth" in vertical mode (fit pages to the reader width)
  *
  * The single-letter toggles require a bare press (no Shift/Ctrl/Meta/Alt):
  * Shift is reserved for the smooth-scroll chords (Shift+W/S, Shift+↑/↓),
@@ -125,17 +126,25 @@ export function intentForKey(
   | 'toggleGap'
   | 'toggleBookmark'
   | 'toggleFitHeight'
+  | 'toggleFitWidth'
   | null {
   // Bare-press reader toggles — checked before the mode-specific
   // navigation keys so they work in every reading mode (the caller gates
-  // which modes actually render the effect, e.g. fit-to-height is paged-only).
+  // which modes actually render the effect, e.g. fit-to-height is paged-only
+  // and fit-to-width is vertical-only).
   // A bare press means no modifier is held: Shift is reserved for the
   // smooth-scroll chords above, and Ctrl/Meta/Alt guard browser shortcuts
   // (copy/paste/find) from being hijacked by a same-letter toggle.
   const barePress = !shiftKey && !modifiers.ctrlKey && !modifiers.metaKey && !modifiers.altKey;
   if (barePress && (key === 'g' || key === 'G')) return 'toggleGap';
   if (barePress && (key === 'v' || key === 'V')) return 'toggleBookmark';
-  if (barePress && (key === 'c' || key === 'C')) return 'toggleFitHeight';
+  if (barePress && (key === 'c' || key === 'C')) {
+    // One key, per-mode effect (mirrors the settings switches): paged mode
+    // fits the page to the viewport height, vertical mode fits pages to the
+    // reader width. Other modes (and unknown callers without a mode) keep
+    // the historic fit-height intent so the caller can toast.
+    return mode === 'vertical' ? 'toggleFitWidth' : 'toggleFitHeight';
+  }
 
   if (shiftKey && (key === 'ArrowUp' || key === 'w' || key === 'W')) return 'scrollUp';
   if (shiftKey && (key === 'ArrowDown' || key === 's' || key === 'S')) return 'scrollDown';

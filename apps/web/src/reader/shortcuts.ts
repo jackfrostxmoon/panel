@@ -3,11 +3,11 @@
  * ========================
  *
  * A typed, categorized catalogue of the keyboard shortcuts the reader honors.
- * The live input binding itself lives in `navigation.ts` (`intentForKey`) plus
+  * The live input binding itself lives in `navigation.ts` (`intentForKey`) plus
  * the `q` (toggle settings), `f` (cycle reading mode), `e` (fullscreen),
- * `v` (bookmark chapter), `c` (fit to height) and `Escape` exit handled
- * by `ReaderPage`; this module is the human-facing source of truth that drives
- * the help dialog.
+ * `v` (bookmark chapter), `c` (fit to height in paged mode, fit to width in
+ * vertical mode) and `Escape` exit handled by `ReaderPage`; this module is
+ * the human-facing source of truth that drives the help dialog.
  *
  * It is intentionally React-free (like `settings.ts`) so the catalogue is
  * unit-testable in isolation and can grow into the single source of truth for
@@ -173,6 +173,16 @@ export const SHORTCUTS: readonly Shortcut[] = [
     /** Constrain the page to the viewport height — paged mode only, mirroring
      *  the settings switch, which is disabled in the other modes. */
     modes: ['paged'],
+    keys: [{ code: 'c', label: 'C', reversible: false }],
+    category: 'Reader',
+  },
+  {
+    id: 'toggleFitWidth',
+    label: 'Toggle fit to width',
+    /** Stretch pages to the full reader width — vertical mode only, mirroring
+     *  the settings switch, which is disabled in the other modes. Shares the
+     *  `C` key with fit-to-height (one key, per-mode effect). */
+    modes: ['vertical'],
     keys: [{ code: 'c', label: 'C', reversible: false }],
     category: 'Reader',
   },

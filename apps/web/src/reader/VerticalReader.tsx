@@ -27,6 +27,12 @@ export const VerticalReader = forwardRef<
     imageWidthPx: number | null;
     imageHeightPx: number | null;
     imageGap: boolean;
+    /**
+     * Fit pages to the reader width (vertical mode only). When on, the
+     * image-width slider and pixel sizes are ignored and pages fill the
+     * column — the mirror of paged mode's `fitToHeight`.
+     */
+    fitToWidth?: boolean;
     /** true = fetch every page immediately; false = lazy-load while scrolling. */
     eagerPages?: boolean;
     /** While lazy-loading: fetch this many pages beyond the current one. */
@@ -61,6 +67,7 @@ direction?: ReadingDirection;
     imageWidthPx,
     imageHeightPx,
     imageGap,
+    fitToWidth = false,
     eagerPages = true,
     preloadAhead = 1,
     zoom,
@@ -205,10 +212,10 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
     <div
       className={`vertical-reader${
         imageGap ? ' vertical-reader--gap' : ''
-      }${currentZoom !== 1 ? ' vertical-reader--zoomed' : ''}`}
+      }${currentZoom !== 1 ? ' vertical-reader--zoomed' : ''}${fitToWidth ? ' vertical-reader--fit-width' : ''}`}
       style={{
         ...handlers,
-        width: `${verticalReaderWidthPercent(imageWidth)}%`,
+        width: `${verticalReaderWidthPercent(fitToWidth ? 100 : imageWidth)}%`,
         transform: `scale(${currentZoom})`,
         transformOrigin: origin,
       }}
@@ -235,8 +242,8 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
           <ReaderImage
             page={page}
             eager={eagerPages || index <= (currentIndex + 1) * preloadAhead}
-            widthPx={imageWidthPx}
-            heightPx={imageHeightPx}
+            widthPx={fitToWidth ? null : imageWidthPx}
+            heightPx={fitToWidth ? null : imageHeightPx}
             chapterTag={chapterTag}
             onError={onPageError}
             onLoad={onPageLoad}

@@ -36,6 +36,8 @@ export interface ReaderSettings {
   zoomLevel: number;
   /** Paged mode only: constrain the page to the viewport height (fit-to-height). */
   fitToHeight: boolean;
+  /** Vertical mode only: stretch pages to the full reader width (fit-to-width). */
+  fitToWidth: boolean;
   autoLandscapeSingle: boolean;
   dataSaver: boolean;
   glidePreset: 'instant' | 'quick' | 'normal' | 'smooth';

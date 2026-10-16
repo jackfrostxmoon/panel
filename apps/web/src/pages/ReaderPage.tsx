@@ -739,6 +739,16 @@ export function ReaderPage() {
         update({ fitToHeight: !settings.fitToHeight });
         return;
       }
+      if (intent === 'toggleFitWidth') {
+        // Vertical mode only, mirroring the settings switch (disabled elsewhere).
+        if (settings.mode !== 'vertical') {
+          toast('Only available in vertical reading mode.', 'info');
+          return;
+        }
+        event.preventDefault();
+        update({ fitToWidth: !settings.fitToWidth });
+        return;
+      }
       if (intent === 'toggleGap') {
         // Breathing room between pages: vertical + gallery stack pages,
         // paged pairs the two sheets of a spread. All three modes honor
@@ -881,7 +891,7 @@ export function ReaderPage() {
       window.removeEventListener('keyup', stopScroll);
       window.removeEventListener('resize', onResize);
     };
-  }, [settings.direction, settings.mode, settings.imageGap, settings.fitToHeight, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
+  }, [settings.direction, settings.mode, settings.imageGap, settings.fitToHeight, settings.fitToWidth, settings.keyPagesPress, settings.glidePreset, settings.smoothScrollKeys, page, goToPage, handleIntent, goToChapter, toggleFullscreen, panelId, navigate, update, switchMode, toast]);
 
   /* Auto-hide controls: hide on scroll down, reveal on scroll up, hide after
      idle, and stay visible while hovering the toolbar. Pointer movement
@@ -1458,6 +1468,7 @@ export function ReaderPage() {
               imageWidthPx={settings.imageWidthPx}
               imageHeightPx={settings.imageHeightPx}
               imageGap={settings.imageGap}
+              fitToWidth={settings.fitToWidth}
               direction={settings.direction}
               eagerPages={settings.imageLoad === 'parallel' && !settings.dataSaver}
               preloadAhead={settings.dataSaver ? 1 : settings.preloadAhead}

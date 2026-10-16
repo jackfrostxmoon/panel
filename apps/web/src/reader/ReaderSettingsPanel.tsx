@@ -636,6 +636,29 @@ export function ReaderSettingsPanel({
             />
           </div>
 
+          <div
+            className="reader-settings__row"
+            data-disabled={settings.mode !== 'vertical' || undefined}
+          >
+            <span className="reader-settings__row-copy">
+              <span id="rs-fitWidth" className="reader-settings__row-title">
+                Fit to width
+              </span>
+              <span className="reader-settings__row-hint">
+                {settings.mode === 'vertical'
+                  ? 'Fit pages to the reader width so each page fills the screen.'
+                  : 'Only available in vertical reading mode.'}
+              </span>
+            </span>
+            <Switch
+              checked={settings.fitToWidth}
+              labelledBy="rs-fitWidth"
+              onChange={(fitToWidth) => {
+                if (settings.mode === 'vertical') onUpdate({ fitToWidth });
+              }}
+            />
+          </div>
+
           <div className="reader-settings__row">
             <span className="reader-settings__row-copy">
               <span id="rs-progressBar" className="reader-settings__row-title">

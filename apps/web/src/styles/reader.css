@@ -262,6 +262,13 @@
   gap: var(--space-6);
 }
 
+/* Fit-to-width (vertical mode only): pages fill the reader column. The width
+   is forced inline to 100% (ignoring the width slider + pixel sizes); this
+   class marks the state for tooling and future styling. */
+.vertical-reader--fit-width {
+  width: 100%;
+}
+
 .vertical-reader__page {
   width: 100%;
 }

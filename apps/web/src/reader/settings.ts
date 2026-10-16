@@ -159,6 +159,12 @@ export interface ReaderSettings {
    */
   fitToHeight: boolean;
 
+  /**
+   * Vertical mode only: fit pages to the reader width so each page fills
+   * the column. Width slider (and pixel sizes) are ignored while this is on.
+   */
+  fitToWidth: boolean;
+
   // --- Tier 3 QOL additions ---------------------------------------------------
 
   /**
@@ -234,6 +240,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   zoomLevel: 1,
   /** Off by default — preserves the current width-driven paged layout. */
   fitToHeight: false,
+  /** Off by default — preserves the current width-driven vertical layout. */
+  fitToWidth: false,
   // --- Tier 3 QOL additions (defaults) ---
   autoLandscapeSingle: true,
   dataSaver: false,

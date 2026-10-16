@@ -107,6 +107,7 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
     keyPagesPress: finiteNumber(raw['keyPagesPress'], d.keyPagesPress, 0, 3),
     zoomLevel: finiteNumber(raw['zoomLevel'], d.zoomLevel, 0.5, 4),
     fitToHeight: bool(raw['fitToHeight'], d.fitToHeight),
+    fitToWidth: bool(raw['fitToWidth'], d.fitToWidth),
     autoLandscapeSingle: bool(raw['autoLandscapeSingle'], d.autoLandscapeSingle),
     dataSaver: bool(raw['dataSaver'], d.dataSaver),
     showScrollbar: bool(raw['showScrollbar'], d.showScrollbar),
