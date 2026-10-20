@@ -4,7 +4,7 @@ import { BULK_CHAPTER_LIMIT, type Chapter } from '@panel/shared';
 import { useAddChapterBookmarks, useClearChapterBookmarks, useBulkMarkChaptersRead } from '../api/hooks';
 import { useToast } from './Toast';
 import { ConfirmDialog } from './ConfirmDialog';
-import { IconCheck, IconRefresh, IconUndo, IconX } from './icons';
+import { IconArrowLeft, IconCheck, IconRefresh, IconUndo, IconX } from './icons';
 
 interface ChapterBookmarkActionsProps {
   panelId: string;
@@ -17,6 +17,14 @@ interface ChapterBookmarkActionsProps {
    * entry points read as siblings in the same flex row.
    */
   selectChaptersSlot?: ReactNode;
+  /**
+   * "Mark until here" target: the unread chapters before the user's
+   * current chapter (computed by the page), or null when there is no
+   * Continue-Reading chapter or nothing is unread before it. The
+   * component only renders the button + confirmation and fires the
+   * bulk endpoint — all ordering logic lives on the page.
+   */
+  markUntil?: { chapters: Chapter[]; currentLabel: string } | null;
 }
 
 export function ChapterBookmarkActions({
@@ -25,6 +33,7 @@ export function ChapterBookmarkActions({
   bookmarkedCount,
   onClearReadTracker,
   selectChaptersSlot,
+  markUntil,
 }: ChapterBookmarkActionsProps) {
   const addBookmarks = useAddChapterBookmarks();
   const clearBookmarks = useClearChapterBookmarks();
@@ -33,6 +42,7 @@ export function ChapterBookmarkActions({
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [confirmingBulkRead, setConfirmingBulkRead] = useState(false);
   const [confirmingBulkUnread, setConfirmingBulkUnread] = useState(false);
+  const [confirmingMarkUntil, setConfirmingMarkUntil] = useState(false);
 
   const busy = addBookmarks.isPending || clearBookmarks.isPending || bulkMark.isPending;
 
@@ -131,6 +141,23 @@ export function ChapterBookmarkActions({
     }
   };
 
+  /** Bulk mark every chapter before the current one as read. */
+  const handleMarkUntilHere = async () => {
+    if (!markUntil || markUntil.chapters.length === 0) {
+      toast('No previous chapters to mark read', 'info');
+      return;
+    }
+    try {
+      const result = await bulkMarkInChunks(markUntil.chapters, true);
+      toast(
+        `Marked ${result.markedRead} chapter${result.markedRead === 1 ? '' : 's'} read`,
+        'success',
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not mark chapters read.', 'error');
+    }
+  };
+
   return (
     <div className="chapter-bookmark-actions" role="group" aria-label="Chapter bookmark actions">
       <button
@@ -188,6 +215,19 @@ export function ChapterBookmarkActions({
           <span aria-hidden="true"><IconUndo size={14} /></span>
           Unmark All ({chapters.length})
         </button>
+        {markUntil && markUntil.chapters.length > 0 && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => setConfirmingMarkUntil(true)}
+            disabled={busy}
+            aria-label={`Mark the ${markUntil.chapters.length} unread chapters before ${markUntil.currentLabel} as read`}
+            title={`Mark all unread chapters before ${markUntil.currentLabel} as read`}
+          >
+            <span aria-hidden="true"><IconArrowLeft size={14} /></span>
+            Mark Until Here ({markUntil.chapters.length})
+          </button>
+        )}
         {selectChaptersSlot}
       </div>
 
@@ -250,6 +290,18 @@ export function ChapterBookmarkActions({
           void handleMarkAllUnread();
         }}
         onCancel={() => setConfirmingBulkUnread(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmingMarkUntil}
+        title={`Mark chapters before ${markUntil?.currentLabel ?? ''} read?`}
+        message={`This marks the ${markUntil?.chapters.length ?? 0} unread chapter${(markUntil?.chapters.length ?? 0) === 1 ? '' : 's'} before ${markUntil?.currentLabel ?? ''} as read. You can undo it with "Unmark All" above.`}
+        confirmLabel="Mark as Read"
+        onConfirm={() => {
+          setConfirmingMarkUntil(false);
+          void handleMarkUntilHere();
+        }}
+        onCancel={() => setConfirmingMarkUntil(false)}
       />
     </div>
   );

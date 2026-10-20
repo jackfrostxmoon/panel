@@ -263,6 +263,34 @@ export function PanelDetailsPage() {
     : continueEntry?.chapterTitle || 'Latest chapter';
 
   /**
+   * "Mark Until Here" target — every chapter before the user's current
+   * (Continue Reading) chapter that isn't already marked read. Hidden
+   * when there's no current chapter, no numbered chapters before it, or
+   * they're already all read. Post-metadata extras (null chapterNumber)
+   * are excluded since they can't be ordered relative to the current one.
+   */
+  const markUntil = useMemo(() => {
+    if (!continueChapter || continueChapter.chapterNumber === null) return null;
+    const currentNumber = continueChapter.chapterNumber;
+    const targets: Chapter[] = [];
+    for (const c of chapters.data ?? []) {
+      if (
+        c.chapterNumber !== null &&
+        c.chapterNumber < currentNumber &&
+        c.id !== continueChapter.id &&
+        !readChapterIds.has(c.id)
+      ) {
+        targets.push(c);
+      }
+    }
+    if (targets.length === 0) return null;
+    return {
+      chapters: targets,
+      currentLabel: chapterLabel(continueChapter.chapterNumber, continueChapter.title),
+    };
+  }, [continueChapter, chapters.data, readChapterIds]);
+
+  /**
    * Oldest / newest chapter by number. Null numbers sort last in both
    * directions so untagged extras never pose as the first (or latest)
    * chapter. Titles whose numbering starts above 1 — the source itself
@@ -1536,6 +1564,7 @@ const filteredAndSortedChapters = useMemo(() => {
                 ).length
               }
               onClearReadTracker={handleClearReadTracker}
+              markUntil={markUntil}
               /* The "Select chapters" entry button is now a sibling of the
                  "Mark All Read" pair, so the two bulk actions sit next to
                  each other in the same row. */
