@@ -93,13 +93,20 @@ export class ToonilySource implements PanelSource {
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
         maxTextBytes: config.maxTextBytes,
         maxImageBytes: config.maxImageBytes,
-        // Two Cloudflare/content quirks (verified 2026-08):
-        //  - Requests whose User-Agent claims to be a browser get challenged
-        //    (TLS fingerprint mismatch), so NO UA override is sent.
+        // Cloudflare/content quirks (re-verified 2026-10):
+        //  - The main site answers every text request from Bun's TLS stack
+        //    (BoringSSL) with a managed "Just a moment…" challenge —
+        //    headers never help (earlier no-UA trick is obsolete). curl's
+        //    TLS fingerprint passes, so challenged text fetches replay once
+        //    through a spawned curl (`curlTextFallback` in
+        //    SourceHttpClient). The chapter/cover CDNs (tnlycdn.com) skip
+        //    the challenge — they only enforce Referer hotlink protection
+        //    (see fetchImage below).
         //  - Without cookies the site serves the family-mode-filtered feed;
         //    `toonily-mature=1` (the site's own "Family Mode" toggle cookie)
         //    unlocks the full catalog including adult series.
         headers: { Cookie: 'toonily-mature=1' },
+        curlTextFallback: true,
         isolatedImageFetch: config.isolatedImageFetch,
       });
   }

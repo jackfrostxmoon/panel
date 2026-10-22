@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,6 +91,19 @@ export interface SourceHttpClientOptions {
    * false (IMAGE_FETCH_ISOLATED=false) to use the legacy in-process path.
    */
   readonly isolatedImageFetch?: boolean;
+  /**
+   * Replay CHALLENGED text fetches through a spawned curl process before
+   * surfacing an error. Some Cloudflare-fronted sites (toonily.com since
+   * 2026-10) answer every request from Bun's TLS stack (BoringSSL) with a
+   * managed "Just a moment…" challenge — status 403/503, `Server:
+   * cloudflare` — regardless of headers, while curl's own TLS stack passes.
+   * On such a response for a text fetch (`fetchText`/`fetchJson`/`postForm`
+   * — never the streamed image paths), the same guarded request is replayed
+   * once via curl; if that also fails, the original error is surfaced
+   * unchanged, so a box without curl behaves exactly like before. Image
+   * CDNs usually skip the challenge (Referer hotlink checks only).
+   */
+  readonly curlTextFallback?: boolean;
 }
 
 const DEFAULT_UA =
@@ -170,6 +183,32 @@ class ChildInfrastructureError extends Error {
     super(message);
     this.name = 'ChildInfrastructureError';
   }
+}
+
+/**
+ * Write-out trailer appended AFTER the body by the curl fallback. The
+ * ESC-framed marker cannot collide with HTML, so the meta line is split
+ * from the END of the stdout stream without framing ambiguity.
+ */
+const CURL_META_KEY = '\u001b__CURL_META__|';
+const CURL_META_FORMAT = `${CURL_META_KEY}%{http_code}|%{url_effective}\u001b`;
+
+/** Well-known Windows curl location for when PATH is trimmed (services). */
+const CURL_PATH_FALLBACK_WINDOWS = 'C:\\Windows\\System32\\curl.exe';
+
+/**
+ * Resolved once per process: an absolute curl path, or null when the box
+ * has no curl at all. Null keeps the fallback transport permanently off —
+ * no other code may assume curl exists.
+ */
+let curlExecutablePath: string | null | undefined;
+function resolveCurlExecutable(): string | null {
+  if (curlExecutablePath !== undefined) return curlExecutablePath;
+  curlExecutablePath = Bun.which('curl') ?? null;
+  if (curlExecutablePath === null && existsSync(CURL_PATH_FALLBACK_WINDOWS)) {
+    curlExecutablePath = CURL_PATH_FALLBACK_WINDOWS;
+  }
+  return curlExecutablePath;
 }
 
 /** Resolve a sleep promise so the retry loop can back off without a top-level await. */
@@ -253,6 +292,8 @@ export class SourceHttpClient {
   private readonly baseRetryBaseDelayMs: number;
   /** Stream upstream image misses through an isolated child process. */
   private readonly isolatedImageFetch: boolean;
+  /** Replay challenged text fetches through a spawned curl (see options). */
+  private readonly curlTextFallback: boolean;
   /**
    * Performance-mode bypass: when ON, image misses stream in-process even
    * when `isolatedImageFetch` is true (saves a `bun` spawn per miss at the
@@ -278,6 +319,7 @@ export class SourceHttpClient {
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.baseRetryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.isolatedImageFetch = options.isolatedImageFetch ?? true;
+    this.curlTextFallback = options.curlTextFallback ?? false;
   }
 
   /**
@@ -526,6 +568,168 @@ export class SourceHttpClient {
     }
   }
 
+  /** Response shape of a Cloudflare managed TLS challenge (403/503 portal). */
+  private looksLikeCloudflareChallenge(response: Response): boolean {
+    return (
+      (response.status === 403 || response.status === 503) &&
+      (response.headers.get('server') ?? '').toLowerCase().includes('cloudflare')
+    );
+  }
+
+  /**
+   * One guarded text fetch through a spawned curl process — the fallback
+   * transport for sources whose front challenges Bun's TLS fingerprint
+   * (`curlTextFallback`). The SAME guard set applies: allowlist before and
+   * after redirects (curl reports the effective URL), per-attempt timeout
+   * (`--max-time` + a kill backstop), full-body size cap, external abort.
+   * Any failure throws a `ChildInfrastructureError` (or an allowlist
+   * `SourceError`) so the caller keeps the original fetch error — a broken
+   * fallback must never look like a different kind of source outage.
+   */
+  private async doFetchViaCurl(
+    rawUrl: string,
+    init: RequestInit,
+    hosts: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    signal?.throwIfAborted();
+    const executable = resolveCurlExecutable();
+    if (executable === null) {
+      throw new ChildInfrastructureError('curl executable not found on this machine.');
+    }
+
+    // Heading-less requests stay heading-less (the source's header set is
+    // passed verbatim); bodies are small form-urlencoded strings at every
+    // call site (postForm), so argv transfer is safe for them.
+    const args = [
+      '-sS',
+      '--compressed',
+      '-L',
+      '--max-redirs',
+      '10',
+      '--max-time',
+      // curl takes seconds; ceil keeps at least the configured budget.
+      String(Math.max(1, Math.ceil(this.timeoutMs / 1000))),
+    ];
+    const headers = init.headers;
+    if (headers instanceof Headers) {
+      for (const [key, value] of headers) args.push('-H', `${key}: ${value}`);
+    } else if (headers) {
+      for (const [key, value] of Object.entries(headers)) args.push('-H', `${key}: ${value}`);
+    }
+    if (init.method && init.method.toUpperCase() !== 'GET') {
+      args.push('-X', init.method.toUpperCase());
+    }
+    if (typeof init.body === 'string') args.push('--data-binary', init.body);
+    args.push('--write-out', CURL_META_FORMAT, rawUrl);
+
+    let child: ReturnType<typeof Bun.spawn>;
+    try {
+      child = Bun.spawn([executable, ...args], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
+    } catch (error) {
+      throw new ChildInfrastructureError(
+        `Failed to spawn curl fallback: ${error instanceof Error ? error.message : String(error)}.`,
+      );
+    }
+
+    const startedAt = Date.now();
+    // A hung curl must never hold a request slot: --max-time is the primary
+    // guard, this backstop catches a stuck process regardless.
+    const killChild = (): void => {
+      try {
+        child.kill();
+      } catch {
+        // Already exited.
+      }
+    };
+    const backstop = setTimeout(killChild, this.timeoutMs + 10_000);
+    if (signal) signal.addEventListener('abort', killChild, { once: true });
+    try {
+      if (!(child.stdout instanceof ReadableStream)) {
+        throw new ChildInfrastructureError('curl fallback stdout unavailable.');
+      }
+      // Cap exactly like the in-process text reader (trailer gets slack),
+      // so an oversized upstream never lands in heap through the fallback.
+      const cap = this.maxTextBytes + 1024;
+      let received = 0;
+      const chunks: Uint8Array[] = [];
+      const reader = child.stdout.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > cap) {
+          await reader.cancel().catch(() => undefined);
+          logger.warn('Source response exceeded size limit', {
+            url: rawUrl,
+            maxBodyBytes: this.maxTextBytes,
+            transport: 'curl',
+          });
+          throw new ChildInfrastructureError('curl fallback response exceeded the byte cap.');
+        }
+        chunks.push(value);
+      }
+      const exitCode = await child.exited;
+      const bytes = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const text = new TextDecoder().decode(bytes);
+
+      const keyIdx = text.lastIndexOf(CURL_META_KEY);
+      if (keyIdx < 0) {
+        if (exitCode === 28) {
+          throw new ChildInfrastructureError(`curl fallback timed out after ${this.timeoutMs}ms.`);
+        }
+        let stderr = '';
+        if (child.stderr instanceof ReadableStream) {
+          try {
+            stderr = (await new Response(child.stderr).text()).slice(0, 256);
+          } catch {
+            // Diagnostics only.
+          }
+        }
+        throw new ChildInfrastructureError(`curl fallback produced no response (exit ${exitCode}). ${stderr}`);
+      }
+
+      // Trailer form: ESC '<http_code>|<url_effective>' ESC
+      const tail = text.slice(keyIdx + CURL_META_KEY.length);
+      const end = tail.indexOf('\u001b');
+      if (end < 0) {
+        throw new ChildInfrastructureError('curl fallback meta trailer truncated.');
+      }
+      const meta = tail.slice(0, end);
+      const sep = meta.indexOf('|');
+      const status = sep >= 0 ? Number.parseInt(meta.slice(0, sep), 10) : Number.NaN;
+      if (!(status >= 100 && status <= 599)) {
+        throw new ChildInfrastructureError(`curl fallback returned unusable HTTP ${status || 'code'}.`);
+      }
+      const finalUrl = meta.slice(sep + 1) || rawUrl;
+      // The constructed Response has no url property, so the redirect
+      // target is guarded here — mirrors assertResponseOk's check.
+      if (!this.isAllowedUrlHost(finalUrl, hosts)) {
+        logger.warn('curl fallback redirect left the allowlist', { url: rawUrl, finalUrl });
+        throw SourceError.unavailable(this.sourceName, rawUrl);
+      }
+      const body = text.slice(0, keyIdx);
+      logger.debug('Fetched source page (curl fallback)', {
+        url: rawUrl,
+        status,
+        finalUrl,
+        bytes: body.length,
+        durationMs: Date.now() - startedAt,
+        exitCode,
+      });
+      return new Response(body, { status });
+    } finally {
+      clearTimeout(backstop);
+      if (signal) signal.removeEventListener('abort', killChild);
+      killChild();
+    }
+  }
+
   private async request(
     rawUrl: string,
     init: RequestInit,
@@ -534,7 +738,15 @@ export class SourceHttpClient {
     this.assertAllowedUrl(rawUrl);
 
     const startedAt = Date.now();
-    const response = await this.fetchWithRetry(rawUrl, init, this.allowedHosts);
+    // Only TEXT fetches get the curl challenge fallback; streamed image
+    // paths keep the plain Bun transport (and their own isolated worker).
+    const response = await this.fetchWithRetry(
+      rawUrl,
+      init,
+      this.allowedHosts,
+      undefined,
+      this.curlTextFallback,
+    );
 
     const body = await this.readBodyWithLimit(response, maxBytes);
     logger.debug('Fetched source page', {
@@ -990,10 +1202,11 @@ export class SourceHttpClient {
     init: RequestInit,
     hosts: readonly string[],
     signal?: AbortSignal,
+    curlFallback = false,
   ): Promise<Response> {
     const startedAt = Date.now();
     try {
-      const response = await this.doFetchWithRetries(rawUrl, init, hosts, signal);
+      const response = await this.doFetchWithRetries(rawUrl, init, hosts, signal, curlFallback);
       recordSourceRequest(this.sourceName, Date.now() - startedAt, true);
       return response;
     } catch (error) {
@@ -1007,14 +1220,40 @@ export class SourceHttpClient {
     init: RequestInit,
     hosts: readonly string[],
     signal?: AbortSignal,
+    curlFallback = false,
   ): Promise<Response> {
     for (let attempt = 1; attempt <= this.retryCount + 1; attempt++) {
       // Never start (or retry) for a reader that already went away.
       signal?.throwIfAborted();
       try {
         const response = await this.doFetch(rawUrl, init, signal);
-        this.assertResponseOk(response, rawUrl, hosts);
-        return response;
+        try {
+          this.assertResponseOk(response, rawUrl, hosts);
+          return response;
+        } catch (error) {
+          // A definitive 403/503 from a Cloudflare edge is likely a managed
+          // TLS challenge ("Just a moment…"), which Bun's TLS stack cannot
+          // survive — headers never help. For opt-in sources, replay the
+          // SAME guarded request through curl once (its TLS fingerprint
+          // passes). No new error shapes: any fallback failure surfaces the
+          // original error, so a box without curl behaves as before.
+          if (!curlFallback || !this.looksLikeCloudflareChallenge(response)) throw error;
+          signal?.throwIfAborted();
+          try {
+            const viaCurl = await this.doFetchViaCurl(rawUrl, init, hosts, signal);
+            this.assertResponseOk(viaCurl, rawUrl, hosts);
+            return viaCurl;
+          } catch (fallbackError) {
+            if (signal?.aborted) throw signal.reason;
+            logger.info('curl fallback failed — surfacing the original source error', {
+              url: rawUrl,
+              source: this.sourceName,
+              fallbackError:
+                fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+            });
+            throw error;
+          }
+        }
       } catch (error) {
         // Intentional client aborts propagate raw and are never retried.
         if (isClientAbort(error, signal)) throw error;
