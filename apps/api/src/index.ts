@@ -265,13 +265,12 @@ const server = Bun.serve({
   // Vite's `host: true`. Bun defaults to localhost only.
   hostname: '0.0.0.0',
   fetch: app.fetch,
-  // Cap the request body at 1 MiB. Every legitimate endpoint in this app
-  // is well under 100 KB (the largest is the chapter-bookmark batch at
-  // 200 entries × ~500 bytes ≈ 100 KB), so 1 MiB leaves comfortable
-  // headroom while preventing a single oversized POST from pinning the
-  // server's memory. Bun's default is 128 MiB, which is way more than
-  // any endpoint here needs.
-  maxRequestBodySize: 1_048_576,
+  // Cap the request body at 220 MiB. The largest legitimate payload is the
+  // POST /api/backup/import dump — the route validates it at 200 MB — with
+  // every other endpoint well under 100 KB. The server-level cap sits just
+  // above the route limit so route-level validation, not the transport,
+  // decides what fits; anything larger is rejected by either layer.
+  maxRequestBodySize: 230_686_720,
   // Close idle connections after 60s instead of Bun's 10s default. Slow
   // responses are legitimate here: the sources benchmark fans out to live
   // listings (10s+ wall time) and the backup export streams multi-MB dumps.
