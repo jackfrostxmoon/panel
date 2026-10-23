@@ -71,6 +71,48 @@ const JSON_COLUMNS = new Set([
 const BATCH_SIZE = 200;
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/;
 
+/**
+ * FK relationships inside the dump: per table, insert-time column → parent
+ * table. Used to remap child rows onto the parent ids that already live in
+ * the target database (see `UNIQUE_KEYS`).
+ */
+const FK_COLUMNS: Record<string, Record<string, string>> = {
+  chapters: { panel_id: 'panel' },
+  bookmarks: { panel_id: 'panel' },
+  reading_list: { panel_id: 'panel' },
+  panel_ratings: { panel_id: 'panel' },
+  panel_tags: { panel_id: 'panel', tag_id: 'tags' },
+  chapter_bookmarks: { panel_id: 'panel', chapter_id: 'chapters' },
+  reading_progress: { panel_id: 'panel', chapter_id: 'chapters' },
+  recently_viewed: { panel_id: 'panel' },
+  bookmark_folder_items: { folder_id: 'bookmark_folders', bookmark_id: 'bookmarks' },
+  chapter_pages: { chapter_id: 'chapters', panel_id: 'panel' },
+};
+
+/**
+ * Alternate unique keys (beyond the `id` primary key) per table, mirroring
+ * the schema's unique indexes. A dump row that conflicts on one of these is
+ * treated as the same logical row: it is not re-inserted (the target's row
+ * wins) and its id is recorded in the remap table so child rows keep
+ * pointing at it.
+ */
+const UNIQUE_KEYS: Record<string, string[][]> = {
+  panel: [['source', 'source_id'], ['global_id']],
+  chapters: [['source', 'source_id'], ['global_id']],
+  bookmarks: [['panel_id']],
+  bookmark_folders: [['name']],
+  bookmark_folder_items: [['folder_id', 'bookmark_id']],
+  chapter_bookmarks: [['panel_id', 'chapter_id']],
+  reading_progress: [['panel_id', 'chapter_id']],
+  reading_list: [['panel_id']],
+  panel_ratings: [['panel_id']],
+  tags: [['name']],
+  panel_tags: [['panel_id', 'tag_id']],
+  chapter_pages: [['chapter_id']],
+  list_cache: [['kind', 'key', 'source', 'page']],
+  recently_viewed: [['panel_id']],
+};
+
 /** Pure-cache tables skipped by a minimal (bookmarks-only) export. */
 const MINIMAL_EXCLUDED_TABLES = new Set(['chapter_pages', 'list_cache', 'prefetch_jobs']);
 
@@ -332,7 +374,12 @@ function parseDump(text: string): Map<string, CopyBlock> {
 /**
  * Restore a dump produced by buildSqlDump. Inserts run in FK-safe table
  * order with ON CONFLICT DO NOTHING, so re-importing is idempotent.
- * Returns per-table row counts processed.
+ *
+ * Rows whose unique key already exists in the target database are never
+ * re-inserted — the target's copy wins — and their ids are recorded in a
+ * remap table, so child rows referencing a dump-local id (e.g. a series the
+ * target re-cached with a fresh UUID) attach to the existing row instead of
+ * tripping a foreign-key constraint. Returns per-table row counts processed.
  */
 export async function restoreSqlDump(
   db: Database,
@@ -347,6 +394,8 @@ export async function restoreSqlDump(
     throw new Error(`Dump contains unexpected tables: ${unknown.join(', ')}`);
   }
   const counts: Record<string, number> = {};
+  /** Per table: dump-local id → id of the row already in the target db. */
+  const remaps = new Map<string, Map<string, string>>();
   for (const table of BACKUP_TABLE_ORDER) {
     const block = blocks.get(table);
     if (!block || block.rows.length === 0) {
@@ -359,17 +408,77 @@ export async function restoreSqlDump(
     if (block.rows.some((r) => r.length !== block.columns.length)) {
       throw new Error(`Column count mismatch in COPY block for "${table}"`);
     }
+    const colOf = new Map(block.columns.map((c, i) => [c, i]));
+    const idIdx = colOf.get('id');
+
+    // Decode the block once: raw COPY fields → driver values.
+    const rows = block.rows.map((raw) =>
+      raw.map((field, i) => {
+        const column = block.columns[i]!;
+        return toDriverValue(column, convertValue(column, unescapeCopyField(field)));
+      }),
+    );
+
+    // Duplicate detectors: by primary key, then by each alternate key.
+    const byId =
+      idIdx !== undefined
+        ? db.$client.query(`SELECT "id" AS "id" FROM "${table}" WHERE "id" = ?`)
+        : null;
+    const finders = (UNIQUE_KEYS[table] ?? [])
+      .filter((cols) => cols.every((c) => colOf.has(c)))
+      .map((cols) => ({
+        cols,
+        stmt: db.$client.query(
+          `SELECT "id" AS "id" FROM "${table}" WHERE ${cols.map((c) => `"${c}" = ?`).join(' AND ')}`,
+        ),
+      }));
+    const remap = new Map<string, string>();
+    remaps.set(table, remap);
+
+    const fkCols: Array<[number, string]> = [];
+    for (const [col, parent] of Object.entries(FK_COLUMNS[table] ?? {})) {
+      const idx = colOf.get(col);
+      if (idx !== undefined) fkCols.push([idx, parent]);
+    }
+
+    const toInsert: Array<Array<string | number | null>> = [];
+    for (const row of rows) {
+      const work = row.slice();
+      // Adopt ids the target already assigned to the same logical rows.
+      for (const [idx, parent] of fkCols) {
+        const target = remaps.get(parent)?.get(String(work[idx]));
+        if (target !== undefined) work[idx] = target;
+      }
+      const rowId = idIdx !== undefined ? work[idIdx] : null;
+      let existingId: string | null = null;
+      if (byId && typeof rowId === 'string') {
+        existingId = (byId.get(rowId) as { id: string } | null)?.id ?? null;
+      }
+      if (existingId === null) {
+        for (const finder of finders) {
+          const hit = finder.stmt.get(
+            ...finder.cols.map((c) => work[colOf.get(c)!] as string),
+          ) as { id: string } | null;
+          if (hit) {
+            existingId = hit.id;
+            break;
+          }
+        }
+      }
+      if (existingId !== null) {
+        if (typeof rowId === 'string' && rowId !== existingId) remap.set(rowId, existingId);
+        continue;
+      }
+      toInsert.push(work);
+    }
+
     const colList = block.columns.map((c) => `"${c}"`).join(', ');
-    for (let i = 0; i < block.rows.length; i += BATCH_SIZE) {
-      const batch = block.rows.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+      const batch = toInsert.slice(i, i + BATCH_SIZE);
       const params: Array<string | number | null> = [];
       const tuples = batch.map((row) => {
-        const placeholders = row.map((field, colIdx) => {
-          const column = block.columns[colIdx]!;
-          params.push(toDriverValue(column, convertValue(column, unescapeCopyField(field))));
-          return '?';
-        });
-        return `(${placeholders.join(', ')})`;
+        for (const value of row) params.push(value);
+        return `(${row.map(() => '?').join(', ')})`;
       });
       db.$client
         .query(`INSERT INTO "${table}" (${colList}) VALUES ${tuples.join(', ')} ON CONFLICT DO NOTHING`)
