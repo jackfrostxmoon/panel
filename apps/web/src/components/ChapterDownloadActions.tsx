@@ -60,9 +60,8 @@ interface ChapterDownloadActionsProps {
   /** Effective pages-in-flight, resolved by the parent. */
   effectivePageConcurrency: number;
   /**
-   * Performance mode (cache-settings toggle). While on, batches run at max
-   * width with no chapter pacing — the pacing controls below lock to
-   * reflect that instead of silently ignoring edits.
+   * Performance mode (cache-settings toggle). While on, batches use max
+   * width; the user can still set the inter-chapter timer.
    */
   performanceMode?: boolean;
 }
@@ -121,7 +120,7 @@ export function ChapterDownloadActions({
       }
       try {
         const result = await downloader.downloadChapters(batch, {
-          chapterIntervalMs: performanceMode ? 0 : downloadSettings.chapterIntervalMs,
+          chapterIntervalMs: downloadSettings.chapterIntervalMs,
           pageConcurrency: effectivePageConcurrency,
           order,
         });
@@ -150,7 +149,7 @@ export function ChapterDownloadActions({
         toast(error instanceof Error ? error.message : 'Download failed.', 'error');
       }
     },
-    [downloader, downloadSettings.chapterIntervalMs, effectivePageConcurrency, performanceMode, toast],
+    [downloader, downloadSettings.chapterIntervalMs, effectivePageConcurrency, toast],
   );
 
   /* Both bulk buttons open the direction prompt instead of downloading
@@ -322,7 +321,6 @@ export function ChapterDownloadActions({
                 role="radio"
                 aria-checked={active}
                 className={`segmented__option${active ? ' segmented__option--active' : ''}`}
-                disabled={performanceMode}
                 onClick={() => onDownloadSettingsChange({ chapterIntervalMs: preset.value })}
               >
                 <span>{preset.label}</span>
@@ -342,7 +340,6 @@ export function ChapterDownloadActions({
             step={1}
             inputMode="numeric"
             value={Math.round(downloadSettings.chapterIntervalMs / 1000)}
-            disabled={performanceMode}
             onChange={(event) => {
               const raw = event.target.value;
               if (raw === '') {
@@ -365,7 +362,7 @@ export function ChapterDownloadActions({
         <p className="download-settings__help">
           Pauses between chapters so a bulk run doesn't hammer the upstream source. 0 = off
           (back-to-back). Stops immediately if you cancel mid-wait.
-          {performanceMode ? ' Performance mode forces no wait and max width.' : ''}
+          {performanceMode ? ' Performance mode sets max width.' : ''}
         </p>
       </div>
 
