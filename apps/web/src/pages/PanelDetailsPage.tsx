@@ -1644,7 +1644,7 @@ const filteredAndSortedChapters = useMemo(() => {
               onKeyDown={handleKeyDown}
               onChapterAction={handleChapterAction}
               onReadChapter={navigateToChapter}
-              downloader={chapterListDownloader}
+              downloader={showChapterActions ? chapterListDownloader : undefined}
               selectionMode={selectionMode}
               selectedIds={selectedChapterIds}
               onToggleSelected={handleToggleSelected}
