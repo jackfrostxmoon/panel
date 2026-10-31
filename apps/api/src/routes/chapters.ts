@@ -44,7 +44,9 @@ export function chapterRoutes(
     if (!isGlobalId(id)) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Malformed chapter id.', { id });
     }
-    return c.json(ok(await panelService.getChapterPages(id)));
+    const serverPref = c.req.query('mkServer') ?? undefined;
+    const opts = serverPref ? { serverPreference: serverPref } : undefined;
+    return c.json(ok(await panelService.getChapterPages(id, opts)));
   });
 
   /**

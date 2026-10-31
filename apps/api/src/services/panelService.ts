@@ -552,8 +552,8 @@ export class PanelService {
       .catch(() => {});
   }
 
-  getChapterPages(globalChapterId: string): Promise<ChapterPages> {
-    return this.cached(`pages:${globalChapterId}`, this.cacheConfig.pagesMs, async () => {
+  getChapterPages(globalChapterId: string, opts?: { serverPreference?: string }): Promise<ChapterPages> {
+    return this.cached(`pages:${globalChapterId}:${opts?.serverPreference ?? ''}`, this.cacheConfig.pagesMs, async () => {
       const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
       // Fast path: previously-read chapter pages render instantly from DB,
       // with live revalidation behind for URL rotations.
@@ -575,7 +575,7 @@ export class PanelService {
           );
           return cached ? toApiChapterPages(cached, globalChapterId) : undefined;
         },
-        () => source.getChapterPages(nativeId),
+        () => source.getChapterPages(nativeId, opts),
         (cause) =>
           new AppError(
             ErrorCodes.SOURCE_UNAVAILABLE,

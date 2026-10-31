@@ -43,6 +43,8 @@ export interface ReaderSettings {
   glidePreset: 'instant' | 'quick' | 'normal' | 'smooth';
   showScrollbar: boolean;
   defaultFolderId?: string | null;
+  /** MangaKatana image-server preference (only visible for `mk` source). */
+  mkImageServer?: 'default' | 'sv2' | 'sv3';
 }
 
 /**

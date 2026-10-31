@@ -113,7 +113,8 @@ export function ReaderPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const chapterPages = useChapterPages(chapterId);
+  const [storedSettings, setStoredSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
+  const chapterPages = useChapterPages(chapterId, { mkServer: storedSettings.mkImageServer === 'default' ? undefined : storedSettings.mkImageServer });
   const showPagesLoading = useDelayedLoading(chapterPages.isLoading);
   const prefetchChapterPages = usePrefetchChapterPages();
   const queryClient = useQueryClient();
@@ -197,7 +198,6 @@ export function ReaderPage() {
    */
   const toggleBookmarkRef = useRef(toggleBookmark);
   toggleBookmarkRef.current = toggleBookmark;
-  const [storedSettings, setStoredSettings] = useState<ReaderSettings>(DEFAULT_READER_SETTINGS);
 
   /**
    * Performance-mode override (cache-settings toggle): forces parallel

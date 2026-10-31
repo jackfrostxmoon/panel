@@ -683,6 +683,8 @@ export class ImageCache {
       return await fn();
     } finally {
       this.upstreamActive -= 1;
+      // Small delay to spread out upstream fetches and avoid CDN rate limits.
+      await new Promise((r) => setTimeout(r, 300));
       this.upstreamQueue.shift()?.();
     }
   }

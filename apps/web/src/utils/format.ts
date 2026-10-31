@@ -154,7 +154,7 @@ export function proxiedPageUrl(
   if (!sourceName) return page.url;
   const base = getProxiedImageUrl(sourceName, upstreamUrl, 'chapter', chapterTag);
   if (!base) return page.url;
-  if (chapterTag && typeof page.index === 'number') {
+  if (typeof page.index === 'number') {
     return `${base}&p=${page.index}`;
   }
   return base;

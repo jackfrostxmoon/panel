@@ -34,7 +34,8 @@ export function loadReaderSettings(): ReaderSettings {
       glidePreset: 'quick',
       showScrollbar: false,
       defaultFolderId: null,
-  };
+      mkImageServer: 'default',
+    };
   if (!existsSync(FILE_PATH)) {
     // Return defaults by importing from web settings? We can't import web here easily.
     // Let's construct defaults manually.

@@ -185,6 +185,8 @@ export interface ReaderSettings {
   showScrollbar: boolean;
   /** How fast the custom glide scroll feels (keyboard / scroll-to-page). */
   glidePreset: GlidePreset;
+  /** MangaKatana image-server preference (only visible for `mk` source). */
+  mkImageServer?: 'default' | 'sv2' | 'sv3';
 }
 
 /**
@@ -247,6 +249,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   dataSaver: false,
   glidePreset: 'quick',
   showScrollbar: false,
+  mkImageServer: 'default',
 };
 
 /** Forced pages-ahead while performance mode is on (the allowed maximum). */

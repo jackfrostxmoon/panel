@@ -116,6 +116,11 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
       ['instant', 'quick', 'normal', 'smooth'] as const,
       d.glidePreset,
     ),
+    mkImageServer: oneOf<'default' | 'sv2' | 'sv3'>(
+      raw['mkImageServer'],
+      ['default', 'sv2', 'sv3'] as const,
+      d.mkImageServer ?? 'default',
+    ) as 'default' | 'sv2' | 'sv3',
   };
 }
 

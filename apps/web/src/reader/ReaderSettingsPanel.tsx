@@ -38,6 +38,7 @@ import {
   type Shortcut,
   type ShortcutCategory,
 } from './shortcuts';
+import { parseGlobalId } from '@panel/shared';
 import { api } from '../api/client';
 import { useImageConcurrency, useSetImageConcurrency } from '../api/hooks';
 import {
@@ -1093,6 +1094,31 @@ export function ReaderSettingsPanel({
               Only available in vertical mode. 0 = smooth native scrolling.
             </p>
           </SettingGroup>
+
+          {/* --- MangaKatana server selection (only for `mk` source) ----------- */}
+          {(() => {
+            const parsed = parseGlobalId(currentChapterId);
+            const sourceName = parsed?.source ?? '';
+            if (sourceName !== 'mk') return null;
+            return (
+              <SettingGroup
+                id="rs-mk-server"
+                title="MangaKatana server"
+                hint="Pick the image server for MangaKatana chapters. Default = automatic; Server 2 / 3 = specific CDN variants."
+              >
+                <Segmented<'default' | 'sv2' | 'sv3'>
+                  labelledBy="rs-mk-server"
+                  options={[
+                    { value: 'default', label: 'Default' },
+                    { value: 'sv2', label: 'Server 2' },
+                    { value: 'sv3', label: 'Server 3' },
+                  ]}
+                  value={settings.mkImageServer ?? 'default'}
+                  onChange={(mkImageServer) => onUpdate({ mkImageServer: mkImageServer as 'default' | 'sv2' | 'sv3' })}
+                />
+              </SettingGroup>
+            );
+          })()}
 
           <h3 id="reader-settings-shortcuts" className="reader-settings__shortcuts-title">
             Keyboard shortcuts

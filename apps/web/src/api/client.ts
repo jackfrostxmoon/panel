@@ -322,8 +322,12 @@ export const api = {
     request<GenreCatalog>(`/api/panel/genres?source=${encodeURIComponent(source)}`),
   getChapters: (id: string) => request<Chapter[]>(`/api/panel/${encodeURIComponent(id)}/chapters`),
   getChapter: (id: string) => request<Chapter>(`/api/chapter/${encodeURIComponent(id)}`),
-  getChapterPages: (id: string, signal?: AbortSignal) =>
-    request<ChapterPages>(`/api/chapter/${encodeURIComponent(id)}/pages`, { signal }),
+  getChapterPages: (id: string, signal?: AbortSignal, mkServer?: string) => {
+    const params = new URLSearchParams();
+    if (mkServer) params.set('mkServer', mkServer);
+    const query = params.toString();
+    return request<ChapterPages>(`/api/chapter/${encodeURIComponent(id)}/pages${query ? '?' + query : ''}`, { signal });
+  },
 
   /**
    * Enqueue a server-side cache warm: the API's background worker fetches

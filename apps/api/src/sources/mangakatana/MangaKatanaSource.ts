@@ -384,7 +384,7 @@ export class MangaKatanaSource implements PanelSource {
     return chapters;
   }
 
-  async getChapterPages(nativeChapterId: string): Promise<ChapterPages> {
+  async getChapterPages(nativeChapterId: string, opts?: { serverPreference?: string }): Promise<ChapterPages> {
     this.assertEnabled();
     const parts = splitNativeChapterId(nativeChapterId);
     if (!parts) {
@@ -405,7 +405,8 @@ export class MangaKatanaSource implements PanelSource {
     // variant whose CDN actually answers. The chapter <select> is identical
     // on all three variants, so prev/next navigation is unaffected by which
     // variant wins.
-    const serverSuffixes = ['', '?sv=mk', '?sv=3'];
+    const preferredSuffix = opts?.serverPreference === 'sv3' ? '?sv=3' : opts?.serverPreference === 'sv2' ? '?sv=mk' : '';
+    const serverSuffixes = preferredSuffix ? [preferredSuffix, ...['', '?sv=mk', '?sv=3'].filter((s) => s !== preferredSuffix)] : ['', '?sv=mk', '?sv=3'];
     let raw: Awaited<ReturnType<typeof parseChapterReaderPage>> | null = null;
     let usedSuffix = '';
     let lastNotFound = false;

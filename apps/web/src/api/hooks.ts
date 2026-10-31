@@ -67,7 +67,7 @@ export const queryKeys = {
     ['latest', page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
   panel: (id: string) => ['panel', id] as const,
   chapters: (id: string) => ['chapters', id] as const,
-  chapterPages: (id: string) => ['chapterPages', id] as const,
+  chapterPages: (id: string, mkServer?: string) => ['chapterPages', id, mkServer ?? ''] as const,
   bookmarks: () => ['bookmarks'] as const,
   bookmarkByPanel: (panelId: string) => ['bookmarks', 'by-panel', panelId] as const,
   /** Server-side recently-viewed history backing the home-page rail. */
@@ -466,13 +466,14 @@ export function useChapters(id: string, opts?: QueryOpts<Chapter[]>) {
   });
 }
 
-export function useChapterPages(id: string, opts?: QueryOpts<ChapterPages>) {
+export function useChapterPages(id: string, opts?: QueryOpts<ChapterPages> & { mkServer?: string }) {
+  const mkServer = opts?.mkServer;
   return useQuery<ChapterPages, ApiClientError>({
-    queryKey: queryKeys.chapterPages(id),
+    queryKey: queryKeys.chapterPages(id, mkServer ?? ''),
     // Forward TanStack's signal so closing the reader (or hopping to an
     // already-cached chapter) aborts the in-flight JSON fetch instead of
     // letting the server finish scraping a chapter nobody reads anymore.
-    queryFn: ({ signal }) => api.getChapterPages(id, signal),
+    queryFn: ({ signal }) => api.getChapterPages(id, signal, mkServer),
     staleTime: 30 * 60_000,
     refetchOnMount: 'always',
     ...opts,

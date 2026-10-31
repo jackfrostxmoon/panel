@@ -38,7 +38,7 @@ export interface PanelSource {
   getChapters(nativePanelId: string): Promise<Chapter[]>;
 
   /** Fetch the reader payload (pages + navigation) for one chapter. */
-  getChapterPages(nativeChapterId: string): Promise<ChapterPages>;
+  getChapterPages(nativeChapterId: string, opts?: { serverPreference?: string }): Promise<ChapterPages>;
 
   /**
    * Optional: proxy-fetch a raw image (cover / reader page) from this
