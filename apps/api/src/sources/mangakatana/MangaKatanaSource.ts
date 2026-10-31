@@ -78,9 +78,46 @@ export class MangaKatanaSource implements PanelSource {
   /** Allowlist = the source host itself (covers www. and the iN. image CDNs). */
   static allowedHostsFor(baseUrl: string): string[] {
     try {
-      return [new URL(baseUrl).hostname.toLowerCase()];
+      return [new URL(baseUrl).hostname.toLowerCase().replace(/^www\./, '')];
     } catch {
       return [];
+    }
+  }
+
+  /** Clean host for Referer headers — strips www. so CDN hotlink checks pass. */
+  private getRefererHost(): string {
+    return new URL(this.baseUrl).hostname.toLowerCase().replace(/^www\./, '');
+  }
+
+  /**
+   * Cheap liveness probe for one image-server variant: a single Range GET
+   * for the first byte of the variant's first page URL. The body is
+   * cancelled immediately — reaching response headers proves the CDN's
+   * TCP/TLS/HTTP path works without downloading the whole image. Bounded by
+   * a short timeout with no retries so a dead CDN fails fast instead of
+   * burning the full (retryCount + 1) * timeoutMs budget of fetchImage.
+   */
+  private async isImageServerReachable(url: string): Promise<boolean> {
+    if (!this.http.isAllowedImageUrl(url)) return false;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          Referer: `https://${this.getRefererHost()}/`,
+          Range: 'bytes=0-0',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+      // Redirects must stay inside the image allowlist.
+      if (response.url && !this.http.isAllowedImageUrl(response.url)) return false;
+      const reachable = response.ok || response.status === 206;
+      await response.body?.cancel().catch(() => undefined);
+      return reachable;
+    } catch {
+      return false;
     }
   }
 
@@ -103,7 +140,7 @@ export class MangaKatanaSource implements PanelSource {
   async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
     const { bytes, contentType } = await this.http.fetchImage(url, {
-      Referer: `${this.baseUrl}/`,
+      Referer: `https://${this.getRefererHost()}/`,
     }, opts?.signal);
     return { bytes, contentType };
   }
@@ -115,7 +152,7 @@ export class MangaKatanaSource implements PanelSource {
   async fetchImageStream(url: string, destPath: string, opts?: { signal?: AbortSignal }): Promise<StreamedImage> {
     this.assertEnabled();
     return this.http.fetchImageToFile(url, destPath, {
-      Referer: `${this.baseUrl}/`,
+      Referer: `https://${this.getRefererHost()}/`,
     }, opts?.signal);
   }
 
@@ -137,39 +174,6 @@ export class MangaKatanaSource implements PanelSource {
   nativePanelIdFromUrl(url: string): string | null {
     if (!isSameHost(url, this.baseUrl)) return null;
     return panelNativeIdFromUrl(url);
-  }
-
-  /**
-   * Cheap liveness probe for one image-server variant: a single Range GET
-   * for the first byte of the variant's first page URL. The body is
-   * cancelled immediately — reaching response headers proves the CDN's
-   * TCP/TLS/HTTP path works without downloading the whole image. Bounded by
-   * a short timeout with no retries so a dead CDN fails fast instead of
-   * burning the full (retryCount + 1) * timeoutMs budget of fetchImage.
-   */
-  private async isImageServerReachable(url: string): Promise<boolean> {
-    if (!this.http.isAllowedImageUrl(url)) return false;
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-          Referer: `${this.baseUrl}/`,
-          Range: 'bytes=0-0',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(8000),
-      });
-      // Redirects must stay inside the image allowlist (same guard the
-      // shared client applies to full fetches).
-      if (response.url && !this.http.isAllowedImageUrl(response.url)) return false;
-      const reachable = response.ok || response.status === 206;
-      await response.body?.cancel().catch(() => undefined);
-      return reachable;
-    } catch {
-      return false;
-    }
   }
 
   async search(query: string, page = 1): Promise<SourceSearchResult> {
@@ -396,12 +400,11 @@ export class MangaKatanaSource implements PanelSource {
     // host-bound token URLs for a different i*.mangakatana.com CDN, and any
     // one CDN can go dark while its HTML still parses fine (verified
     // 2026-09: Server 1 returns 53 page URLs on the TCP-unreachable i1 host
-    // while i6/i7 serve the same pages). Server 1 is also consistently the
-    // slowest, so Server 3 is probed first with fallback to the others.
-    // So an empty-list check is not enough — probe the first image URL of
-    // each variant and keep the first variant whose CDN actually answers.
-    // The chapter <select> is identical on all three variants, so prev/next
-    // navigation is unaffected by which variant wins.
+    // while i6/i7 serve the same pages). So an empty-list check is not
+    // enough — probe the first image URL of each variant and keep the first
+    // variant whose CDN actually answers. The chapter <select> is identical
+    // on all three variants, so prev/next navigation is unaffected by which
+    // variant wins.
     const serverSuffixes = ['?sv=3', '?sv=mk', ''];
     let raw: Awaited<ReturnType<typeof parseChapterReaderPage>> | null = null;
     let usedSuffix = '';
