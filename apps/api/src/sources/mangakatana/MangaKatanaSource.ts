@@ -405,7 +405,7 @@ export class MangaKatanaSource implements PanelSource {
     // variant whose CDN actually answers. The chapter <select> is identical
     // on all three variants, so prev/next navigation is unaffected by which
     // variant wins.
-    const serverSuffixes = ['?sv=3', '?sv=mk', ''];
+    const serverSuffixes = ['', '?sv=mk', '?sv=3'];
     let raw: Awaited<ReturnType<typeof parseChapterReaderPage>> | null = null;
     let usedSuffix = '';
     let lastNotFound = false;
@@ -462,7 +462,7 @@ export class MangaKatanaSource implements PanelSource {
       });
       throw SourceError.unavailable(this.name, chapterUrl);
     }
-    if (usedSuffix && usedSuffix !== '?sv=3') {
+    if (usedSuffix) {
       logger.info('Chapter pages served from fallback image server', {
         source: this.name,
         nativeChapterId,
