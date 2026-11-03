@@ -27,14 +27,14 @@ export function pickCoverSrc(el: HTMLElement | null | undefined): string | null 
   if (src && !isPlaceholder(src)) return valueOrNull(src);
 
   for (const attr of ['srcset', 'data-srcset']) {
-    const first = firstSrcsetCandidate(el.getAttribute(attr));
-    if (first && !isPlaceholder(first)) return first;
+    const largest = largestSrcsetCandidate(el.getAttribute(attr));
+    if (largest && !isPlaceholder(largest)) return stripWordPressSizeSuffix(largest);
   }
 
   for (const source of pictureSources(el)) {
     for (const attr of ['srcset', 'data-srcset']) {
-      const first = firstSrcsetCandidate(source.getAttribute(attr));
-      if (first && !isPlaceholder(first)) return first;
+      const largest = largestSrcsetCandidate(source.getAttribute(attr));
+      if (largest && !isPlaceholder(largest)) return stripWordPressSizeSuffix(largest);
     }
   }
 
@@ -52,13 +52,6 @@ function isPlaceholder(value: string): boolean {
 function valueOrNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-/** First URL of a `srcset` list (`"a.jpg 1x, b.jpg 2x"` → `"a.jpg"`). */
-function firstSrcsetCandidate(raw: string | undefined | null): string | null {
-  if (!raw) return null;
-  const first = raw.split(',')[0]?.trim().split(/\s+/)[0]?.trim();
-  return first && first.length > 0 ? first : null;
 }
 
 /**

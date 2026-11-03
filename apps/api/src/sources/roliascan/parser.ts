@@ -1,6 +1,6 @@
 import { parse as parseHtml, type HTMLElement } from 'node-html-parser';
 import type { PanelStatus } from '@panel/shared';
-import { pickCoverSrc } from '../coverImage.js';
+import { pickCoverSrc, largestSrcsetCandidate, stripWordPressSizeSuffix } from '../coverImage.js';
 
 export class PageNotRecognizedError extends Error {
   constructor(message: string) {
@@ -348,8 +348,36 @@ export function parsePanelPage(html: string, sourceUrl: string, baseUrl: string)
   const description = textOf(detail.querySelector('.tdetail__synopsis p'));
 
   const posterImg = detail.querySelector('.tdetail__poster img');
-  const coverUrl =
-    absoluteUrl(posterImg ? pickCoverSrc(posterImg) : null, baseUrl) ??
+  let coverUrl: string | null = null;
+  if (posterImg) {
+    function isPlaceholder(value: string): boolean {
+      const lower = value.toLowerCase();
+      return lower.startsWith('data:image/') || lower.includes('blank.gif') || lower.includes('lazyload');
+    }
+    // Prefer direct attributes first; for srcset use largest candidate
+    // (ascending sizes) so the full poster wins over thumbnails.
+    for (const attr of ['data-original', 'data-src', 'data-lazy-src', 'data-lazy']) {
+      const value = posterImg.getAttribute(attr)?.trim();
+      if (value && !isPlaceholder(value)) {
+        coverUrl = stripWordPressSizeSuffix(value);
+        break;
+      }
+    }
+    if (!coverUrl) {
+      const src = posterImg.getAttribute('src')?.trim();
+      if (src && !isPlaceholder(src)) coverUrl = stripWordPressSizeSuffix(src);
+    }
+    if (!coverUrl) {
+      for (const attr of ['srcset', 'data-srcset']) {
+        const largest = largestSrcsetCandidate(posterImg.getAttribute(attr));
+        if (largest && !isPlaceholder(largest)) {
+          coverUrl = stripWordPressSizeSuffix(largest);
+          break;
+        }
+      }
+    }
+  }
+  coverUrl = absoluteUrl(coverUrl || null, baseUrl) ??
     absoluteUrl(root.querySelector('meta[property="og:image"]')?.getAttribute('content'), baseUrl);
 
   return {
