@@ -65,7 +65,7 @@ export class RoliaScanSource implements PanelSource {
       new SourceHttpClient(config.name, {
         allowedHosts: RoliaScanSource.allowedHostsFor(config.baseUrl),
         // Covers and reader images both live on the site's media CDN.
-        imageHosts: ['tovahala.lol'],
+        imageHosts: ['azabria.tovahala.lol'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
