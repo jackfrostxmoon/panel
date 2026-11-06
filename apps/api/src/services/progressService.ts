@@ -17,7 +17,6 @@ import { chapterNumberFromToken as chapterNumberFromTokenHd } from '../sources/h
 import { chapterNumberFromToken as chapterNumberFromTokenMr } from '../sources/mangaread/parser.js';
 import { chapterNumberFromToken as chapterNumberFromTokenTn } from '../sources/toonily/parser.js';
 import { chapterNumberFromToken as chapterNumberFromTokenRd } from '../sources/rawdex/parser.js';
-import { chapterNumberFromToken as chapterNumberFromTokenKs } from '../sources/kaliscan/parser.js';
 import type { SourceRegistry } from '../sources/registry.js';
 
 const chapterNumberFromTokenBySource: Record<string, (token: string) => number | null> = {
@@ -29,7 +28,6 @@ const chapterNumberFromTokenBySource: Record<string, (token: string) => number |
   mr: chapterNumberFromTokenMr,
   tn: chapterNumberFromTokenTn,
   rd: chapterNumberFromTokenRd,
-  ks: chapterNumberFromTokenKs,
 };
 
 /**

@@ -53,8 +53,6 @@ const envSchema = z.object({
   SOURCE_TOONILY_ENABLED: boolFromString(true),
   SOURCE_RAWDEX_BASE_URL: z.url().default('https://rawdex.net'),
   SOURCE_RAWDEX_ENABLED: boolFromString(true),
-  SOURCE_KALISCAN_BASE_URL: z.url().default('https://kaliscan.io'),
-  SOURCE_KALISCAN_ENABLED: boolFromString(true),
   SOURCE_RAWUWU_BASE_URL: z.url().default('https://rawuwu.net'),
   SOURCE_RAWUWU_ENABLED: boolFromString(true),
   SOURCE_ROLIASCAN_BASE_URL: z.url().default('https://roliascan.xyz'),
@@ -258,7 +256,6 @@ export interface AppConfig {
     readonly mangaread: SourceConfig;
     readonly toonily: SourceConfig;
     readonly rawdex: SourceConfig;
-    readonly kaliscan: SourceConfig;
     readonly rawuwu: SourceConfig;
     readonly roliascan: SourceConfig;
   };
@@ -318,7 +315,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const mangareadBaseUrl = e.SOURCE_MANGAREAD_BASE_URL.replace(/\/+$/, '');
   const toonilyBaseUrl = e.SOURCE_TOONILY_BASE_URL.replace(/\/+$/, '');
   const rawdexBaseUrl = e.SOURCE_RAWDEX_BASE_URL.replace(/\/+$/, '');
-  const kaliscanBaseUrl = e.SOURCE_KALISCAN_BASE_URL.replace(/\/+$/, '');
   const rawuwuBaseUrl = e.SOURCE_RAWUWU_BASE_URL.replace(/\/+$/, '');
   const roliascanBaseUrl = e.SOURCE_ROLIASCAN_BASE_URL.replace(/\/+$/, '');
 
@@ -441,18 +437,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         label: 'RawDex',
         baseUrl: rawdexBaseUrl,
         enabled: e.SOURCE_RAWDEX_ENABLED,
-        requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
-        requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
-        requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,
-        maxTextBytes: e.SOURCE_MAX_TEXT_BYTES,
-        maxImageBytes: e.SOURCE_MAX_IMAGE_BYTES,
-        isolatedImageFetch: e.IMAGE_FETCH_ISOLATED,
-      },
-      kaliscan: {
-        name: 'ks',
-        label: 'KaliScan',
-        baseUrl: kaliscanBaseUrl,
-        enabled: e.SOURCE_KALISCAN_ENABLED,
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,

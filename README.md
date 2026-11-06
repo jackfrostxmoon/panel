@@ -209,8 +209,6 @@ commit real values).
 | `SOURCE_TOONILY_ENABLED`              | `true`                                               | Disable to take the source offline (503s)       |
 | `SOURCE_RAWDEX_BASE_URL`              | `https://rawdex.net`                                 | Source base URL — also the SSRF allowlist root  |
 | `SOURCE_RAWDEX_ENABLED`               | `true`                                               | Disable to take the source offline (503s)       |
-| `SOURCE_KALISCAN_BASE_URL`            | `https://kaliscan.io`                                | Source base URL — also the SSRF allowlist root  |
-| `SOURCE_KALISCAN_ENABLED`             | `true`                                               | Disable to take the source offline (503s)       |
 | `SOURCE_RAWUWU_BASE_URL`              | `https://rawuwu.net`                                 | Source base URL — also the SSRF allowlist root  |
 | `SOURCE_RAWUWU_ENABLED`               | `true`                                               | Disable to take the source offline (503s)       |
 | `SHARE_LAN_ADDRESS`                   | _(auto-detected)_                                    | Override the LAN IP reported by `/api/health` for shareable links (QR codes / copy-link). Set it if Docker/WSL/VMware virtual adapters shadow the real one. |
@@ -344,7 +342,7 @@ Every endpoint returns the envelope
 **Global ids** — `mk:solo-leveling.21708` (panel) and `mk:solo-leveling.21708~c200`
 (chapter). The prefix routes to a source adapter (`mk` = MangaKatana, `nk` = NihonKuni,
 `rk` = Rawkuma, `rs` = RawSakura, `hd` = Hiperdex, `mr` = MangaRead, `tn` = Toonily,
-`rd` = RawDex, `ks` = KaliScan, `ru` = RawUwU); the `~` separates the chapter token so ids survive a single URL path
+`rd` = RawDex, `ru` = RawUwU, `rl` = RoliaScan); the `~` separates the chapter token so ids survive a single URL path
 segment.
 
 ### Library & user-data endpoints
@@ -441,9 +439,6 @@ Ten adapters ship today, each split the same way (adapter + pure parser):
   "rawdex-nova" theme):
   - `RawdexSource.ts` — URLs, fetching, id mapping, error translation;
   - `parser.ts` — pure HTML→data functions (cards, meta list, chapter rows, reader).
-- **KaliScan** (`apps/api/src/sources/kaliscan/`, kaliscan.io — PanelDex-style site):
-  - `KaliscanSource.ts` — URLs, fetching, id mapping, error translation;
-  - `parser.ts` — pure HTML→data functions.
 - **RawUwU** (`apps/api/src/sources/rawuwu/`, rawuwu.net — same engine as RawSakura):
   - `RawUwUSource.ts` — URLs, fetching, id mapping, error translation;
   - `parser.ts` — pure JSON/HTML→data functions (SPA API payloads, list pages, reader).
@@ -578,7 +573,7 @@ design). The four historical specs listed above are grandfathered.
 │   │   │   │                 #   source-image, health)
 │   │   │   ├── services/     # business logic (panel, bookmark, bookmark folder,
 │   │   │   │                 #   chapter bookmark, rating, tag, progress, reading list)
-│   │   │   ├── sources/      # PanelSource registry + 10 adapters (mk nk rk rs hd mr tn rd ks ru)
+│   │   │   ├── sources/      # PanelSource registry + 9 adapters (mk nk rk rs hd mr tn rd ru rl)
 │   │   └── drizzle.config.ts
 │   └── web/                  # React 19 + Vite 8 + TanStack Query
 │       ├── public/           # favicon.svg + loading/ spinner assets

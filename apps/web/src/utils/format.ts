@@ -63,7 +63,6 @@ const SOURCE_LABELS: Record<string, string> = {
   mr: 'MangaRead',
   tn: 'Toonily',
   rd: 'RawDex',
-  ks: 'KaliScan',
   ru: 'RawUwU',
   rl: 'RoliaScan',
 };

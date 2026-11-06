@@ -9,7 +9,6 @@ import { HiperdexSource } from './hiperdex/HiperdexSource.js';
 import { MangaReadSource } from './mangaread/MangaReadSource.js';
 import { ToonilySource } from './toonily/ToonilySource.js';
 import { RawdexSource } from './rawdex/RawdexSource.js';
-import { KaliscanSource } from './kaliscan/KaliscanSource.js';
 import { RawUwUSource } from './rawuwu/RawUwUSource.js';
 import { RoliaScanSource } from './roliascan/RoliaScanSource.js';
 
@@ -81,7 +80,6 @@ export function createSourceRegistry(
   registry.register(new MangaReadSource(config.sources.mangaread, undefined, findGenres));
   registry.register(new ToonilySource(config.sources.toonily, undefined, findGenres));
   registry.register(new RawdexSource(config.sources.rawdex, undefined, findGenres));
-  registry.register(new KaliscanSource(config.sources.kaliscan));
   registry.register(new RawUwUSource(config.sources.rawuwu, undefined, findGenres));
   registry.register(new RoliaScanSource(config.sources.roliascan));
   return registry;
