@@ -39,6 +39,13 @@ const READER_LANG = 'en';
 /** Defensive cap on lazy-loaded chapter batches per getChapters call. */
 const MAX_CHAPTER_BATCHES = 60;
 
+/**
+ * Cap on the rotating image-CDN hosts remembered for failover. The site has
+ * served at most a couple of hosts at a time (azabria → azc1bia, …), so this
+ * is a generous safety bound, not an expected steady state.
+ */
+const MAX_LIVE_IMAGE_HOSTS = 6;
+
 export class RoliaScanSource implements PanelSource {
   readonly name: string;
   readonly label: string;
@@ -46,6 +53,24 @@ export class RoliaScanSource implements PanelSource {
   readonly enabled: boolean;
 
   private readonly http: SourceHttpClient;
+
+  /**
+   * Image CDN root hosts (e.g. "tovahala.lol" — any subdomain matches), as
+   * declared on the HTTP client's SSRF allowlist. Host *learning* below uses
+   * the same roots to decide which observed hosts are CDN mirrors.
+   */
+  private readonly imageHostRoots: readonly string[];
+
+  /**
+   * Image CDN hosts the site has actually served, most recently seen first.
+   * RoliaScan rotates these subdomains over time (azabria → azc1bia → …),
+   * and each rotation kills the previous host at the DNS level — every
+   * still-cached URL on the dead host then 504s through the proxy. URLs
+   * captured from freshly parsed HTML keep this list current (see
+   * `noteImageHosts`); failed fetches retry their path against the other
+   * known hosts (see `fetchImageWithFailover`).
+   */
+  private readonly liveImageHosts: string[] = [];
 
   /**
    * Runtime max-throughput profile for the performance-mode toggle —
@@ -60,12 +85,13 @@ export class RoliaScanSource implements PanelSource {
     this.label = config.label;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.enabled = config.enabled;
+    this.imageHostRoots = ['tovahala.lol'];
     this.http =
       http ??
       new SourceHttpClient(config.name, {
         allowedHosts: RoliaScanSource.allowedHostsFor(config.baseUrl),
         // Covers and reader images both live on the site's media CDN.
-        imageHosts: ['tovahala.lol'],
+        imageHosts: this.imageHostRoots,
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
@@ -97,10 +123,17 @@ export class RoliaScanSource implements PanelSource {
    * Covers are served from the site's own media CDN (no hotlink
    * protection), but routing them through the API's image proxy lets the
    * client-side cache warm + persist them in the on-disk image cache.
+   * Stale URLs pointing at an already-rotated CDN host recover through the
+   * host failover below.
    */
   async fetchImage(url: string, opts?: { signal?: AbortSignal }): Promise<SourceImage> {
     this.assertEnabled();
-    return this.http.fetchImage(url, undefined, opts?.signal);
+    return this.fetchImageWithFailover(url, 'image', (candidate) =>
+      this.http.fetchImage(candidate, undefined, opts?.signal).then(({ bytes, contentType }) => ({
+        bytes,
+        contentType,
+      })), opts?.signal,
+    );
   }
 
   /**
@@ -109,7 +142,119 @@ export class RoliaScanSource implements PanelSource {
    */
   async fetchImageStream(url: string, destPath: string, opts?: { signal?: AbortSignal }): Promise<StreamedImage> {
     this.assertEnabled();
-    return this.http.fetchImageToFile(url, destPath, undefined, opts?.signal);
+    return this.fetchImageWithFailover(url, 'streamed image', (candidate) =>
+      this.http.fetchImageToFile(candidate, destPath, undefined, opts?.signal),
+      opts?.signal,
+    );
+  }
+
+  /**
+   * Retry a failed image fetch by rewriting its host to the other image CDN
+   * hosts the site has been observed serving (in-memory, learned from parsed
+   * HTML — see `noteImageHosts`).
+   *
+   * Only retries TRANSIENT terminal failures: upstream timeouts and
+   * DNS/connection-level errors surface as `SOURCE_TIMEOUT`, and upstream
+   * 429/5xx as `SOURCE_UNAVAILABLE`. Definitive 4xx (a genuinely deleted
+   * image) and SSRF allowlist rejections would fail identically on every
+   * host, so they propagate unchanged.
+   */
+  private async fetchImageWithFailover<T>(
+    url: string,
+    label: string,
+    attempt: (candidate: string) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    try {
+      return await attempt(url);
+    } catch (error) {
+      const candidates = this.failoverCandidates(url, error, signal);
+      if (candidates.length === 0) throw error;
+      logger.warn('Image host failed — retrying on other known CDN hosts', {
+        source: this.name,
+        what: label,
+        url,
+        hosts: candidates.map((candidate) => new URL(candidate).hostname),
+      });
+      let lastError = error;
+      for (const candidate of candidates) {
+        try {
+          const result = await attempt(candidate);
+          logger.info('Image fetch succeeded after host failover', {
+            source: this.name,
+            what: label,
+            from: new URL(url).hostname,
+            to: new URL(candidate).hostname,
+          });
+          return result;
+        } catch (candidateError) {
+          // A reader that hung up mid-failover should abort the whole chain
+          // instead of grinding through every remaining host.
+          if (signal?.aborted) throw candidateError;
+          lastError = candidateError;
+        }
+      }
+      throw lastError;
+    }
+  }
+
+  /** Candidate URLs: same path on the other learned image-CDN hosts. */
+  private failoverCandidates(url: string, error: unknown, signal?: AbortSignal): string[] {
+    if (signal?.aborted) return [];
+    if (!(error instanceof SourceError)) return [];
+    // SOURCE_TIMEOUT: upstream timeout OR a DNS/connection-level error —
+    // exactly the two shapes a dead or unreachable CDN host produces.
+    // SOURCE_UNAVAILABLE (not an allowlist rejection): upstream 429/5xx or
+    // connection failure with a status — still worth another host.
+    const retriable =
+      error.code === ErrorCodes.SOURCE_TIMEOUT ||
+      (error.code === ErrorCodes.SOURCE_UNAVAILABLE && !/not allowed/i.test(error.message));
+    if (!retriable) return [];
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return [];
+    }
+    const host = parsed.hostname.toLowerCase();
+    const candidates: string[] = [];
+    for (const liveHost of this.liveImageHosts) {
+      if (liveHost === host) continue;
+      const rewritten = new URL(url);
+      rewritten.hostname = liveHost;
+      candidates.push(rewritten.toString());
+    }
+    return candidates;
+  }
+
+  /** True when `host` is (a subdomain of) one of the image CDN roots. */
+  private isImageHost(host: string): boolean {
+    return this.imageHostRoots.some((root) => host === root || host.endsWith(`.${root}`));
+  }
+
+  /**
+   * Record the image CDN hosts seen in freshly parsed markup, newest first.
+   * Called on every successfully parsed panel/chapter page, so the failover
+   * list tracks the site's current rotation without any configuration.
+   */
+  private noteImageHosts(urls: ReadonlyArray<string | null | undefined>): void {
+    for (const url of urls) {
+      if (!url) continue;
+      let host: string;
+      try {
+        host = new URL(url).hostname.toLowerCase();
+      } catch {
+        continue;
+      }
+      if (!this.isImageHost(host) || this.liveImageHosts[0] === host) continue;
+      const existing = this.liveImageHosts.indexOf(host);
+      if (existing >= 0) this.liveImageHosts.splice(existing, 1);
+      this.liveImageHosts.unshift(host);
+      if (this.liveImageHosts.length > MAX_LIVE_IMAGE_HOSTS) {
+        this.liveImageHosts.length = MAX_LIVE_IMAGE_HOSTS;
+      }
+      logger.info('Observed RoliaScan image CDN host', { source: this.name, host });
+    }
   }
 
   buildPanelUrl(nativePanelId: string): string {
@@ -222,6 +367,7 @@ export class RoliaScanSource implements PanelSource {
 
     try {
       const raw = parsePanelPage(body, finalUrl, this.baseUrl);
+      this.noteImageHosts([raw.coverUrl]);
       return {
         ...this.toPanelSummary({
           nativeId: nativePanelId,
@@ -335,6 +481,8 @@ export class RoliaScanSource implements PanelSource {
       }
       throw error;
     }
+
+    this.noteImageHosts([parsed.coverUrl, ...parsed.imageUrls]);
 
     if (parsed.imageUrls.length === 0) {
       logger.error('Chapter page had no extractable images', {
