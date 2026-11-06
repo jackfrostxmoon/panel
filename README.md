@@ -584,7 +584,7 @@ design). The four historical specs listed above are grandfathered.
     │       │   ├── hooks/        # useDelayedLoading, useChapterDownloader, useActiveFolderContents
 │       │   ├── pages/        # Home, Search, Latest, Details, Bookmarks, Reader, NotFound
 │       │   ├── reader/       # readers (vertical/paged/gallery), toolbar, settings panel,
-│       │   │                 #   shortcuts, zoom gestures + pure-logic unit tests
+│       │   │                 #   shortcuts + pure-logic unit tests
 │       │   ├── utils/        # format helpers, source labels, image-proxy URL helper,
 │       │   │                 #   bookmark export, search history, recently viewed
 │       │   └── styles/       # design tokens + component/page/reader CSS
@@ -609,7 +609,7 @@ resolves itself for the active reading direction (LTR/RTL).
 | `→` / `D` / `Space` | Next page     |
 | `↑` / `W`           | Previous page |
 | `↓` / `S`           | Next page     |
-| Mouse wheel         | Previous / next page (one notch = one page; a zoomed page is panned first) |
+| Mouse wheel         | Previous / next page (one notch = one page; a scrollable page is panned first) |
 
 #### Gallery mode
 

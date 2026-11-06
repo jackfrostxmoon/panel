@@ -378,12 +378,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Pinch-to-zoom (T2-1): when a page is magnified past the stage the stage
-     must let the scaled image overflow so the user can pan (drag) around it.
-     The zoom is anchored to the pinch midpoint via transform-origin. */
   overflow: auto;
-  /* Allow vertical scroll (tall pages) + pinch-zoom on touch; two-finger
-     pinch still reaches the gesture handler since pan-y doesn't block it. */
+  /* Allow vertical scrolling of tall pages on touch. */
   touch-action: pan-y;
 }
 
@@ -447,12 +443,6 @@
 
 .paged-reader--fit-height .paged-reader__sheet .reader-image__img {
   max-height: 100%;
-}
-
-.paged-reader__stage .reader-image {
-  transform-box: fill-box;
-  transform-origin: var(--zoom-origin, center center);
-  transition: transform 60ms linear;
 }
 
 .paged-reader__zone {

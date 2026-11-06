@@ -41,10 +41,6 @@ export function ReaderImage({
   eager = false,
   widthPx,
   heightPx,
-  /** Zoom multiplier (T2-1). 1.0 = fit to stage; > 1.0 magnifies. */
-  zoom = 1,
-  /** Where to anchor the zoom (0..1 of the box). Default is the center. */
-  transformOrigin = 'center center',
   /** Chapter global id (e.g. `mk:solo-leveling.21708~c200`), used as the
    *  cache provenance tag so chapter pages can be cleared selectively. */
   chapterTag = null,
@@ -57,10 +53,6 @@ export function ReaderImage({
   widthPx?: number | null;
   /** User-set fixed height in px; `null`/`undefined` uses the auto layout preset. */
   heightPx?: number | null;
-  /** Zoom multiplier (T2-1). 1.0 = fit to stage; > 1.0 magnifies. */
-  zoom?: number;
-  /** CSS `transform-origin` for the zoom, e.g. "center center" or "50% 50%". */
-  transformOrigin?: string;
   /** Chapter global id used as the cache provenance tag. */
   chapterTag?: string | null;
   /**
@@ -119,9 +111,6 @@ export function ReaderImage({
     ...(hasWidth ? { width: `${widthPx}px`, maxWidth: '100%' } : {}),
     ...(hasHeight ? { height: `${heightPx}px`, maxHeight: '100%' } : {}),
     ...(!hasWidth && hasHeight ? { width: 'auto' } : {}),
-    /* Pinch-to-zoom (T2-1): scale the image beyond its "fit" box. The parent
-       sets transformOrigin to the pinch point so the zoom feels anchored. */
-    ...(zoom !== 1 ? { transform: `scale(${zoom})`, transformOrigin } : {}),
   };
 
   /* When both dimensions are user-set the wrappper box shape may not match the image,

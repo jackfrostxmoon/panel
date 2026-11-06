@@ -33,7 +33,6 @@ export interface ReaderSettings {
   showAutoScrollButton: boolean;
   wheelPagesPerNotch: number;
   keyPagesPress: number;
-  zoomLevel: number;
   /** Paged mode only: constrain the page to the viewport height (fit-to-height). */
   fitToHeight: boolean;
   /** Vertical mode only: stretch pages to the full reader width (fit-to-width). */

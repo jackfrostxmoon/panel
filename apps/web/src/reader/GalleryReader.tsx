@@ -4,7 +4,6 @@ import { ReaderImage } from './ReaderImage';
 import { galleryColumnMinMax, type ReadingDirection } from './settings';
 import type { GlidePreset } from './settings';
 import { halfSideFromClientX } from './navigation';
-import { useZoomGesture } from './useZoomGesture';
 import { glideScrollTo } from './glideScroll';
 
 /**
@@ -27,10 +26,6 @@ export const GalleryReader = forwardRef<
     imageWidthPx: number | null;
     imageHeightPx: number | null;
     imageGap: boolean;
-    /** Zoom multiplier (T2-1). 1.0 = fit. */
-    zoom?: number;
-    /** Called whenever the zoom changes (pinch). */
-    onZoomChange?: (zoom: number) => void;
     onPageChange: (page: number) => void;
     onProgress?: (page: number, scrollRatio: number) => void;
     onChapterNavigate: (dir: 'next' | 'prev') => void;
@@ -57,8 +52,6 @@ export const GalleryReader = forwardRef<
     imageWidthPx,
     imageHeightPx,
     imageGap,
-    zoom,
-    onZoomChange,
     onPageChange,
     onProgress,
     onChapterNavigate,
@@ -71,10 +64,6 @@ onPageError,
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { zoom: currentZoom, origin, handlers } = useZoomGesture(containerRef, {
-    initialZoom: zoom ?? 1,
-    onZoomChange,
-  });
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const glideAnimRef = useRef(0);
   const onPageChangeRef = useRef(onPageChange);
@@ -219,14 +208,9 @@ onPageError,
 
   return (
     <div
-      className={`gallery-reader${imageGap ? ' gallery-reader--gap' : ''}${
-        currentZoom !== 1 ? ' gallery-reader--zoomed' : ''
-      }`}
+      className={`gallery-reader${imageGap ? ' gallery-reader--gap' : ''}`}
       style={{
         ...columnsStyle,
-        ...handlers,
-        transform: `scale(${currentZoom})`,
-        transformOrigin: origin,
       }}
       onClick={handleHalfClick}
       ref={containerRef}

@@ -3,7 +3,6 @@ import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import type { ReadingDirection, SpreadOddPolicy } from './settings';
 import { isOddSpread, spreadPages, halfSideFromClientX } from './navigation';
-import { useZoomGesture } from './useZoomGesture';
 import { proxiedPageUrl } from '../utils/format';
 
 /**
@@ -29,8 +28,6 @@ export function PagedReader({
   doublePage,
   spreadOddPolicy = 'blank',
   autoLandscapeSingle = true,
-  zoom,
-  onZoomChange,
   onNavigate,
   /** Chapter global id used as the cache provenance tag. */
   chapterTag = null,
@@ -74,10 +71,6 @@ export function PagedReader({
    * squeezed into half the stage.
    */
   autoLandscapeSingle?: boolean;
-  /** Current zoom level (T2-1). 1.0 = fit. */
-  zoom?: number;
-  /** Called whenever the zoom changes (pinch). */
-  onZoomChange?: (zoom: number) => void;
   /** 'forward' | 'backward' in *reading* direction. */
   onNavigate: (intent: 'forward' | 'backward') => void;
   /** Chapter global id used as the cache provenance tag. */
@@ -112,11 +105,6 @@ export function PagedReader({
   onPageLoad?: (page: PanelPage) => void;
 }) {
   const touchStartX = useRef<number | null>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const { zoom: currentZoom, origin, handlers, isPinching } = useZoomGesture(stageRef, {
-    initialZoom: zoom ?? 1,
-    onZoomChange,
-  });
   const spread = spreadPages(page, pages.length, direction);
 
   /* Preload pages so a page turn is instant.
@@ -285,8 +273,6 @@ export function PagedReader({
     const startX = touchStartX.current;
     if (startX === null) return;
     touchStartX.current = null;
-    // A two-finger pinch is a zoom, not a swipe — never navigate.
-    if (isPinching()) return;
     const delta = event.clientX - startX;
     if (Math.abs(delta) < 48) return; // too small — treat as tap, not swipe
     const swipedTowardForward = direction === 'rtl' ? delta > 0 : delta < 0;
@@ -348,8 +334,6 @@ export function PagedReader({
 
         <div
           className="paged-reader__stage"
-          ref={stageRef}
-          {...handlers}
         >
         {effectiveDoublePage ? (
           <div className="paged-reader__spread">
@@ -361,8 +345,6 @@ export function PagedReader({
                       key={`${chapterTag ?? ''}:${leftPage.index}`}
                       page={leftPage}
                       eager
-                      zoom={currentZoom}
-                      transformOrigin={origin}
                       chapterTag={chapterTag}
                       onError={onPageError}
                       onLoad={onPageLoad}
@@ -377,8 +359,6 @@ export function PagedReader({
                     key={`${chapterTag ?? ''}:${rightPage.index}`}
                     page={rightPage}
                     eager
-                    zoom={currentZoom}
-                    transformOrigin={origin}
                     chapterTag={chapterTag}
                     onError={onPageError}
                     onLoad={onPageLoad}
@@ -392,8 +372,6 @@ export function PagedReader({
                     key={`${chapterTag ?? ''}:${rightPage.index}`}
                     page={rightPage}
                     eager
-                    zoom={currentZoom}
-                    transformOrigin={origin}
                     chapterTag={chapterTag}
                     onError={onPageError}
                     onLoad={onPageLoad}
@@ -406,8 +384,6 @@ export function PagedReader({
                       key={`${chapterTag ?? ''}:${leftPage.index}`}
                       page={leftPage}
                       eager
-                      zoom={currentZoom}
-                      transformOrigin={origin}
                       chapterTag={chapterTag}
                       onError={onPageError}
                       onLoad={onPageLoad}
@@ -424,8 +400,6 @@ export function PagedReader({
             key={`${chapterTag ?? ''}:${rightPage.index}`}
             page={rightPage}
             eager
-            zoom={currentZoom}
-            transformOrigin={origin}
             chapterTag={chapterTag}
             onError={onPageError}
             onLoad={onPageLoad}

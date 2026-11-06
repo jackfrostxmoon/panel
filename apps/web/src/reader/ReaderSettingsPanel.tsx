@@ -887,27 +887,6 @@ export function ReaderSettingsPanel({
             </button>
           </SettingGroup>
 
-          <SettingGroup
-            id="rs-zoom"
-            title="Zoom"
-            hint="Pinch-to-zoom magnifies the current page around the pinch point. 1.0 = fit to the reader."
-          >
-            <RangeField
-              label="Zoom"
-              value={settings.zoomLevel}
-              min={0.5}
-              max={4}
-              step={0.1}
-              format={(zoomLevel) => `${zoomLevel.toFixed(1)}×`}
-              defaultValue={DEFAULT_READER_SETTINGS.zoomLevel}
-              onChange={(zoomLevel) => onUpdate({ zoomLevel })}
-              onReset={() => onUpdate({ zoomLevel: DEFAULT_READER_SETTINGS.zoomLevel })}
-            />
-            <p className="reader-settings__sub-hint">
-              Two-finger pinch on the reader stage zooms in/out; drag to pan while zoomed.
-            </p>
-          </SettingGroup>
-
           <div className="reader-settings__row">
             <span className="reader-settings__row-copy">
               <span id="rs-scrollSpeed" className="reader-settings__row-title">

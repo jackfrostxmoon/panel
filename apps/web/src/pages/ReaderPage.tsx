@@ -1293,9 +1293,9 @@ export function ReaderPage() {
   /**
    * Mouse wheel page-turning — paged mode. Accumulates wheel deltas so one
    * notch (~120 px) — or a trackpad flick — turns exactly one page, without
-   * double-firing on inertial events. While a zoomed page can still be panned
-   * natively (the stage is scrollable and not at its edge in the wheel
-   * direction), the wheel pans the zoomed page instead of turning.
+   * double-firing on inertial events. While a scrollable stage (e.g. a page
+   * taller than the viewport) can still be panned natively and is not at its
+   * edge in the wheel direction, the wheel pans it instead of turning.
    */
   useEffect(() => {
     if (settings.mode !== 'paged') return;
@@ -1311,7 +1311,7 @@ export function ReaderPage() {
         const atTop = stage.scrollTop <= 0;
         const atBottom = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1;
         if (scrollable && !((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom))) {
-          accumulated = 0; // let the browser pan the zoomed page
+          accumulated = 0; // let the browser pan the scrollable page
           return;
         }
       }
@@ -1472,8 +1472,6 @@ export function ReaderPage() {
               direction={settings.direction}
               eagerPages={settings.imageLoad === 'parallel' && !settings.dataSaver}
               preloadAhead={settings.dataSaver ? 1 : settings.preloadAhead}
-              zoom={settings.zoomLevel}
-              onZoomChange={(z) => update({ zoomLevel: z })}
               onPageChange={setPage}
               onProgress={(p, ratio) => {
                 setPage(p);
@@ -1501,8 +1499,6 @@ export function ReaderPage() {
               imageHeightPx={settings.imageHeightPx}
               imageGap={settings.imageGap}
               direction={settings.direction}
-              zoom={settings.zoomLevel}
-              onZoomChange={(z) => update({ zoomLevel: z })}
               onPageChange={setPage}
               onProgress={(p, ratio) => {
                 setPage(p);
@@ -1527,8 +1523,6 @@ export function ReaderPage() {
               doublePage={settings.doublePage}
               spreadOddPolicy={settings.spreadOddPolicy}
               autoLandscapeSingle={settings.autoLandscapeSingle}
-              zoom={settings.zoomLevel}
-              onZoomChange={(z) => update({ zoomLevel: z })}
               onNavigate={handleIntent}
               chapterTag={chapterId}
               /* Forward the "Image loading: All at once" setting so paged

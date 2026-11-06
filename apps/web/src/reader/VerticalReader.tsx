@@ -3,7 +3,6 @@ import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import { verticalReaderWidthPercent, type ReadingDirection } from './settings';
 import { halfSideFromClientX } from './navigation';
-import { useZoomGesture } from './useZoomGesture';
 import { glideScrollTo } from './glideScroll';
 import type { GlidePreset } from './settings';
 
@@ -37,10 +36,6 @@ export const VerticalReader = forwardRef<
     eagerPages?: boolean;
     /** While lazy-loading: fetch this many pages beyond the current one. */
     preloadAhead?: number;
-    /** Zoom multiplier (T2-1). 1.0 = fit. */
-    zoom?: number;
-    /** Called whenever the zoom changes (pinch). */
-    onZoomChange?: (zoom: number) => void;
     onPageChange: (page: number) => void;
     onProgress?: (page: number, scrollRatio: number) => void;
     onChapterNavigate: (dir: 'next' | 'prev') => void;
@@ -70,8 +65,6 @@ direction?: ReadingDirection;
     fitToWidth = false,
     eagerPages = true,
     preloadAhead = 1,
-    zoom,
-    onZoomChange,
     onPageChange,
     onProgress,
     onChapterNavigate,
@@ -84,10 +77,6 @@ onPageError,
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { zoom: currentZoom, origin, handlers } = useZoomGesture(containerRef, {
-    initialZoom: zoom ?? 1,
-    onZoomChange,
-  });
 const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const glideAnimRef = useRef(0);
   /** 0-based index of the page at the viewport center (drives preloading). */
@@ -212,12 +201,9 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
     <div
       className={`vertical-reader${
         imageGap ? ' vertical-reader--gap' : ''
-      }${currentZoom !== 1 ? ' vertical-reader--zoomed' : ''}${fitToWidth ? ' vertical-reader--fit-width' : ''}`}
+      }${fitToWidth ? ' vertical-reader--fit-width' : ''}`}
       style={{
-        ...handlers,
         width: `${verticalReaderWidthPercent(fitToWidth ? 100 : imageWidth)}%`,
-        transform: `scale(${currentZoom})`,
-        transformOrigin: origin,
       }}
       onClick={handleHalfClick}
       ref={containerRef}

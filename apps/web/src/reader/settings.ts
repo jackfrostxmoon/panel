@@ -146,14 +146,6 @@ export interface ReaderSettings {
   // --- Tier 2 QOL additions ---------------------------------------------------
 
   /**
-   * Zoom level for pinch-to-zoom / touch-zoom (T2-1). 1.0 = "fit to viewport".
-   * Above 1.0 the image is magnified (and may overflow the stage, scrolled
-   * via panning); below 1.0 shrinks it. Range is generous so a user can
-   * really lean in on a dense panel.
-   */
-  zoomLevel: number;
-
-  /**
    * Paged mode only: fit the page to the viewport height so the whole image
    * is visible without scrolling. Width slider is ignored while this is on.
    */
@@ -238,8 +230,6 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   wheelPagesPerNotch: 0,
   /** 0 = native smooth scrolling (default); 1 = one page per keypress. */
   keyPagesPress: 0,
-  /** 1.0 = fit to viewport (default). */
-  zoomLevel: 1,
   /** Off by default — preserves the current width-driven paged layout. */
   fitToHeight: false,
   /** Off by default — preserves the current width-driven vertical layout. */
