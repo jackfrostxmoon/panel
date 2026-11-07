@@ -639,6 +639,7 @@ resolves itself for the active reading direction (LTR/RTL).
 | `Esc` | Exit reader (back to panel) |
 | `Q`   | Toggle reading settings     |
 | `F`   | Cycle reading mode          |
+| `1` / `2` / `3` | Set reading mode — vertical · gallery · pages |
 | `E`   | Toggle fullscreen           |
 | `V`   | Bookmark this chapter       |
 | `C`   | Toggle fit to height in paged mode / fit to width in vertical mode (shows an info toast elsewhere) |

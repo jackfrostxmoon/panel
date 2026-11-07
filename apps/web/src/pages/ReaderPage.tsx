@@ -712,6 +712,19 @@ export function ReaderPage() {
         switchMode(nextReadingMode(settings.mode));
         return;
       }
+      // Digit shortcuts jump straight to a reading mode (1 vertical,
+      // 2 gallery, 3 pages — matching the settings-panel segment order).
+      // Ctrl/Cmd/Alt stay off so browser tab chords (Ctrl+1..3) keep working.
+      // No Shift guard needed: Shift+1 is '!' on common layouts. A same-mode
+      // press is a quiet no-op so we don't persist a redundant save.
+      const modeForDigit: ReadingMode | null =
+        event.key === '1' ? 'vertical' : event.key === '2' ? 'gallery' : event.key === '3' ? 'paged' : null;
+      if (!systemModifier && modeForDigit) {
+        if (settings.mode === modeForDigit) return;
+        event.preventDefault();
+        switchMode(modeForDigit);
+        return;
+      }
       if (!systemModifier && (event.key === 'e' || event.key === 'E')) {
         // Toggle fullscreen — available in every reading mode.
         event.preventDefault();

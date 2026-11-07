@@ -4,7 +4,8 @@
  *
  * A typed, categorized catalogue of the keyboard shortcuts the reader honors.
   * The live input binding itself lives in `navigation.ts` (`intentForKey`) plus
- * the `q` (toggle settings), `f` (cycle reading mode), `e` (fullscreen),
+ * the `q` (toggle settings), `f` (cycle reading mode), `1` / `2` / `3` (jump
+to vertical / gallery / pages mode), `e` (fullscreen),
  * `v` (bookmark chapter), `c` (fit to height in paged mode, fit to width in
  * vertical mode) and `Escape` exit handled by `ReaderPage`; this module is
  * the human-facing source of truth that drives the help dialog.
@@ -155,6 +156,16 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: 'cycleReadingMode',
     label: 'Cycle reading mode',
     keys: [{ code: 'f', label: 'F', reversible: false }],
+    category: 'Reader',
+  },
+  {
+    id: 'setReadingMode',
+    label: 'Set reading mode — 1 Vertical · 2 Gallery · 3 Pages',
+    keys: [
+      { code: '1', label: '1', reversible: false },
+      { code: '2', label: '2', reversible: false },
+      { code: '3', label: '3', reversible: false },
+    ],
     category: 'Reader',
   },
   {
