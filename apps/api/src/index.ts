@@ -231,6 +231,11 @@ if (existsSync(webDist)) {
     serveStatic({
       root: webDist,
       rewriteRequestPath: (path) => path,
+      // hono refuses any path containing a literal `%` unless this is set.
+      // Panel/chapter links always encode the `:` in the global id
+      // (`/panel/rl%3A…`), so without it every detail/reader refresh 404s.
+      // Decoding + traversal checks (`..`, backslashes) still apply.
+      allowPercentInPath: true,
       onNotFound: () => {},
       onFound: (path, c) => {
         c.header('Cache-Control', cacheControlFor(path));
@@ -249,6 +254,8 @@ if (existsSync(webDist)) {
     serveStatic({
       root: webDist,
       rewriteRequestPath: () => 'index.html',
+      // See above — required for encoded ids in `/panel/:id` / `/read/:id`.
+      allowPercentInPath: true,
       onFound: (_path, c) => {
         // Entry HTML references hashed assets by name — never cache it long
         // or a deploy keeps serving stale chunk filenames.
