@@ -1088,10 +1088,7 @@ const filteredAndSortedChapters = useMemo(() => {
             <div className="meta-group">
               <dt className="meta-label">Chapters</dt>
               <dd className="meta-value">
-                <strong>{(chapters.data ?? []).length}</strong>{' '}
-                {/* MangaKatana lists chapters even for completed series
-                    (e.g. "Chapter 73 [END]"), never volumes. */}
-                {m.status === 'completed' && m.source !== 'mk' ? 'volumes' : 'chapters'}
+                <strong>{(chapters.data ?? []).length}</strong> chapters
               </dd>
             </div>
             <div className="meta-group">
