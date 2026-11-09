@@ -81,6 +81,12 @@ export function PanelDetailsPage() {
   const from = params.get('from');
   const panel = usePanel(id);
   const chapters = useChapters(id);
+  // Manual-refresh spinner state. Cached refetches can settle in <100ms, so
+  // the icon would barely flicker — hold the spin for at least MIN_MS after
+  // the click so the feedback is actually perceivable.
+  const MIN_REFRESH_SPIN_MS = 700;
+  const [refreshSpinning, setRefreshSpinning] = useState(false);
+  const refreshSpinStartedAt = useRef(0);
   const recent = useRecentProgress();
   const showPanelLoading = useDelayedLoading(panel.isLoading);
   const showChaptersLoading = useDelayedLoading(chapters.isLoading);
@@ -833,6 +839,15 @@ const filteredAndSortedChapters = useMemo(() => {
   chaptersRefetchRef.current = chapters.refetch;
   const chaptersDataRef = useRef(chapters.data);
   chaptersDataRef.current = chapters.data;
+  // End the manual-refresh spin only once the fetch settles AND at least
+  // MIN_REFRESH_SPIN_MS have elapsed since the click.
+  useEffect(() => {
+    if (!refreshSpinning || chapters.isFetching) return;
+    const remaining = Math.max(0, MIN_REFRESH_SPIN_MS - (Date.now() - refreshSpinStartedAt.current));
+    const timer = window.setTimeout(() => setRefreshSpinning(false), remaining);
+    return () => window.clearTimeout(timer);
+    // oxlint-disable-next-line react/exhaustive-deps -- MIN_REFRESH_SPIN_MS is a constant of this component.
+  }, [refreshSpinning, chapters.isFetching]);
   useEffect(() => {
     autoFreshSettledRef.current = false;
     initialChapterCountRef.current = null;
@@ -1402,14 +1417,16 @@ const filteredAndSortedChapters = useMemo(() => {
             <button
               type="button"
               className={`chapter-list__refresh${
-                chapters.isFetching ? ' chapter-list__refresh--busy' : ''
+                refreshSpinning || chapters.isFetching ? ' chapter-list__refresh--busy' : ''
               }`}
               onClick={() => {
+                refreshSpinStartedAt.current = Date.now();
+                setRefreshSpinning(true);
                 void chapters.refetch();
               }}
               aria-label="Refresh chapter list"
               title="Refresh chapter list"
-              aria-busy={chapters.isFetching}
+              aria-busy={refreshSpinning || chapters.isFetching}
             >
               <svg
                 width="16"
