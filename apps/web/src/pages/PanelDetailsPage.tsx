@@ -1146,7 +1146,13 @@ const filteredAndSortedChapters = useMemo(() => {
               <ul className="genre-list" role="list" id="genre-list">
                 {displayGenres.map((genre) => (
                   <li key={genre}>
-                    <span className="genre-chip">{genre}</span>
+                    <Link
+                      to={`/latest?source=${encodeURIComponent(m.source)}&genre=${encodeURIComponent(genre)}`}
+                      className="genre-chip"
+                      title={`Browse ${genre} in Latest`}
+                    >
+                      {genre}
+                    </Link>
                   </li>
                 ))}
                 {hasMoreGenres && (

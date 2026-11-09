@@ -1528,6 +1528,11 @@
   font-weight: var(--font-weight-medium);
 }
 
+a.genre-chip {
+  text-decoration: none;
+  cursor: pointer;
+}
+
 .genre-chip:hover {
   background: var(--surface-3);
   border-color: var(--border-strong);

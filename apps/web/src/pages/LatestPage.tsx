@@ -47,9 +47,21 @@ export function LatestPage() {
   /** Client-side status + genre filters (mirror the search page). Genre
       constraints are ALSO sent to the API: combo-capable sources filter
       their whole catalog server-side (include = OR), the rest fall back
-      to narrowing the fetched page here (plus the exclude filter, always). */
+      to narrowing the fetched page here (plus the exclude filter, always).
+      Initialised from repeated `?genre=` params so genre chips elsewhere
+      (e.g. the details page) can deep-link into a filtered view, and
+      re-syncs whenever the param changes. Clearing via the dropdown stays
+      local — it does not rewrite the URL. */
   const [statusFilter, setStatusFilter] = useState<PanelStatus | ''>('');
-  const [genreFilter, setGenreFilter] = useState<string[]>([]);
+  const genreParamKey = params.getAll('genre').join('\u0000');
+  const [genreFilter, setGenreFilter] = useState<string[]>(() => params.getAll('genre'));
+  const genreParamRef = useRef<string>(genreParamKey);
+  useEffect(() => {
+    if (genreParamRef.current === genreParamKey) return;
+    genreParamRef.current = genreParamKey;
+    setGenreFilter(genreParamKey ? genreParamKey.split('\u0000') : []);
+    // oxlint-disable-next-line react/exhaustive-deps -- split key mirrors the getAll result.
+  }, [genreParamKey]);
   /** Genres to hide: any result carrying ANY excluded genre is dropped,
       even if it also matches the include filter (exclude wins). */
   const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
