@@ -56,9 +56,7 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
           <IconStar size={20} filled={value <= shown} />
         </button>
       ))}
-      <span className="star-rating__value">
-        {rating ? `${rating}/5` : 'Not rated'}
-      </span>
+      {rating ? <span className="star-rating__value">{rating}/5</span> : null}
     </div>
   );
 }
