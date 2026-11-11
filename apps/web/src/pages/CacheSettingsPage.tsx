@@ -154,7 +154,7 @@ const MemoryThresholdRow = memo(function MemoryThresholdRow({
     if (document.activeElement?.id !== 'memory-threshold-mb') setDraft(null);
   }, [serverMb]);
   return (
-    <div className="cache-settings__limit-row">
+    <>
       <label htmlFor="memory-threshold-mb" className="search-filters__label">
         Memory relief threshold
       </label>
@@ -178,7 +178,7 @@ const MemoryThresholdRow = memo(function MemoryThresholdRow({
       >
         {saving ? 'Saving…' : 'Save'}
       </button>
-    </div>
+    </>
   );
 });
 
@@ -197,8 +197,8 @@ const RssThresholdRow = memo(function RssThresholdRow({
     if (document.activeElement?.id !== 'memory-rss-threshold-mb') setDraft(null);
   }, [serverMb]);
   return (
-    <div className="cache-settings__limit-row">
-      <label htmlFor="memory-rss-threshold-mb" className="search-filters__label">
+    <>
+      <label htmlFor="memory-rss-threshold-mb" className="search-filters__label" style={{ marginLeft: '1rem' }}>
         RSS threshold
       </label>
       <input
@@ -221,7 +221,7 @@ const RssThresholdRow = memo(function RssThresholdRow({
       >
         {saving ? 'Saving…' : 'Save'}
       </button>
-    </div>
+    </>
   );
 });
 
@@ -902,10 +902,7 @@ const [panelQuery, setPanelQuery] = useState('');
             size="sm"
             disabled={performanceMode}
           />
-        </div>
-
-        <div className="cache-settings__limit-row">
-          <span className="search-filters__label" id="cache-performance-mode-label">Performance mode</span>
+          <span className="search-filters__label" id="cache-performance-mode-label" style={{ marginLeft: '1rem' }}>Performance mode</span>
           <Switch
             checked={performanceMode}
             onChange={handlePerformanceToggle}
@@ -926,7 +923,7 @@ const [panelQuery, setPanelQuery] = useState('');
         </p>
 
         {autoMemoryRelief && (
-          <>
+          <div className="cache-settings__limit-row">
             <MemoryThresholdRow
               serverMb={reliefThresholdMb}
               saving={saveCacheSettings.isPending}
@@ -937,7 +934,7 @@ const [panelQuery, setPanelQuery] = useState('');
               saving={saveCacheSettings.isPending}
               onSave={(text) => void saveRssThreshold(text)}
             />
-          </>
+          </div>
         )}
 
         <p className="cache-settings__limit-meta" id="cache-preferences-meta">
