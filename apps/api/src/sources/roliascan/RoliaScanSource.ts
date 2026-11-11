@@ -5,6 +5,7 @@ import {
   toGlobalId,
   type Chapter,
   type ChapterPages,
+  type GenreLookup,
   type Panel,
   type PanelPage,
   type PanelSource,
@@ -18,6 +19,7 @@ import { SourceError } from '../../lib/errors.js';
 import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
+import { fillGenresFromCache } from '../../lib/cachedGenres.js';
 import {
   PageNotRecognizedError,
   chapterNumberFromToken,
@@ -55,6 +57,13 @@ export class RoliaScanSource implements PanelSource {
   private readonly http: SourceHttpClient;
 
   /**
+   * Bulk genre lookup (panel metadata cache), wired by the registry.
+   * Lets enrichment skip detail fetches for previously-seen panels.
+   * Absent in tests / standalone use.
+   */
+  private readonly findGenres?: GenreLookup;
+
+  /**
    * Image CDN root hosts (e.g. "tovahala.lol" — any subdomain matches), as
    * declared on the HTTP client's SSRF allowlist. Host *learning* below uses
    * the same roots to decide which observed hosts are CDN mirrors.
@@ -80,11 +89,12 @@ export class RoliaScanSource implements PanelSource {
     this.http.setPerformanceMode(on);
   }
 
-  constructor(config: SourceConfig, http?: SourceHttpClient) {
+  constructor(config: SourceConfig, http?: SourceHttpClient, findGenres?: GenreLookup) {
     this.name = config.name;
     this.label = config.label;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.enabled = config.enabled;
+    this.findGenres = findGenres;
     this.imageHostRoots = ['tovahala.lol'];
     this.http =
       http ??
@@ -283,6 +293,7 @@ export class RoliaScanSource implements PanelSource {
     const url = `${this.baseUrl}/search?${params.toString()}`;
     const { body } = await this.http.fetchText(url);
     const parsed = parseSearchPage(body, this.baseUrl);
+    await this.enrichListGenres(parsed.items);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page,
@@ -296,11 +307,26 @@ export class RoliaScanSource implements PanelSource {
     const url = page <= 1 ? `${this.baseUrl}/updated` : `${this.baseUrl}/updated?page=${encodeURIComponent(String(page))}`;
     const { body } = await this.http.fetchText(url);
     const parsed = parseLatestPage(body, this.baseUrl);
+    await this.enrichListGenres(parsed.items);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page,
       hasMore: parsed.hasMore,
     };
+  }
+
+  /**
+   * Genre enrichment for listing results. The latest/search cards carry no
+   * genre markup, so genres are filled from the panel metadata cache only
+   * (panels the user has opened before).
+   *
+   * Deliberately cache-only: per-item detail fetches would be a full DOM
+   * parse per card at high concurrency. Genre-less items are kept as-is —
+   * the service's exclude filter is fail-open and the UI still narrows
+   * client-side, so nothing is over-dropped.
+   */
+  private async enrichListGenres(items: Array<{ nativeId: string; genres: string[] }>): Promise<void> {
+    await fillGenresFromCache(this.name, items, this.findGenres);
   }
 
   /**
@@ -337,6 +363,7 @@ export class RoliaScanSource implements PanelSource {
     const url = p <= 1 ? href : `${href}?page=${encodeURIComponent(String(p))}`;
     const { body } = await this.http.fetchText(url);
     const parsed = parseLatestPage(body, this.baseUrl);
+    await this.enrichListGenres(parsed.items);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),
       page: p,

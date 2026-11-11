@@ -81,6 +81,6 @@ export function createSourceRegistry(
   registry.register(new ToonilySource(config.sources.toonily, undefined, findGenres));
   registry.register(new RawdexSource(config.sources.rawdex, undefined, findGenres));
   registry.register(new RawUwUSource(config.sources.rawuwu, undefined, findGenres));
-  registry.register(new RoliaScanSource(config.sources.roliascan));
+  registry.register(new RoliaScanSource(config.sources.roliascan, undefined, findGenres));
   return registry;
 }

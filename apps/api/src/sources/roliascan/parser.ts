@@ -224,8 +224,11 @@ function parseRowCard(article: HTMLElement, baseUrl: string): RawSearchItem | nu
   const img = article.querySelector('.row-card__poster img');
   const coverUrl = absoluteUrl(img ? pickCoverSrc(img) : null, baseUrl);
 
-  const typePill = textOf(article.querySelector('.type-pill'));
-  const genres = typePill ? [typePill] : [];
+  // Type pill ("Manga"/"Manhwa"/…) is a content type, not a genre — cards
+  // carry no genre markup. Genre-less keeps the UI include filter fail-open
+  // (the server already genre-filtered when applicable) and lets
+  // fillGenresFromCache enrich from the metadata cache.
+  const genres: string[] = [];
 
   const chapterLinks = article.querySelectorAll('.row-card__chapters li a');
   const firstChapter = chapterLinks[0];
