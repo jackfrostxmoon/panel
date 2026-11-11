@@ -2566,6 +2566,15 @@ a.genre-chip {
   margin-bottom: var(--space-5);
 }
 
+/* Caption for the source-pill feed ordering: shown only while one source
+   is selected and its latest-updates feed is driving the shelf order.
+   Muted and small — informational, not a control. */
+.bookmarks-order-hint {
+  margin: calc(var(--space-3) * -1) 0 var(--space-4);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
 /* Narrow screens: source pills take the full row so the swipe strip never
    squeezes against the folder trigger. Folder trigger + layout/filter
    toggles ride together on the next row; selects and title search follow
