@@ -1380,6 +1380,42 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* Alternative-titles clamp: capped at ~4 lines while collapsed so a wall of
+   aliases can't blow out the meta grid. The fade is a separate class so it
+   only renders when the text is actually clipped (measured via
+   scrollHeight > clientHeight in the page component). */
+.alt-titles--clamped {
+  position: relative;
+  max-height: 6em;
+  overflow: hidden;
+}
+
+.alt-titles--faded::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1.75em;
+  background: linear-gradient(180deg, transparent 0%, var(--surface) 100%);
+  pointer-events: none;
+}
+
+/* Compact ghost toggle shown under the clamped alternative titles — only
+   rendered when truncated. Left-aligned to sit under the label column. */
+.alt-titles__toggle {
+  align-self: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-dim);
+}
+
+.alt-titles__toggle:hover {
+  color: var(--text);
+}
+
 /* Meta Information */
 .panel-details__meta {
   display: grid;

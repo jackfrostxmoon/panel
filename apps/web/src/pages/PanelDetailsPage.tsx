@@ -96,6 +96,11 @@ export function PanelDetailsPage() {
   const [filter, setFilter] = useState('');
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showMoreSynopsis, setShowMoreSynopsis] = useState(false);
+  /** Alternative-titles clamp: expanded only via the toggle; the clamp
+      itself applies whenever collapsed so truncation can be measured. */
+  const [showAllAltTitles, setShowAllAltTitles] = useState(false);
+  const altTitlesRef = useRef<HTMLElement>(null);
+  const [isAltTitlesTruncated, setIsAltTitlesTruncated] = useState(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showAllChapters, setShowAllChapters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -785,6 +790,21 @@ const filteredAndSortedChapters = useMemo(() => {
     }
   }, [panel.data?.description]);
 
+  /** Alternative-titles toggle: the joined string is the effect dep so a
+      panel swap/revalidation re-measures. While expanded we don't touch the
+      flag — otherwise the button would vanish on the next refetch and trap
+      the user in the expanded state. */
+  const altTitlesJoined = panel.data?.altTitles.join(' · ') ?? '';
+  useEffect(() => {
+    const el = altTitlesRef.current;
+    if (!el) {
+      setIsAltTitlesTruncated(false);
+      return;
+    }
+    if (showAllAltTitles) return;
+    setIsAltTitlesTruncated(el.scrollHeight > el.clientHeight);
+  }, [altTitlesJoined, showAllAltTitles]);
+
   // Recently-viewed rail: record this panel tap so the home page can
   // surface it. Written to the server history AND the local rail — the
   // server row is what survives browser clears and device switches, the
@@ -1061,9 +1081,58 @@ const filteredAndSortedChapters = useMemo(() => {
             {m.altTitles.length > 0 && (
               <div className="meta-group">
                 <dt className="meta-label">Alternative titles</dt>
-                <dd className="meta-value meta-value--alt">
-                  {m.altTitles.join(' · ')}
+                <dd
+                  ref={altTitlesRef}
+                  id="alt-titles-value"
+                  className={`meta-value meta-value--alt${!showAllAltTitles ? ' alt-titles--clamped' : ''}${!showAllAltTitles && isAltTitlesTruncated ? ' alt-titles--faded' : ''}`}
+                >
+                  {altTitlesJoined}
                 </dd>
+                {isAltTitlesTruncated && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm alt-titles__toggle"
+                    onClick={() => setShowAllAltTitles(!showAllAltTitles)}
+                    aria-expanded={showAllAltTitles}
+                    aria-controls="alt-titles-value"
+                  >
+                    {showAllAltTitles ? (
+                      <>
+                        Show less
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="18 15 12 9 6 15" />
+                        </svg>
+                      </>
+                    ) : (
+                      <>
+                        Show more
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
             {m.authors.length > 0 && (
