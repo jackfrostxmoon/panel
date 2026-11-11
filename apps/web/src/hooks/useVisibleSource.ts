@@ -32,6 +32,9 @@ export function useVisibleSource(
     const next = new URLSearchParams(params);
     next.set('source', fallback);
     next.delete('page');
+    // Same per-source genre reset as a pill-tap source switch — a stale
+    // genre from the hidden source must not leak onto the default one.
+    next.delete('genre');
     setParams(next, { replace: true });
   }, [remapped, fallback, params, setParams]);
 

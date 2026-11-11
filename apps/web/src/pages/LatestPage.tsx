@@ -470,6 +470,10 @@ export function LatestPage() {
     const nextParams = new URLSearchParams(params);
     nextParams.set('source', next);
     nextParams.delete('page');
+    // Genre vocabularies are per-source, so the selection resets below —
+    // the param must go too, or a refresh/share/back-nav rehydrates a
+    // genre from the previous source.
+    nextParams.delete('genre');
     setParams(nextParams);
     // Genre vocabularies are per-source — labels picked for one source
     // may not exist in another, so reset both genre filters on switch.
