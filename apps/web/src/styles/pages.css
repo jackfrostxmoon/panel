@@ -3263,7 +3263,6 @@ a.genre-chip {
   margin: 0;
   color: var(--text-dim);
   font-size: var(--font-size-sm);
-  max-width: 60ch;
 }
 
 .cache-settings__actions {
@@ -3283,7 +3282,6 @@ a.genre-chip {
   margin: 0;
   color: var(--text-dim);
   font-size: var(--font-size-sm);
-  max-width: 70ch;
 }
 
 /* --- Usage overview --- */
