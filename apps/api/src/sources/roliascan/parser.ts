@@ -1,6 +1,6 @@
 import { parse as parseHtml, type HTMLElement } from 'node-html-parser';
 import type { PanelStatus } from '@panel/shared';
-import { pickCoverSrc } from '../coverImage.js';
+import { pickCoverSrc, largestSrcsetCandidate } from '../coverImage.js';
 
 export class PageNotRecognizedError extends Error {
   constructor(message: string) {
@@ -73,6 +73,8 @@ export interface RawChapterPages {
   currentToken: string | null;
   readerLabel: string | null;
   coverUrl: string | null;
+  /** Which extraction strategy produced the image list (see collectReaderImages). */
+  strategy?: ReaderImageStrategy;
 }
 
 const ENTITY_MAP: Record<string, string> = {
@@ -461,6 +463,153 @@ export function parseChapterBatch(html: string, baseUrl: string): RawChapterBatc
   };
 }
 
+/**
+ * Strategy identifiers for reader-image extraction, in cascade order.
+ * `container` is the current markup; everything below it is a fallback that
+ * keeps the reader working through layout/markup reshuffles. The source
+ * adapter logs a warning whenever a fallback fires, so markup drift shows
+ * up in the server logs before pages silently break.
+ */
+export type ReaderImageStrategy =
+  | 'container'
+  | 'reader-section'
+  | 'alt-page'
+  | 'path'
+  | 'wide-main'
+  | 'none';
+
+/** Placeholder URLs that lazy-loaders swap out — never real page images. */
+function looksLikePlaceholder(value: string): boolean {
+  const lower = value.toLowerCase();
+  return lower.startsWith('data:image/') || lower.includes('blank.gif') || lower.includes('lazyload');
+}
+
+/**
+ * Best reader-image URL for one `<img>`: plain src/lazy attrs win when
+ * present (current markup), otherwise the LARGEST srcset candidate
+ * (full-size pages over thumbnails).
+ */
+function readerImageUrl(img: HTMLElement): string | null {
+  for (const attr of ['data-original', 'data-src', 'data-lazy-src', 'data-lazy', 'src']) {
+    const value = img.getAttribute(attr)?.trim();
+    if (value && !looksLikePlaceholder(value)) return value;
+  }
+  for (const attr of ['srcset', 'data-srcset']) {
+    const largest = largestSrcsetCandidate(img.getAttribute(attr));
+    if (largest && !looksLikePlaceholder(largest)) return largest;
+  }
+  return null;
+}
+
+/** Page number from `alt="Chapter 1 - Page 12"` — null when absent. */
+function pageNumberFromAlt(img: HTMLElement): number | null {
+  const alt = img.getAttribute('alt') ?? '';
+  const match = /page\s*#?\s*(\d+(?:[.,]\d+)?)/i.exec(alt);
+  if (!match?.[1]) return null;
+  const value = Number.parseFloat(match[1].replace(',', '.'));
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Hostname of `baseUrl` ('' when unparseable — wide-scan checks degrade off). */
+function baseHostname(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Path-segment patterns for ad/logo-like assets — excluded from wide scan. */
+const NON_CONTENT_IMG_RE = /logo|avatar|icon|banner|advert|pixel|spacer|1x1|blank|emoji/i;
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|avif|gif)(\?|#|$)/i;
+/** Legacy `/storage/chapters/` and current `/<rand>/chapter/…` alike. */
+const CHAPTER_PATH_RE = /\/chapters?([/?]|$)/i;
+
+interface ReaderImageItem {
+  url: string;
+  page: number | null;
+}
+
+/**
+ * Order + dedupe reader images. When at least half of them carry a page
+ * number in their `alt`, sort by it (ties keep document order) — reading
+ * order must come from semantics, not from wherever the lazy-loader happened
+ * to place things. Otherwise document order is kept.
+ */
+function finalizeReaderImages(items: ReaderImageItem[]): string[] {
+  const numbered = items.filter((item) => item.page !== null).length;
+  const ordered =
+    items.length > 0 && numbered >= Math.ceil(items.length / 2)
+      ? [...items].sort((a, b) => (a.page ?? Number.POSITIVE_INFINITY) - (b.page ?? Number.POSITIVE_INFINITY))
+      : items;
+  return [...new Set(ordered.map((item) => item.url))];
+}
+
+/**
+ * Extract reader images with a strategy cascade so a RoliaScan redesign
+ * degrades into a logged fallback instead of a hard 502:
+ *   1. container      — `section.chapter-reader img` (current markup)
+ *   2. reader-section — any `section`/`div` whose class contains "reader"
+ *   3. alt-page       — any img whose alt looks like "Page <n>"
+ *   4. path           — any img src with a `/chapter(s)/` path segment
+ *   5. wide-main      — last resort: off-site image-ext URLs inside `main`
+ *                       (≥3 required, ad/logo patterns excluded)
+ */
+function collectReaderImages(root: HTMLElement, baseUrl: string): { urls: string[]; strategy: ReaderImageStrategy } {
+  const toItems = (imgs: HTMLElement[]): ReaderImageItem[] => {
+    const items: ReaderImageItem[] = [];
+    for (const img of imgs) {
+      const raw = readerImageUrl(img);
+      const abs = raw ? absoluteUrl(raw, baseUrl) : null;
+      if (abs) items.push({ url: abs, page: pageNumberFromAlt(img) });
+    }
+    return items;
+  };
+
+  const strategies: Array<[ReaderImageStrategy, () => HTMLElement[]]> = [
+    ['container', () => root.querySelectorAll('section.chapter-reader img')],
+    [
+      'reader-section',
+      () => [
+        ...root.querySelectorAll('section[class*="reader"] img'),
+        ...root.querySelectorAll('div[class*="reader"] img'),
+      ],
+    ],
+    ['alt-page', () => root.querySelectorAll('img[alt]').filter((img) => pageNumberFromAlt(img) !== null)],
+    ['path', () => root.querySelectorAll('img').filter((img) => CHAPTER_PATH_RE.test(readerImageUrl(img) ?? ''))],
+  ];
+
+  for (const [strategy, run] of strategies) {
+    const urls = finalizeReaderImages(toItems(run()));
+    if (urls.length > 0) return { urls, strategy };
+  }
+
+  // Wide scan: off-site media inside <main> only — a markup gutting that
+  // keeps the images but drops every hook above. Same-host images are never
+  // pages (logos/avatars), and obvious non-content patterns are excluded.
+  const host = baseHostname(baseUrl);
+  const wide: ReaderImageItem[] = [];
+  for (const img of root.querySelectorAll('main img')) {
+    const raw = readerImageUrl(img);
+    const abs = raw ? absoluteUrl(raw, baseUrl) : null;
+    if (!abs) continue;
+    let url: URL;
+    try {
+      url = new URL(abs);
+    } catch {
+      continue;
+    }
+    const imgHost = url.hostname.toLowerCase();
+    if (host && (imgHost === host || imgHost.endsWith(`.${host}`))) continue;
+    if (!IMAGE_EXT_RE.test(url.pathname)) continue;
+    if (NON_CONTENT_IMG_RE.test(url.pathname)) continue;
+    wide.push({ url: abs, page: pageNumberFromAlt(img) });
+  }
+  if (wide.length >= 3) return { urls: finalizeReaderImages(wide), strategy: 'wide-main' };
+
+  return { urls: [], strategy: 'none' };
+}
+
 export function parseChapterReaderPage(html: string, baseUrl: string): RawChapterPages {
   const root = parseHtml(html);
 
@@ -469,23 +618,10 @@ export function parseChapterReaderPage(html: string, baseUrl: string): RawChapte
     baseUrl,
   );
 
-  // Reader images live under a `/chapter(s)/`-style path on the site's CDN
-  // (legacy `/storage/chapters/`; current `<rand>/chapter/<hash>/N-<sha>.jpg`
-  // inside `section.chapter-reader`). Prefer the structural container so
-  // unrelated images elsewhere on the page can never sneak in; if it's
-  // missing, fall back to the path shape — matching on the path (not a
-  // container class) keeps this working across theme tweaks.
-  const sectionImages = root.querySelectorAll('section.chapter-reader img');
-  const fromSection = sectionImages.length > 0;
-  const imageUrls: string[] = [];
-  for (const img of fromSection ? sectionImages : root.querySelectorAll('img')) {
-    const src = img.getAttribute('src') ?? img.getAttribute('data-src');
-    if (!src) continue;
-    const abs = absoluteUrl(src, baseUrl);
-    if (abs && (fromSection || /\/chapters?\//.test(abs))) imageUrls.push(abs);
-  }
-  // Deduplicate while keeping document order (srcset/picture doubles).
-  const uniqueImages = [...new Set(imageUrls)];
+  // Reader images: strategy cascade (see collectReaderImages) — survives
+  // CDN host/path rotations and container-class renames, and never accepts
+  // arbitrary <img> noise unless the wide-main fallback is confident (≥3).
+  const { urls: imageUrls, strategy } = collectReaderImages(root, baseUrl);
 
   let prevToken: string | null = null;
   let nextToken: string | null = null;
@@ -503,16 +639,17 @@ export function parseChapterReaderPage(html: string, baseUrl: string): RawChapte
 
   const titleTag = root.querySelector('title') ? textOf(root.querySelector('title')) : null;
 
-  if (uniqueImages.length === 0 && !prevToken && !nextToken && !currentRef) {
+  if (imageUrls.length === 0 && !prevToken && !nextToken && !currentRef) {
     throw new PageNotRecognizedError('Chapter page did not contain reader data.');
   }
 
   return {
-    imageUrls: uniqueImages,
+    imageUrls,
     prevToken,
     nextToken,
     currentToken: currentRef?.token ?? null,
     readerLabel: titleTag,
     coverUrl,
+    strategy,
   };
 }

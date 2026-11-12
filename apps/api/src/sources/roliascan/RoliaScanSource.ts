@@ -511,6 +511,18 @@ export class RoliaScanSource implements PanelSource {
 
     this.noteImageHosts([parsed.coverUrl, ...parsed.imageUrls]);
 
+    // A fallback strategy firing means the markup drifted from the known
+    // layout — the payload may still be fine, so surface it loudly in the
+    // logs instead of failing silently (or pretending all is well).
+    if (parsed.strategy && parsed.strategy !== 'container') {
+      logger.warn('Reader markup fallback used — RoliaScan layout may have changed', {
+        source: this.name,
+        nativeChapterId,
+        strategy: parsed.strategy,
+        images: parsed.imageUrls.length,
+      });
+    }
+
     if (parsed.imageUrls.length === 0) {
       logger.error('Chapter page had no extractable images', {
         source: this.name,
