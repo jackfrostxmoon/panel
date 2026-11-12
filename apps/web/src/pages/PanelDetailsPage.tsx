@@ -1535,11 +1535,14 @@ const filteredAndSortedChapters = useMemo(() => {
           </div>
           <div className="section-controls">
             <div className="sort-toggle" role="group" aria-label="Chapter list controls">
+              {/* Single sort-direction toggle: reflects the current state
+                  and flips on each press. */}
               <button
                 type="button"
-                className={`sort-toggle__option${sortOrder === 'newest' ? ' sort-toggle__option--active' : ''}`}
-                aria-pressed={sortOrder === 'newest'}
-                onClick={() => setSortOrder('newest')}
+                className="sort-toggle__option sort-toggle__option--active"
+                onClick={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')}
+                aria-label={`Chapter order: ${sortOrder === 'newest' ? 'newest first' : 'oldest first'}. Activate to switch.`}
+                title={`Sort chapters: ${sortOrder === 'newest' ? 'newest first' : 'oldest first'} — click to switch`}
               >
                 <svg
                   width="14"
@@ -1548,32 +1551,23 @@ const filteredAndSortedChapters = useMemo(() => {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   aria-hidden="true"
                 >
-                  <path d="m7 9 5-5 5 5" />
-                  <path d="M12 4v16" />
+                  {sortOrder === 'newest' ? (
+                    <>
+                      <path d="m7 9 5-5 5 5" />
+                      <path d="M12 4v16" />
+                    </>
+                  ) : (
+                    <>
+                      <path d="m7 15 5 5 5-5" />
+                      <path d="M12 20V4" />
+                    </>
+                  )}
                 </svg>
-                Newest
-              </button>
-              <button
-                type="button"
-                className={`sort-toggle__option${sortOrder === 'oldest' ? ' sort-toggle__option--active' : ''}`}
-                aria-pressed={sortOrder === 'oldest'}
-                onClick={() => setSortOrder('oldest')}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path d="m7 15 5 5 5-5" />
-                  <path d="M12 20V4" />
-                </svg>
-                Oldest
+                {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
               </button>
               {id && (
                 <button
