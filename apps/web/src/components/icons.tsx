@@ -73,6 +73,14 @@ export function IconChevronDown({ size = 16, className, style }: IconProps) {
   );
 }
 
+export function IconChevronUp({ size = 16, className, style }: IconProps) {
+  return (
+    <svg {...base(size, className, style)}>
+      <polyline points="18 15 12 9 6 15" />
+    </svg>
+  );
+}
+
 export function IconChevronLeft({ size = 16, className, style }: IconProps) {
   return (
     <svg {...base(size, className, style)}>

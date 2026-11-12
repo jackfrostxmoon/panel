@@ -22,7 +22,7 @@ import { StarRating } from '../components/StarRating';
 import { TagEditor } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconChevronDown, IconCheck, IconDownload, IconUndo, IconX, IconBookmark } from '../components/icons';
+import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark } from '../components/icons';
 import { chapterLabel, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
@@ -967,6 +967,18 @@ const filteredAndSortedChapters = useMemo(() => {
 
   const m = panel.data;
 
+  // Floating page nav (only while the full chapter list is expanded).
+  const scrollToEnd = () =>
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  const scrollToTop = () =>
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+
   // Prepare display genres
   const displayGenres = showAllGenres ? m.genres : m.genres.slice(0, 8);
   const hasMoreGenres = m.genres.length > 8;
@@ -1797,6 +1809,28 @@ const filteredAndSortedChapters = useMemo(() => {
           url={window.location.href}
           onClose={() => setShareOpen(false)}
         />
+      )}
+      {showAllChapters && filteredAndSortedChapters.length > 5 && (
+        <div className="page-floating-nav" role="group" aria-label="Page navigation">
+          <button
+            type="button"
+            className="page-floating-nav__btn"
+            onClick={scrollToTop}
+            aria-label="Scroll to top of page"
+            title="Scroll to top"
+          >
+            <IconChevronUp size={18} />
+          </button>
+          <button
+            type="button"
+            className="page-floating-nav__btn"
+            onClick={scrollToEnd}
+            aria-label="Scroll to end of page"
+            title="Scroll to end"
+          >
+            <IconChevronDown size={18} />
+          </button>
+        </div>
       )}
     </div>
   );
