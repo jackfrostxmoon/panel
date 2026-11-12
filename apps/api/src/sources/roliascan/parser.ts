@@ -469,14 +469,20 @@ export function parseChapterReaderPage(html: string, baseUrl: string): RawChapte
     baseUrl,
   );
 
-  // Reader images live on the /storage/chapters/ CDN path — matching on the
-  // path (not a container class) keeps this working across theme tweaks.
+  // Reader images live under a `/chapter(s)/`-style path on the site's CDN
+  // (legacy `/storage/chapters/`; current `<rand>/chapter/<hash>/N-<sha>.jpg`
+  // inside `section.chapter-reader`). Prefer the structural container so
+  // unrelated images elsewhere on the page can never sneak in; if it's
+  // missing, fall back to the path shape — matching on the path (not a
+  // container class) keeps this working across theme tweaks.
+  const sectionImages = root.querySelectorAll('section.chapter-reader img');
+  const fromSection = sectionImages.length > 0;
   const imageUrls: string[] = [];
-  for (const img of root.querySelectorAll('img')) {
+  for (const img of fromSection ? sectionImages : root.querySelectorAll('img')) {
     const src = img.getAttribute('src') ?? img.getAttribute('data-src');
     if (!src) continue;
     const abs = absoluteUrl(src, baseUrl);
-    if (abs && /\/storage\/chapters\//.test(abs)) imageUrls.push(abs);
+    if (abs && (fromSection || /\/chapters?\//.test(abs))) imageUrls.push(abs);
   }
   // Deduplicate while keeping document order (srcset/picture doubles).
   const uniqueImages = [...new Set(imageUrls)];
