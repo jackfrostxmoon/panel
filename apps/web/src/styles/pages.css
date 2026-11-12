@@ -1611,6 +1611,12 @@
   list-style: none;
 }
 
+/* + Add tag toggle / input rides the genres row as a chip. */
+.genre-list__tag-add {
+  display: inline-flex;
+  align-items: center;
+}
+
 .genre-chip {
   display: inline-flex;
   align-items: center;

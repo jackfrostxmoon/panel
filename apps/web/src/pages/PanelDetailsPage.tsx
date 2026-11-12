@@ -1306,12 +1306,18 @@ const filteredAndSortedChapters = useMemo(() => {
                     </button>
                   </li>
                 )}
+                {/* + Add tag chip rides at the tail of the genres row */}
+                <li className="genre-list__tag-add">
+                  <TagEditor panelId={id} toggleOnly />
+                </li>
               </ul>
             </div>
           )}
 
-          {/* Custom tags — grouped with the other metadata (genres). */}
-          <TagEditor panelId={id} />
+          {/* Custom tags — grouped with the other metadata (genres). When
+              genres are present, the + Add tag toggle already rides the
+              genres row, so only the TAGS list renders here. */}
+          {m.genres.length > 0 ? <TagEditor panelId={id} chipsOnly /> : <TagEditor panelId={id} />}
 
           {/* Action Buttons */}
           <div className="panel-details__actions">

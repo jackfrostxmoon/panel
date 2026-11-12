@@ -7,8 +7,21 @@ import { IconX } from './icons';
  * Custom-tag editor (T3-4): chips for the current tags plus an input that
  * adds (and creates on demand) new ones. Clicking a chip removes that tag.
  * The whole set is sent as a replacement on every change.
+ *
+ * `chipsOnly` renders just the TAGS label + chips row (no toggle).
+ * `toggleOnly` renders just the + Add tag toggle / input form (no label or
+ *   chips). Used to place the toggle as the tail chip of the genres row
+ *   while keeping the tags list where it is.
  */
-export function TagEditor({ panelId }: { panelId: string }) {
+export function TagEditor({
+  panelId,
+  chipsOnly = false,
+  toggleOnly = false,
+}: {
+  panelId: string;
+  chipsOnly?: boolean;
+  toggleOnly?: boolean;
+}) {
   const tags = useTagsByPanel(panelId);
   const setTags = useSetPanelTags();
   const { toast } = useToast();
@@ -52,6 +65,80 @@ export function TagEditor({ panelId }: { panelId: string }) {
     commit((tags.data ?? []).filter((t) => t.name !== name).map((t) => t.name));
   };
 
+  const chipsList = (
+    <ul className="tag-editor__chips" role="list" aria-labelledby="tag-editor-label">
+      {(tags.data ?? []).map((tag) => (
+        <li key={tag.id}>
+          <span className="tag-editor__chip" role="listitem">
+            {tag.name.replace(/[,;]+/g, '').trim()}
+            <button
+              type="button"
+              className="tag-editor__remove"
+              aria-label={`Remove tag ${tag.name}`}
+              disabled={setTags.isPending}
+              onClick={() => remove(tag.name)}
+            >
+              <IconX size={12} />
+            </button>
+          </span>
+        </li>
+      ))}
+      {(tags.data ?? []).length === 0 && !tags.isLoading && (
+        <li>
+          <span className="tag-editor__empty">No tags yet</span>
+        </li>
+      )}
+    </ul>
+  );
+
+  const toggle = adding ? (
+    <form
+      className="tag-editor__form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        addDraft();
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        className="tag-editor__input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') collapse();
+        }}
+        placeholder="Add a tag…"
+        aria-label="New tag name"
+        maxLength={32}
+      />
+      <button type="submit" className="btn btn--ghost btn--sm" disabled={!draft.trim()}>
+        Add
+      </button>
+      <button
+        type="button"
+        className="tag-editor__collapse"
+        aria-label="Cancel adding a tag"
+        onClick={collapse}
+      >
+        <IconX size={14} />
+      </button>
+    </form>
+  ) : (
+    <button
+      type="button"
+      className="genre-chip genre-chip--toggle tag-editor__toggle"
+      onClick={() => setAdding(true)}
+      aria-expanded={adding}
+    >
+      + Add tag
+    </button>
+  );
+
+  if (toggleOnly) {
+    return <>{toggle}</>;
+  }
+
   return (
     <div className="tag-editor">
       <div className="genre-list-header">
@@ -63,72 +150,8 @@ export function TagEditor({ panelId }: { panelId: string }) {
         )}
       </div>
       <div className="tag-editor__row">
-        <ul className="tag-editor__chips" role="list" aria-labelledby="tag-editor-label">
-          {(tags.data ?? []).map((tag) => (
-            <li key={tag.id}>
-              <span className="tag-editor__chip" role="listitem">
-                {tag.name.replace(/[,;]+/g, '').trim()}
-                <button
-                  type="button"
-                  className="tag-editor__remove"
-                  aria-label={`Remove tag ${tag.name}`}
-                  disabled={setTags.isPending}
-                  onClick={() => remove(tag.name)}
-                >
-                  <IconX size={12} />
-                </button>
-              </span>
-            </li>
-          ))}
-          {(tags.data ?? []).length === 0 && !tags.isLoading && (
-            <li>
-              <span className="tag-editor__empty">No tags yet</span>
-            </li>
-          )}
-        </ul>
-        {adding ? (
-          <form
-            className="tag-editor__form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              addDraft();
-            }}
-          >
-            <input
-              ref={inputRef}
-              type="text"
-              className="tag-editor__input"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') collapse();
-              }}
-              placeholder="Add a tag…"
-              aria-label="New tag name"
-              maxLength={32}
-            />
-            <button type="submit" className="btn btn--ghost btn--sm" disabled={!draft.trim()}>
-              Add
-            </button>
-            <button
-              type="button"
-              className="tag-editor__collapse"
-              aria-label="Cancel adding a tag"
-              onClick={collapse}
-            >
-              <IconX size={14} />
-            </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="genre-chip genre-chip--toggle tag-editor__toggle"
-            onClick={() => setAdding(true)}
-            aria-expanded={adding}
-          >
-            + Add tag
-          </button>
-        )}
+        {chipsList}
+        {!chipsOnly && toggle}
       </div>
     </div>
   );
