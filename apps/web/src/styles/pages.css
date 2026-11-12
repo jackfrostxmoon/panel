@@ -2655,6 +2655,19 @@ a.genre-chip {
   .bookmarks-toolbar .layout-toggle__btn {
     padding: 6px;
   }
+  /* Tiny phones: hide the "Layout" caption (icons carry the meaning) but
+     keep it in the a11y tree — the group's aria-labelledby points at it. */
+  .bookmarks-toolbar .search-filters__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 /* Title filter reuses the hero search-bar pill. Fluid width that fills its
@@ -2671,7 +2684,11 @@ a.genre-chip {
 .bookmarks-toolbar .search-filters--toggles {
   margin-left: 0;
   margin-bottom: 0;
-  flex: 0 0 auto;
+  /* Shrink-to-fit so folder trigger + toggles stay on one row on phones;
+     the strip scrolls horizontally when space runs out instead of wrapping
+     the toggles onto their own line. */
+  flex: 0 1 auto;
+  min-width: 0;
   order: 2;
 }
 .bookmarks-toolbar .search-filters--fields {
