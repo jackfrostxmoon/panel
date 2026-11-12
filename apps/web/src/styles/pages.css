@@ -2691,6 +2691,16 @@ a.genre-chip {
   min-width: 0;
   order: 2;
 }
+/* ≤640px: pin the toggles to exactly the space the folder trigger leaves,
+   and let the strip scroll internally. Written as longhands — the build's
+   CSS minifier rewrites `flex` shorthands (drops grow/shrink tokens). */
+@media (max-width: 640px) {
+  .bookmarks-toolbar .search-filters--toggles {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+  }
+}
 .bookmarks-toolbar .search-filters--fields {
   flex-basis: 100%;
   margin-left: 0;
