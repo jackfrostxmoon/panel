@@ -37,6 +37,7 @@ export class BookmarkService {
         latest?.title ?? null,
         latest?.cachedAt ?? null,
         folderMap.get(bookmark.id) ?? [],
+        latest?.publishedAt ?? null,
       );
     });
   }
@@ -65,6 +66,7 @@ export class BookmarkService {
       latest?.title ?? null,
       latest?.cachedAt ?? null,
       folderMap.get(row.id) ?? [],
+      latest?.publishedAt ?? null,
     );
   }
 
@@ -135,6 +137,7 @@ function toBookmark(
   latestChapter: string | null = null,
   latestChapterCachedAt: Date | string | null = null,
   folderIds: string[] = [],
+  latestChapterPublishedAt: Date | string | null = null,
 ): Bookmark {
   return {
     id: row.id,
@@ -156,6 +159,10 @@ function toBookmark(
       latestChapterCachedAt instanceof Date
         ? latestChapterCachedAt.toISOString()
         : latestChapterCachedAt ?? null,
+    latestChapterPublishedAt:
+      latestChapterPublishedAt instanceof Date
+        ? latestChapterPublishedAt.toISOString()
+        : latestChapterPublishedAt ?? null,
     progress: progress
       ? {
           chapterId: progress.chapterId,

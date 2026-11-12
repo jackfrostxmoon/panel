@@ -157,12 +157,15 @@ export class BookmarkRepository {
 
   /**
    * Latest cached chapter per panel row id (for bookmark card footers).
-   * Returns `{ title, cachedAt }` so callers can either show the title or
-   * sort by recency (the bookmarks page uses both).
+   * Returns `{ title, cachedAt, publishedAt }` so callers can either show the
+   * title or sort by recency (the bookmarks page uses both). `publishedAt`
+   * is the source's release date when known; `cachedAt` is when the row was
+   * written. The shelf prefers `publishedAt` so cache re-writes don't imply
+   * a fresh release.
    */
   async latestChapterTitles(
     panelRowIds: string[],
-  ): Promise<Map<string, { title: string; cachedAt: Date }>> {
+  ): Promise<Map<string, { title: string; cachedAt: Date; publishedAt: Date | null }>> {
     if (panelRowIds.length === 0) return new Map();
     // Newest chapter per panel (window function — SQLite has no DISTINCT ON).
     // `desc nulls last` matches the old ordering for unnumbered chapters.
@@ -171,6 +174,7 @@ export class BookmarkRepository {
         panelId: chapters.panelId,
         title: chapters.title,
         cachedAt: chapters.cachedAt,
+        publishedAt: chapters.publishedAt,
         rn: sql<number>`row_number() over (partition by ${chapters.panelId} order by ${chapters.chapterNumber} desc nulls last, ${chapters.cachedAt} desc)`.as(
           'rn',
         ),
@@ -183,11 +187,19 @@ export class BookmarkRepository {
         panelId: ranked.panelId,
         title: ranked.title,
         cachedAt: ranked.cachedAt,
+        publishedAt: ranked.publishedAt,
       })
       .from(ranked)
       .where(sql`"rn" = 1`);
     return new Map(
-      rows.map((row) => [row.panelId, { title: row.title, cachedAt: toDate(row.cachedAt, new Date(0)) }]),
+      rows.map((row) => [
+        row.panelId,
+        {
+          title: row.title,
+          cachedAt: toDate(row.cachedAt, new Date(0)),
+          publishedAt: row.publishedAt ? toDate(row.publishedAt, new Date(0)) : null,
+        },
+      ]),
     );
   }
 

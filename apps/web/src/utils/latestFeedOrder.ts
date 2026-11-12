@@ -2,14 +2,14 @@ import type { Bookmark, SourceSearchResult } from '@panel/shared';
 
 /**
  * Sort bookmarks so freshly-released chapters bubble a panel to the top.
- * `latestChapterCachedAt` comes from the server's chapter-cache join, so a
- * new chapter drop re-orders the grid on the next `useBookmarks` refetch.
- * Falls back to `updatedAt` for titles without a cached chapter.
+ * Prefers the source's `publishedAt` for the latest chapter so that merely
+ * opening a detail page (which re-caches chapters and rewrites `cachedAt`)
+ * does NOT reorder the shelf. Falls back to `cachedAt`, then `updatedAt`.
  */
 export function sortBookmarks(bookmarks: Bookmark[]): Bookmark[] {
   return [...bookmarks].sort((a, b) => {
-    const aKey = a.latestChapterCachedAt ?? a.updatedAt;
-    const bKey = b.latestChapterCachedAt ?? b.updatedAt;
+    const aKey = a.latestChapterPublishedAt ?? a.latestChapterCachedAt ?? a.updatedAt;
+    const bKey = b.latestChapterPublishedAt ?? b.latestChapterCachedAt ?? b.updatedAt;
     return bKey.localeCompare(aKey);
   });
 }

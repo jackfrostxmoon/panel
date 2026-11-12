@@ -108,6 +108,14 @@ export interface Bookmark {
    */
   latestChapterCachedAt?: string | null;
   /**
+   * ISO timestamp of when the latest cached chapter was published at the
+   * source, when known. Preferred shelf-sort key: viewing a detail page
+   * re-caches chapters and would otherwise bump `latestChapterCachedAt`,
+   * silently moving panels to the top. Falls back to `latestChapterCachedAt`
+   * (then `updatedAt`) when the source does not expose a date.
+   */
+  latestChapterPublishedAt?: string | null;
+  /**
    * Folder ids this bookmark belongs to. Always includes the default
    * "Reading list" folder id when set. The frontend uses this to render
    * folder badges and to check/uncheck the right folder in the picker
