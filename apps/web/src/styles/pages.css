@@ -1465,6 +1465,14 @@
   color: var(--text-dim);
 }
 
+/* Desktop: keep the toggle left-aligned under the label column. */
+@media (min-width: 641px) {
+  .alt-titles__toggle {
+    margin-inline: 0;
+    align-self: flex-start;
+  }
+}
+
 .alt-titles__toggle:hover {
   color: var(--text);
 }
