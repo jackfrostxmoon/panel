@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { BULK_CHAPTER_LIMIT, parseGlobalId, type Chapter } from '@panel/shared';
-import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings, useTagsByPanel } from '../api/hooks';
+import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings, useTagsByPanel, useClearImageCacheByTag } from '../api/hooks';
 import { ShareDialog } from '../components/ShareDialog';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -22,8 +22,8 @@ import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark } from '../components/icons';
-import { chapterLabel, getProxiedImageUrl } from '../utils/format';
+import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash } from '../components/icons';
+import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
 
@@ -84,6 +84,8 @@ export function PanelDetailsPage() {
   // Unconditional: the unified genres + tags chip row needs the count
   // to decide what to render. No fetch until the panel page mounts.
   const panelTags = useTagsByPanel(id);
+  const clearCoverMutation = useClearImageCacheByTag();
+  const [coverNonce, setCoverNonce] = useState(0);
   // Manual-refresh spinner state. Cached refetches can settle in <100ms, so
   // the icon would barely flicker — hold the spin for at least MIN_MS after
   // the click so the feedback is actually perceivable.
@@ -998,6 +1000,29 @@ const filteredAndSortedChapters = useMemo(() => {
   const tagCount = (panelTags.data ?? []).length;
   const showUnifiedChips = m.genres.length > 0 || tagCount > 0;
 
+  // Delete the cached cover so a wrong/stale image gets refetched. The
+  // nonce busts the browser's immutable max-age on the proxied URL.
+  const proxiedCover = getProxiedImageUrl(m.source, m.coverUrl, 'cover', m.id);
+  const backdropCover = proxiedCover && coverNonce > 0
+    ? `${proxiedCover}${proxiedCover.includes('?') ? '&' : '?'}_retry=${coverNonce}`
+    : proxiedCover;
+  const handleClearCover = () => {
+    clearCoverMutation.mutate(
+      { what: 'cover', tag: m.id },
+      {
+        onSuccess: (result) => {
+          setCoverNonce((n) => n + 1);
+          toast(
+            `Cleared ${result.entryCount.toLocaleString()} cached cover file${result.entryCount === 1 ? '' : 's'} (${formatBytes(result.totalBytes)}) — refetching.`,
+            'success',
+          );
+        },
+        onError: (error) =>
+          toast(error instanceof Error ? error.message : 'Could not clear the cover cache.', 'error'),
+      },
+    );
+  };
+
   // Floating page nav (only while the full chapter list is expanded).
   const scrollToEnd = () =>
     window.scrollTo({
@@ -1085,14 +1110,9 @@ const filteredAndSortedChapters = useMemo(() => {
             className="panel-details__backdrop"
             aria-hidden="true"
             style={{
-              backgroundImage: `url(${
-                getProxiedImageUrl(
-                  panel.data.source,
-                  panel.data.coverUrl,
-                  'cover',
-                  panel.data.id,
-                ) ?? panel.data.coverUrl
-              })`,
+              backgroundImage: backdropCover
+                ? `url(${backdropCover})`
+                : undefined,
             }}
           />
         )}
@@ -1107,11 +1127,22 @@ const filteredAndSortedChapters = useMemo(() => {
               eager
               imgClassName="cover-image"
               fallbackClassName="panel-card__cover-fallback"
+              cacheNonce={coverNonce}
             />
 
             {/* Cover gradient overlay */}
             <div className="panel-details__cover-gradient" aria-hidden="true" />
           </div>
+          <button
+            type="button"
+            className="panel-details__cover-clear"
+            onClick={handleClearCover}
+            disabled={clearCoverMutation.isPending || !m.coverUrl}
+            aria-label="Delete cached cover image and refetch"
+            title="Delete cached cover image and refetch"
+          >
+            <IconTrash size={16} />
+          </button>
         </div>
 
         <div className="panel-details__info">

@@ -50,6 +50,7 @@ export function CoverImage({
   className,
   imgClassName,
   fallbackClassName,
+  cacheNonce,
 }: {
   /** Source id (e.g. `mk`), forwarded to the image proxy. */
   source: string;
@@ -67,6 +68,8 @@ export function CoverImage({
   imgClassName?: string;
   /** Class for the exhausted initials fallback. */
   fallbackClassName?: string;
+  /** Bumped to force a fresh fetch (e.g. after the cached cover was deleted). */
+  cacheNonce?: number;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -90,7 +93,7 @@ export function CoverImage({
     setExhausted(false);
     setAttempt(0);
     setRetryKey(0);
-  }, [baseUrl]);
+  }, [baseUrl, cacheNonce]);
 
   /* Clear any pending retry timer when the component unmounts. */
   useEffect(() => {
@@ -100,11 +103,14 @@ export function CoverImage({
   }, []);
 
   const src = useMemo(
-    () =>
-      baseUrl && retryKey > 0
-        ? withCacheBuster(baseUrl, Date.now() + retryKey)
-        : baseUrl,
-    [baseUrl, retryKey],
+    () => {
+      if (!baseUrl) return null;
+      if (retryKey > 0 || (cacheNonce ?? 0) > 0) {
+        return withCacheBuster(baseUrl, Date.now() + retryKey + (cacheNonce ?? 0) * 1000);
+      }
+      return baseUrl;
+    },
+    [baseUrl, retryKey, cacheNonce],
   );
 
   const retry = useCallback(() => {
