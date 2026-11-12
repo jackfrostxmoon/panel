@@ -44,6 +44,17 @@ select {
   color: inherit;
 }
 
+/* iOS Safari zooms the page when a focused control's font-size is below
+   16px. The app scales text down on phones, so pin form controls to 16px
+   instead — that's the only reliable no-zoom floor. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
 button {
   cursor: pointer;
   background: none;
@@ -115,6 +126,8 @@ h4 {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

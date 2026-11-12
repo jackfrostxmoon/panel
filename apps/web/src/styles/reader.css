@@ -141,6 +141,25 @@
   }
 }
 
+/* Tight phones (≤480px): shrink buttons + gaps so the full control set fits 320px. */
+@media (max-width: 480px) {
+  .reader-toolbar {
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+  }
+  .reader-toolbar__group {
+    gap: var(--space-1);
+  }
+  .reader-toolbar__btn {
+    width: 34px;
+    height: 34px;
+    font-size: 0.95rem;
+  }
+  .reader-toolbar__chapter {
+    max-width: 26vw;
+  }
+}
+
 /* --- Content ---------------------------------------------------------------- */
 
 .reader-content {

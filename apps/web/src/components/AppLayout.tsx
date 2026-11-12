@@ -21,7 +21,7 @@ const SCROLL_STOP_MS = 400;
  * (`.app-header--hidden` and `.app-shell--auto-hide-header`). Above this the
  * header stays pinned, matching the non-grid pages (Sources, Cache, …).
  */
-const AUTO_HIDE_MAX_WIDTH = 560;
+const AUTO_HIDE_MAX_WIDTH = 640;
 
 /** True while the viewport is narrow enough for the auto-hide behaviour. */
 function isAutoHideViewport(): boolean {

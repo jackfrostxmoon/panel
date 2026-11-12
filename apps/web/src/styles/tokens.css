@@ -94,6 +94,14 @@
   --layout-max: var(--content-max);
   --header-height: 60px;
   --reader-toolbar-height: 56px;
+
+  /* Breakpoint scale — use only these values for media queries:
+       480px           small phones (stacked full-width buttons, tinier chrome)
+       640px           phones (toolbars, grids, auto-hide header)
+       768px           large phones / small tablets (hero stacks, single-col)
+       769px–1024px    tablet band
+       1024px          desktop enhancements
+     Keep JS gates in sync with these (see AUTO_HIDE_MAX_WIDTH in AppLayout). */
 }
 
 /* Light theme — applied when <html data-theme="light"> (see src/theme.ts).

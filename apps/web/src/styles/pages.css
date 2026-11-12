@@ -230,7 +230,7 @@
   width: 0%;
   border-radius: var(--radius-full);
   background: var(--accent);
-  transition: width var(--duration-medium) var(--ease-out);
+  transition: width var(--duration-med) var(--ease-out);
 }
 /* Recently-viewed rail (T2-4): a single horizontal carousel of cover cards
    that auto-advances and can be slid manually (arrows / swipe / scroll). */
@@ -320,7 +320,7 @@
 .app-shell--wide .home-recent__rail > * {
   flex-basis: calc((var(--content-max) - var(--space-4) * 6) / 5);
 }
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .home-recent__rail {
     gap: var(--space-3);
   }
@@ -766,9 +766,13 @@
   }
   .search-filters--fields {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     width: 100%;
     flex-basis: 100%;
+  }
+  /* Status select spans the row; genre pair sits side by side. */
+  .search-filters--fields > .search-filters__select:first-child {
+    grid-column: 1 / -1;
   }
   .search-filters__select {
     min-width: 0;
@@ -1116,17 +1120,6 @@
   .bookmark-folder-selector__trigger {
     min-width: 44px;
     min-height: 44px;
-  }
-}
-
-@media (max-width: 480px) {
-  .home-hero__actions {
-    width: 100%;
-    flex-direction: column;
-  }
-  .home-hero__actions .btn--lg {
-    width: 100%;
-    justify-content: center;
   }
 }
 
@@ -1776,7 +1769,7 @@ a.genre-chip {
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .panel-details__actions {
     align-items: stretch;
   }
@@ -3130,7 +3123,7 @@ a.genre-chip {
 /* Mobile: bottom-sheet style — folders stack at the bottom of the
    screen with a single column, so the user can drop without aiming
    precisely. The hint chip slides above the folder list. */
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .drag-folder-overlay {
     justify-content: flex-end;
     padding: var(--space-4);
@@ -3150,7 +3143,7 @@ a.genre-chip {
 
 /* Touch + mobile: pull the actions out of the cover and into the card flow
    (cover ? title/meta ? actions) so they never obstruct the image. */
-@media (hover: none), (max-width: 560px) {
+@media (hover: none), (max-width: 640px) {
   .bookmark-card__media {
     display: contents;
   }
@@ -3381,7 +3374,7 @@ a.genre-chip {
   width: 0%;
   background: var(--accent);
   border-radius: var(--radius-full);
-  transition: width var(--duration-medium) var(--ease-out);
+  transition: width var(--duration-med) var(--ease-out);
 }
 
 .cache-settings__breakdown {
@@ -3762,7 +3755,7 @@ a.genre-chip {
 /* Phones: roomier header card, kicker hidden, counter pinned right.
    The toolbar field below stretches edge to edge with a full 44px hit
    area so it never sits cramped beside the count. */
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .cache-settings__section-summary {
     padding: var(--space-4);
     gap: var(--space-3);
@@ -4522,6 +4515,22 @@ a.genre-chip {
 
 .sources-row__grip:active {
   cursor: grabbing;
+}
+
+/* Phones: allow the head to wrap so the status pill drops to its own row
+   instead of crowding the reorder buttons. The drag grip is useless on
+   touch (it sets touch-action: none), so hide it on coarse pointers —
+   the ↑/↓ buttons remain the reorder path. */
+@media (max-width: 640px) {
+  .sources-row__head {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .sources-row__grip {
+    display: none;
+  }
 }
 
 .sources-row__order-btns {

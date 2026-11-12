@@ -179,7 +179,7 @@ input::placeholder {
    `position: sticky; top: 0` and simply stays pinned, matching the non-grid
    pages (Sources, Cache, …). Keep the width in sync with
    `AUTO_HIDE_MAX_WIDTH` in `components/AppLayout.tsx`. */
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   /* Reader-style auto-hide on the long grid pages (Latest, Bookmarks) uses
      this same transform; AppLayout only adds .app-shell--auto-hide-header
      (and the scroll listeners) for those routes while the viewport is
@@ -210,9 +210,26 @@ input::placeholder {
 }
 
 /* Phones show only the logo mark — the label crowds the compact nav. */
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .app-header__brand-name {
     display: none;
+  }
+}
+
+/* Tight phones (≤480px): shrink header chrome so logo + nav + toggle fit 320px. */
+@media (max-width: 480px) {
+  .app-header__inner {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+  .app-header__right {
+    gap: var(--space-2);
+  }
+  .app-nav {
+    gap: 0;
+  }
+  .app-nav__link {
+    padding: 8px 10px;
   }
 }
 
@@ -313,7 +330,7 @@ input::placeholder {
   gap: var(--space-4);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .panel-grid,
   .bookmark-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -334,7 +351,7 @@ input::placeholder {
 
 /* On mobile, pack these grids tighter: 3 cards per row.
    This also guards against wide-mode being persisted from a desktop session. */
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .app-shell--wide .panel-grid,
   .app-shell--wide .bookmark-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -453,7 +470,7 @@ input::placeholder {
 .panel-list__actions .latest-card-actions span {
   display: none;
 }
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   /* Narrow screens: the stacked meta stays (it costs no width), the badge
      pills are what crowd the row — drop those instead. */
   .panel-list__badges {

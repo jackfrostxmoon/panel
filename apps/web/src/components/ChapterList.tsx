@@ -135,7 +135,14 @@ export function ChapterList({
 
   const openMenu = useCallback((chapter: Chapter, x: number, y: number) => {
     suppressClickUntilRef.current = Date.now() + 600;
-    setMenuPos({ x, y });
+    // Clamp against the viewport: the menu is centered on x with
+    // translate(-50%, 0), so keep half its ~190px width on screen.
+    const half = 96;
+    const clampedX = Math.min(Math.max(x, half), Math.max(half, window.innerWidth - half));
+    // Same for y — keep the whole menu (~200px tall) inside the screen.
+    const menuHeight = 200;
+    const clampedY = Math.min(y, Math.max(8, window.innerHeight - menuHeight));
+    setMenuPos({ x: clampedX, y: clampedY });
     setMenu({ chapter });
     setLongPressingId(null);
   }, []);
