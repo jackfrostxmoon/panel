@@ -3,23 +3,64 @@ import { useSetPanelTags, useTagsByPanel } from '../api/hooks';
 import { useToast } from './Toast';
 import { IconX } from './icons';
 
+/** Renders just the tag chips as `<li>` items (no list wrapper, no label) —
+ *  used to fold the panel's tags into the genres row of the details page.
+ *  The add/toggle chip is rendered separately by the caller. */
+export function TagChipItems({ panelId }: { panelId: string }) {
+  const tags = useTagsByPanel(panelId);
+  const setTags = useSetPanelTags();
+  const { toast } = useToast();
+
+  if (tags.isLoading) return null;
+
+  const remove = (name: string) => {
+    setTags.mutate(
+      {
+        panelId,
+        names: (tags.data ?? []).filter((tag) => tag.name !== name).map((tag) => tag.name),
+      },
+      {
+        onError: (error) => toast(error.message, 'error'),
+      },
+    );
+  };
+
+  return (
+    <>
+      {(tags.data ?? []).map((tag) => (
+        <li key={tag.id}>
+          <span className="tag-editor__chip" role="listitem">
+            {tag.name.replace(/[,;]+/g, '').trim()}
+            <button
+              type="button"
+              className="tag-editor__remove"
+              aria-label={`Remove tag ${tag.name}`}
+              disabled={setTags.isPending}
+              onClick={() => remove(tag.name)}
+            >
+              <IconX size={12} />
+            </button>
+          </span>
+        </li>
+      ))}
+    </>
+  );
+}
+
 /**
  * Custom-tag editor (T3-4): chips for the current tags plus an input that
  * adds (and creates on demand) new ones. Clicking a chip removes that tag.
  * The whole set is sent as a replacement on every change.
  *
- * `chipsOnly` renders just the TAGS label + chips row (no toggle).
  * `toggleOnly` renders just the + Add tag toggle / input form (no label or
  *   chips). Used to place the toggle as the tail chip of the genres row
  *   while keeping the tags list where it is.
  */
 export function TagEditor({
   panelId,
-  chipsOnly = false,
   toggleOnly = false,
 }: {
   panelId: string;
-  chipsOnly?: boolean;
   toggleOnly?: boolean;
 }) {
   const tags = useTagsByPanel(panelId);
@@ -151,7 +192,7 @@ export function TagEditor({
       </div>
       <div className="tag-editor__row">
         {chipsList}
-        {!chipsOnly && toggle}
+        {toggle}
       </div>
     </div>
   );

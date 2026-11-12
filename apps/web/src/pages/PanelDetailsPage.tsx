@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { BULK_CHAPTER_LIMIT, parseGlobalId, type Chapter } from '@panel/shared';
-import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings } from '../api/hooks';
+import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings, useTagsByPanel } from '../api/hooks';
 import { ShareDialog } from '../components/ShareDialog';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -19,7 +19,7 @@ import { ChapterDownloadActions } from '../components/ChapterDownloadActions';
 import { ChapterOrderDialog } from '../components/ChapterOrderDialog';
 import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 import { StarRating } from '../components/StarRating';
-import { TagEditor } from '../components/TagEditor';
+import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
 import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark } from '../components/icons';
@@ -81,6 +81,9 @@ export function PanelDetailsPage() {
   const from = params.get('from');
   const panel = usePanel(id);
   const chapters = useChapters(id);
+  // Unconditional: the unified genres + tags chip row needs the count
+  // to decide what to render. No fetch until the panel page mounts.
+  const panelTags = useTagsByPanel(id);
   // Manual-refresh spinner state. Cached refetches can settle in <100ms, so
   // the icon would barely flicker — hold the spin for at least MIN_MS after
   // the click so the feedback is actually perceivable.
@@ -992,6 +995,8 @@ const filteredAndSortedChapters = useMemo(() => {
   if (!panel.data) return null;
 
   const m = panel.data;
+  const tagCount = (panelTags.data ?? []).length;
+  const showUnifiedChips = m.genres.length > 0 || tagCount > 0;
 
   // Floating page nav (only while the full chapter list is expanded).
   const scrollToEnd = () =>
@@ -1244,12 +1249,14 @@ const filteredAndSortedChapters = useMemo(() => {
             </div>
           </dl>
 
-          {/* Genres with progressive disclosure */}
-          {m.genres.length > 0 && (
+          {/* Genres + tags share one chip row (tags fold in when present) */}
+          {showUnifiedChips && (
             <div className="panel-details__genres">
               <div className="genre-list-header">
-                <span className="genre-list-label">Genres</span>
-                <span className="genre-count">{m.genres.length}</span>
+                <span className="genre-list-label">{m.genres.length > 0 ? 'Genres' : 'Tags'}</span>
+                <span className="genre-count">
+                  {m.genres.length > 0 ? m.genres.length : tagCount}
+                </span>
               </div>
               <ul className="genre-list" role="list" id="genre-list">
                 {displayGenres.map((genre) => (
@@ -1306,7 +1313,9 @@ const filteredAndSortedChapters = useMemo(() => {
                     </button>
                   </li>
                 )}
-                {/* + Add tag chip rides at the tail of the genres row */}
+                {/* Tag chips fold into the genres row; the toggle follows them */}
+                <TagChipItems panelId={id} />
+                {/* + Add tag chip rides at the tail of the row */}
                 <li className="genre-list__tag-add">
                   <TagEditor panelId={id} toggleOnly />
                 </li>
@@ -1314,10 +1323,9 @@ const filteredAndSortedChapters = useMemo(() => {
             </div>
           )}
 
-          {/* Custom tags — grouped with the other metadata (genres). When
-              genres are present, the + Add tag toggle already rides the
-              genres row, so only the TAGS list renders here. */}
-          {m.genres.length > 0 ? <TagEditor panelId={id} chipsOnly /> : <TagEditor panelId={id} />}
+          {/* Fallback: no genres and no tags yet — keep the standalone tags
+              section so the list can be seeded from here. */}
+          {!showUnifiedChips && <TagEditor panelId={id} />}
 
           {/* Action Buttons */}
           <div className="panel-details__actions">
