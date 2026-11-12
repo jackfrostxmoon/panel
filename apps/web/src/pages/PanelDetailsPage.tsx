@@ -1563,31 +1563,6 @@ const filteredAndSortedChapters = useMemo(() => {
                 </svg>
                 Oldest
               </button>
-              {filteredAndSortedChapters.length > 5 && (
-                <button
-                  type="button"
-                  className={`sort-toggle__option${showAllChapters ? ' sort-toggle__option--active' : ''}`}
-                  aria-pressed={showAllChapters}
-                  onClick={() => setShowAllChapters((open) => !open)}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
-                  >
-                    {showAllChapters ? (
-                      <polyline points="18 15 12 9 6 15" />
-                    ) : (
-                      <polyline points="6 9 12 15 18 9" />
-                    )}
-                  </svg>
-                  {showAllChapters ? 'Show less' : 'Show more'}
-                </button>
-              )}
               {id && (
                 <button
                   type="button"
@@ -1770,6 +1745,50 @@ const filteredAndSortedChapters = useMemo(() => {
               onToggleSelected={handleToggleSelected}
             />
           </div>
+        )}
+        {!showChaptersLoading && !chapters.isError && filteredAndSortedChapters.length > 5 && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm alt-titles__toggle chapter-list__toggle"
+            onClick={() => setShowAllChapters((open) => !open)}
+            aria-expanded={showAllChapters}
+          >
+            {showAllChapters ? (
+              <>
+                Show less
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+              </>
+            ) : (
+              <>
+                Show more
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </>
+            )}
+          </button>
         )}
       </section>
       {shareOpen && (

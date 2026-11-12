@@ -2355,6 +2355,11 @@ a.genre-chip {
   overflow: hidden;
 }
 
+/* Show more/less toggle under the chapter list — alt-titles ghost style. */
+.chapter-list__toggle {
+  margin-top: var(--space-3);
+}
+
 /* ============================================================================
    VOLUME-BASED CHAPTER LIST � Modern Professional UI
    ============================================================================ */
