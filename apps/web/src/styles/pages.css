@@ -2191,7 +2191,7 @@ a.genre-chip {
   max-height: none;
 }
 
-.panel-details__description.truncated::after {
+.panel-details__description.truncated--faded::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -2200,13 +2200,6 @@ a.genre-chip {
   height: 60px;
   background: linear-gradient(180deg, transparent 0%, var(--surface) 100%);
   pointer-events: none;
-}
-
-.btn--expand {
-  margin-top: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
 }
 
 /* --- Chapter Section Controls -------------------------------------------- */

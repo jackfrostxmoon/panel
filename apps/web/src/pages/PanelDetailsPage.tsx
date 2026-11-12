@@ -782,13 +782,14 @@ const filteredAndSortedChapters = useMemo(() => {
     [id, addChapterBookmark, removeChapterBookmark, bulkMarkOne, toast],
   );
 
-  // Check if synopsis is truncated
+  // Check if synopsis is truncated. The collapsed paragraph is always
+  // clamped (.truncated) so scrollHeight > clientHeight is measurable;
+  // while expanded leave the flag alone so the toggle never vanishes.
   useEffect(() => {
-    if (synopsisRef.current) {
-      const el = synopsisRef.current;
-      setIsSynopsisTruncated(el.scrollHeight > el.clientHeight);
-    }
-  }, [panel.data?.description]);
+    const el = synopsisRef.current;
+    if (!el || showMoreSynopsis) return;
+    setIsSynopsisTruncated(el.scrollHeight > el.clientHeight);
+  }, [panel.data?.description, showMoreSynopsis]);
 
   /** Alternative-titles toggle: the joined string is the effect dep so a
       panel swap/revalidation re-measures. While expanded we don't touch the
@@ -1431,14 +1432,14 @@ const filteredAndSortedChapters = useMemo(() => {
           <div className="panel-details__description-wrapper">
             <p
               ref={synopsisRef}
-              className={`panel-details__description ${!showMoreSynopsis && isSynopsisTruncated ? 'truncated' : ''}`}
+              className={`panel-details__description${!showMoreSynopsis ? ' truncated' : ''}${!showMoreSynopsis && isSynopsisTruncated ? ' truncated--faded' : ''}`}
             >
               {m.description}
             </p>
             {isSynopsisTruncated && (
               <button
                 type="button"
-                className="btn btn--ghost btn--sm btn--expand"
+                className="btn btn--ghost btn--sm alt-titles__toggle"
                 onClick={() => setShowMoreSynopsis(!showMoreSynopsis)}
                 aria-expanded={showMoreSynopsis}
               >
@@ -1455,11 +1456,11 @@ const filteredAndSortedChapters = useMemo(() => {
                     >
                       <polyline points="18 15 12 9 6 15" />
                     </svg>
-                    Show Less
+                    Show less
                   </>
                 ) : (
                   <>
-                    Show More
+                    Show more
                     <svg
                       width="16"
                       height="16"
