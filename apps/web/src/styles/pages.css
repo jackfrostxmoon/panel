@@ -2666,6 +2666,14 @@ a.genre-chip {
   color: var(--accent);
   animation: chapter-list-refresh-spin 0.9s linear infinite;
 }
+/* A busy spinner is state feedback, not decorative motion — keep it live
+   even under prefers-reduced-motion (base.css kills animations !important,
+   so beat it here). */
+@media (prefers-reduced-motion: reduce) {
+  .bookmarks-order-hint__spinner {
+    animation: chapter-list-refresh-spin 0.9s linear infinite !important;
+  }
+}
 
 /* Narrow screens: source pills take the full row so the swipe strip never
    squeezes against the folder trigger. Folder trigger + layout/filter
