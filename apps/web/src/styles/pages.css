@@ -457,6 +457,16 @@
   .search-toolbar__search {
     flex-basis: 100%;
   }
+  /* Phones: Filters, Layout, Infinite scroll — in that order. */
+  .search-toolbar .search-filters__disclosure {
+    order: 1;
+  }
+  .search-toolbar .search-filters__switch--layout {
+    order: 2;
+  }
+  .search-toolbar .search-filters__switch:not(.search-filters__switch--layout) {
+    order: 3;
+  }
 }
 .latest-page .search-bar__wrapper {
   /* Left-aligned hero field: cap the wrapper (the history dropdown's positioning
