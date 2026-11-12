@@ -374,6 +374,19 @@
     flex-basis: 100%;
     order: 3;
   }
+  /* Phones: Filters, Search, Infinite scroll, Layout — in that order. */
+  .latest-toolbar .search-filters__disclosure {
+    order: 1;
+  }
+  .latest-toolbar .search-filters__disclosure--search {
+    order: 2;
+  }
+  .latest-toolbar .search-filters__switch {
+    order: 3;
+  }
+  .latest-toolbar .search-filters__switch--layout {
+    order: 4;
+  }
   .latest-toolbar .search-filters--fields {
     flex-basis: 100%;
     order: 4;
