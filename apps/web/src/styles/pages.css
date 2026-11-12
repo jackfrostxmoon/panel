@@ -2367,6 +2367,14 @@ a.genre-chip {
 .chapter-list__toggle {
   margin-top: var(--space-3);
 }
+/* Chapter-list show more/less stays centered even on desktop
+   (only the alt-titles toggle reverts to left-aligned there). */
+@media (min-width: 641px) {
+  .chapter-list__toggle {
+    margin-inline: auto;
+    align-self: center;
+  }
+}
 
 /* Floating page nav (only while the chapter list is fully expanded):
    jump to top / end of page. Hovers at the middle of the viewport's
