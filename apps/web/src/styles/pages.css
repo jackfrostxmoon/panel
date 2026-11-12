@@ -2654,6 +2654,19 @@ a.genre-chip {
   color: var(--text-dim);
 }
 
+/* In-flight feed fetch badge: visible feedback that the shelf is about to
+   re-rank. Inline, non-blocking — the grid stays tappable while fetching. */
+.bookmarks-order-hint--busy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.bookmarks-order-hint__spinner {
+  display: inline-flex;
+  color: var(--accent);
+  animation: chapter-list-refresh-spin 0.9s linear infinite;
+}
+
 /* Narrow screens: source pills take the full row so the swipe strip never
    squeezes against the folder trigger. Folder trigger + layout/filter
    toggles ride together on the next row; selects and title search follow

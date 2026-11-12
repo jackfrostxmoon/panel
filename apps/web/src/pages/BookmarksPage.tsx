@@ -117,6 +117,10 @@ export function BookmarksPage() {
       switches to feed order only then; loading/error/offline silently keep
       the default recency sort. */
   const latestFeedReady = latestFeedPages.some((page) => (page?.results.length ?? 0) > 0);
+  /** True while any feed page fetch is in flight — shown as an inline,
+      non-blocking badge. The grid stays fully interactive (cards can be
+      opened while re-ranking happens in the background). */
+  const latestFeedFetching = feedPage1.isFetching || feedPage2.isFetching || feedPage3.isFetching;
   const [query, setQuery] = useState('');
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
@@ -768,7 +772,18 @@ export function BookmarksPage() {
         />
       </div>
 
-      {sourceFilter && latestFeedReady && (
+      {sourceFilter && latestFeedFetching && (
+        <p className="bookmarks-order-hint bookmarks-order-hint--busy" role="status" aria-live="polite">
+          <span className="bookmarks-order-hint__spinner" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="12" cy="12" r="9" opacity="0.25" />
+              <path d="M21 12a9 9 0 0 0-9-9" />
+            </svg>
+          </span>
+          <span>Fetching {sourceLabel(sourceFilter)}&rsquo;s latest updates…</span>
+        </p>
+      )}
+      {sourceFilter && latestFeedReady && !latestFeedFetching && (
         <p className="bookmarks-order-hint" role="note">
           Ordered by {sourceLabel(sourceFilter)}&rsquo;s latest updates — titles outside its
           recent window keep the default order.
