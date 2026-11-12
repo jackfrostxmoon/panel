@@ -785,16 +785,32 @@ const filteredAndSortedChapters = useMemo(() => {
   // Check if synopsis is truncated. The collapsed paragraph is always
   // clamped (.truncated) so scrollHeight > clientHeight is measurable;
   // while expanded leave the flag alone so the toggle never vanishes.
+  // Re-measured on container resize (viewport switch, sidebar toggle) —
+  // a stale measurement after a desktop→mobile flip hid the button
+  // until refresh. Effect re-runs on toggle, so the closure stays correct.
   useEffect(() => {
     const el = synopsisRef.current;
-    if (!el || showMoreSynopsis) return;
-    setIsSynopsisTruncated(el.scrollHeight > el.clientHeight);
+    if (!el) return;
+    const measure = () => {
+      if (showMoreSynopsis) return;
+      setIsSynopsisTruncated(el.scrollHeight > el.clientHeight);
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   }, [panel.data?.description, showMoreSynopsis]);
 
   /** Alternative-titles toggle: the joined string is the effect dep so a
-      panel swap/revalidation re-measures. While expanded we don't touch the
-      flag — otherwise the button would vanish on the next refetch and trap
-      the user in the expanded state. */
+      panel swap/revalidation re-measures. Re-measured on container resize
+      so a viewport switch (desktop→mobile) can't leave a stale truncation
+      flag behind. While expanded we don't touch the flag — otherwise the
+      button would vanish on the next refetch and trap the user in the
+      expanded state. */
   const altTitlesJoined = panel.data?.altTitles.join(' · ') ?? '';
   useEffect(() => {
     const el = altTitlesRef.current;
@@ -802,8 +818,18 @@ const filteredAndSortedChapters = useMemo(() => {
       setIsAltTitlesTruncated(false);
       return;
     }
-    if (showAllAltTitles) return;
-    setIsAltTitlesTruncated(el.scrollHeight > el.clientHeight);
+    const measure = () => {
+      if (showAllAltTitles) return;
+      setIsAltTitlesTruncated(el.scrollHeight > el.clientHeight);
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   }, [altTitlesJoined, showAllAltTitles]);
 
   // Recently-viewed rail: record this panel tap so the home page can
