@@ -108,7 +108,7 @@ export function CardLayoutToggle({
   labelId: string;
 }) {
   return (
-    <span className="search-filters__switch">
+    <span className="search-filters__switch search-filters__switch--layout">
       <span className="search-filters__label" id={labelId}>
         Layout
       </span>
