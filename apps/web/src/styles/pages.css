@@ -1145,6 +1145,8 @@
 .panel-details {
   max-width: var(--layout-max);
   margin: 0 auto;
+  /* Safety net against any child exceeding the viewport on phones. */
+  overflow-x: clip;
 }
 
 /* --- Breadcrumb ----------------------------------------------------------- */
@@ -1211,6 +1213,10 @@
   padding-bottom: var(--space-7);
   border-bottom: 1px solid var(--border);
   align-items: start;
+  /* Contain the blurred backdrop's negative-inset bleed — without this the
+     hero pushes the page wider than the viewport on phones (horizontal
+     scroll / forced zoom-out). Same fix as .home-hero. */
+  overflow-x: clip;
 }
 
 /* T3-8: blurred cover-as-backdrop with a gradient wash. Sits behind the hero
