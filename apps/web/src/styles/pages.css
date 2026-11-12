@@ -84,6 +84,18 @@
   justify-content: center;
 }
 
+/* The hero search bar: wrapper and form shrink-to-fit by default, which
+   overflows the hero column on phones (bar clipped at the right edge).
+   Stretch both to the column and keep the 640px cap. */
+.home-page .search-bar__wrapper {
+  width: 100%;
+  max-width: 640px;
+}
+.home-page .search-bar {
+  width: 100%;
+  max-width: none;
+}
+
 .home-hero {
   position: relative;
   isolation: isolate;
