@@ -1450,10 +1450,14 @@
   pointer-events: none;
 }
 
-/* Compact ghost toggle shown under the clamped alternative titles — only
-   rendered when truncated. Left-aligned to sit under the label column. */
+/* Compact ghost toggle shown under the clamped alternative titles and the
+   collapsed synopsis — only rendered when truncated. Centered in its
+   container. */
 .alt-titles__toggle {
-  align-self: flex-start;
+  align-self: center;
+  display: flex;
+  width: max-content;
+  margin-inline: auto;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
   font-size: var(--font-size-xs);
