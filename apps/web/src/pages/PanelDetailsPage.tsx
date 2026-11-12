@@ -1802,6 +1802,28 @@ const filteredAndSortedChapters = useMemo(() => {
             )}
           </button>
         )}
+        {showAllChapters && filteredAndSortedChapters.length > 5 && (
+          <div className="page-floating-nav" role="group" aria-label="Page navigation">
+            <button
+              type="button"
+              className="page-floating-nav__btn"
+              onClick={scrollToTop}
+              aria-label="Scroll to top of page"
+              title="Scroll to top"
+            >
+              <IconChevronUp size={18} />
+            </button>
+            <button
+              type="button"
+              className="page-floating-nav__btn"
+              onClick={scrollToEnd}
+              aria-label="Scroll to end of page"
+              title="Scroll to end"
+            >
+              <IconChevronDown size={18} />
+            </button>
+          </div>
+        )}
       </section>
       {shareOpen && (
         <ShareDialog
@@ -1810,28 +1832,7 @@ const filteredAndSortedChapters = useMemo(() => {
           onClose={() => setShareOpen(false)}
         />
       )}
-      {showAllChapters && filteredAndSortedChapters.length > 5 && (
-        <div className="page-floating-nav" role="group" aria-label="Page navigation">
-          <button
-            type="button"
-            className="page-floating-nav__btn"
-            onClick={scrollToTop}
-            aria-label="Scroll to top of page"
-            title="Scroll to top"
-          >
-            <IconChevronUp size={18} />
-          </button>
-          <button
-            type="button"
-            className="page-floating-nav__btn"
-            onClick={scrollToEnd}
-            aria-label="Scroll to end of page"
-            title="Scroll to end"
-          >
-            <IconChevronDown size={18} />
-          </button>
-        </div>
-      )}
+
     </div>
   );
 }
