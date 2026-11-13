@@ -568,6 +568,12 @@ export class PanelService {
       const panelRow = panelGlobalId
         ? await this.panelCache.findPanelByGlobalId(panelGlobalId).catch(() => undefined)
         : undefined;
+      // The chapter row stores the concrete reader URL — pass it through so
+      // sources whose chapters aren't always on the English reader path
+      // (e.g. RoliaScan's /fr/ chapters) can fetch the right one.
+      const chapterRow = await this.panelCache
+        .findChapterByGlobalId(globalChapterId)
+        .catch(() => undefined);
       const pages = await this.withOfflineFallback(
         async () => {
           const cached = await this.panelCache.findChapterPagesByChapterGlobalId(
@@ -575,7 +581,7 @@ export class PanelService {
           );
           return cached ? toApiChapterPages(cached, globalChapterId) : undefined;
         },
-        () => source.getChapterPages(nativeId, opts),
+        () => source.getChapterPages(nativeId, { ...opts, sourceUrl: chapterRow?.sourceUrl }),
         (cause) =>
           new AppError(
             ErrorCodes.SOURCE_UNAVAILABLE,
@@ -598,7 +604,10 @@ export class PanelService {
   /** Live revalidation for the pages fast path — never awaited by requests. */
   private async refreshChapterPages(globalChapterId: string): Promise<void> {
     const { source, nativeId } = this.registry.forGlobalId(globalChapterId);
-    const pages = await source.getChapterPages(nativeId);
+    const chapterRow = await this.panelCache
+      .findChapterByGlobalId(globalChapterId)
+      .catch(() => undefined);
+    const pages = await source.getChapterPages(nativeId, { sourceUrl: chapterRow?.sourceUrl });
     this.cache.set(`pages:${globalChapterId}`, pages, this.ttlFor(this.cacheConfig.pagesMs), PanelService.sizeOf(pages));
     const panelGlobalId = globalChapterId.slice(0, globalChapterId.lastIndexOf('~'));
     const panelRow = panelGlobalId

@@ -484,7 +484,7 @@ export class RoliaScanSource implements PanelSource {
     return chapters;
   }
 
-  async getChapterPages(nativeChapterId: string): Promise<ChapterPages> {
+  async getChapterPages(nativeChapterId: string, opts?: { serverPreference?: string; sourceUrl?: string }): Promise<ChapterPages> {
     this.assertEnabled();
     const parts = splitNativeChapterId(nativeChapterId);
     if (!parts) {
@@ -493,7 +493,22 @@ export class RoliaScanSource implements PanelSource {
       });
     }
 
-    const { body } = await this.http.fetchText(this.buildChapterUrl(nativeChapterId));
+    // The chapter may only exist in a non-English reader language
+    // (`/fr/chapter-…`, `/es/chapter-…`) which the English-first URL builder
+    // can't know about — prefer the source URL stored with the chapter row,
+    // and fall back to the English reader path if it rots.
+    const stored = opts?.sourceUrl && isSameHost(opts.sourceUrl, this.baseUrl) ? opts.sourceUrl : null;
+    const english = this.buildChapterUrl(nativeChapterId);
+    let body: string;
+    if (stored) {
+      try {
+        ({ body } = await this.http.fetchText(stored));
+      } catch {
+        ({ body } = await this.http.fetchText(english));
+      }
+    } else {
+      ({ body } = await this.http.fetchText(english));
+    }
 
     let parsed: ReturnType<typeof parseChapterReaderPage>;
     try {
