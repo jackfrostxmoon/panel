@@ -1522,7 +1522,7 @@ const filteredAndSortedChapters = useMemo(() => {
             {isSynopsisTruncated && (
               <button
                 type="button"
-                className="btn btn--ghost btn--sm alt-titles__toggle"
+                className="btn btn--ghost btn--sm alt-titles__toggle synopsis__toggle"
                 onClick={() => setShowMoreSynopsis(!showMoreSynopsis)}
                 aria-expanded={showMoreSynopsis}
               >

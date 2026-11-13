@@ -1522,6 +1522,15 @@
   }
 }
 
+/* Synopsis show more/less stays centered even on desktop (only the
+   alt-titles toggle reverts to left-aligned there). */
+@media (min-width: 641px) {
+  .synopsis__toggle {
+    margin-inline: auto;
+    align-self: center;
+  }
+}
+
 .alt-titles__toggle:hover {
   color: var(--text);
 }
