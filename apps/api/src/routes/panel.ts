@@ -54,7 +54,9 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     return out.length > 0 ? out : undefined;
   }
 
-  // GET /api/panel/search?q=naruto&page=1&source=mk,nk&genre=Action&exclude=Hentai
+  // GET /api/panel/search?q=naruto&page=1&source=mk,nk&genre=Action&exclude=Hentai&mode=author
+  // mode: "title" (default) | "author" | "artist" (server-side credit search
+  // where the source supports it; the local metadata cache is merged in).
   // genre/exclude accept repeated (?genre=a&genre=b) and comma-separated
   // (?genre=a,b) forms; include semantics are OR.
   app.get('/search', async (c) => {
@@ -71,6 +73,12 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     // Genre constraints (display labels from the filter dropdowns). Combo-
     // capable sources filter server-side; the rest fall back to the plain
     // search with client-side narrowing.
+    const modeRaw = c.req.query('mode');
+    if (modeRaw !== undefined && modeRaw !== 'title' && modeRaw !== 'author' && modeRaw !== 'artist') {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Parameter "mode" must be one of "title", "author", "artist".');
+    }
+    const mode: 'title' | 'author' | 'artist' =
+      modeRaw === 'author' || modeRaw === 'artist' ? modeRaw : 'title';
     const genres = trimParamList(c.req.queries('genre'), 100);
     const excludedGenres = trimParamList(c.req.queries('exclude'), 100);
     const result = await panelService.search(
@@ -79,6 +87,7 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
       parseSourceFilter(c.req.query('source')),
       genres,
       excludedGenres,
+      mode,
     );
     return c.json(ok(result));
   });

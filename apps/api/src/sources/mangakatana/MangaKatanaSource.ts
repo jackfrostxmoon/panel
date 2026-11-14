@@ -187,6 +187,26 @@ export class MangaKatanaSource implements PanelSource {
       search_by: 'book_name',
       page: String(page),
     });
+    return this.searchWith(params, page);
+  }
+
+  /**
+   * Author search via the site's own `search_by=author` filter (verified
+   * live). The site has no artist filter — artist searches return nothing
+   * and the service falls back to the local metadata cache.
+   */
+  async searchByCredit(kind: 'author' | 'artist', query: string, page = 1): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    if (kind !== 'author') return { results: [], page, hasMore: false };
+    const params = new URLSearchParams({
+      search: query,
+      search_by: 'author',
+      page: String(page),
+    });
+    return this.searchWith(params, page);
+  }
+
+  private async searchWith(params: URLSearchParams, page: number): Promise<SourceSearchResult> {
     const url = `${this.baseUrl}/?${params.toString()}`;
     const { body, finalUrl } = await this.http.fetchText(url);
     const parsed = parseSearchPage(body, this.baseUrl);

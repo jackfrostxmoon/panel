@@ -196,6 +196,24 @@ export class MangaReadSource implements PanelSource {
     return { results: [], page, hasMore: false };
   }
 
+  /**
+   * Author/artist search through Madara's Advanced Search: an empty `s`
+   * with a substring `author=`/`artist=` term (verified live on this fork).
+   * Single page, no redirect fallback (author queries never match a
+   * redirect to a single title).
+   */
+  async searchByCredit(kind: 'author' | 'artist', query: string, page = 1): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    if (page > 1) {
+      return { results: [], page, hasMore: false };
+    }
+    const params = new URLSearchParams({ s: '', post_type: 'wp-manga', [kind]: query });
+    const url = `${this.baseUrl}/?${params.toString()}`;
+    const { body } = await this.http.fetchText(url);
+    const results = parseSearchPage(body, this.baseUrl).map((item) => this.toPanelSummary(item));
+    return { results, page, hasMore: false };
+  }
+
   async latest(page = 1): Promise<SourceSearchResult> {
     this.assertEnabled();
     const pagePath = page <= 1 ? '/manga/' : `/manga/page/${page}/`;

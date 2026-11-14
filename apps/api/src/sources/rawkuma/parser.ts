@@ -194,13 +194,26 @@ export function decodeNonce(html: string): string | null {
  * (the library filter speaks slugs). Empty on absent/malformed payload.
  */
 export function parseGenreTerms(html: string): Array<{ name: string; slug: string }> {
+  return parseTaxonomyTerms(html, 'genre');
+}
+
+/**
+ * Author/artist terms (`{name, slug}` in site order) from the library
+ * page's embedded `var searchTerms` JSON. The library speaks slugs; the
+ * caller resolves free-text queries to term slugs itself (substring on
+ * the name column). Empty on absent/malformed payload.
+ */
+export function parseTaxonomyTerms(
+  html: string,
+  taxonomy: 'genre' | 'type' | 'status' | 'series-author' | 'artist',
+): Array<{ name: string; slug: string }> {
   const match = /var\s+searchTerms\s*=\s*(\{.*?\})\s*;?\s*<\/script>/s.exec(html);
   if (!match?.[1]) return [];
   try {
     const data = JSON.parse(match[1]) as {
-      genre?: Record<string, { name?: unknown; slug?: unknown }>;
+      [key: string]: Record<string, { name?: unknown; slug?: unknown }> | undefined;
     };
-    const group = data.genre;
+    const group = data[taxonomy];
     if (!group || typeof group !== 'object') return [];
     const seen = new Set<string>();
     const terms: Array<{ name: string; slug: string }> = [];

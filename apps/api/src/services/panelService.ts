@@ -4,9 +4,11 @@ import {
   toGlobalId,
   type Chapter,
   type ChapterPages,
+  type CreditKind,
   type Panel,
   type PanelPage,
   type PanelSource,
+  type PanelSummary,
   type SourceSearchResult,
 } from '@panel/shared';
 import type { CacheConfig } from '../config.js';
@@ -250,6 +252,7 @@ export class PanelService {
     sources?: string[],
     genres?: string[] | null,
     excludedGenres?: string[] | null,
+    mode?: 'title' | CreditKind,
   ): Promise<SourceSearchResult> {
     const toQuery = this.resolveSources(sources);
     const filter = sources && sources.length > 0 ? sources.join(',') : '*';
@@ -259,6 +262,12 @@ export class PanelService {
     // one. Unfiltered calls keep the historic key (existing caches stay).
     const g = normalizeGenreLabels(genres);
     const x = normalizeGenreLabels(excludedGenres);
+    if (mode === 'author' || mode === 'artist') {
+      // Credit search: mode-scoped key so it can never be served as (or
+      // overwrite) a title search or the other credit mode.
+      const key = g || x ? `${baseKey}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}` : baseKey;
+      return this.searchByCredit(mode, query, page, toQuery, filter, key, x);
+    }
     const key = g || x ? `${baseKey}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}` : baseKey;
     return this.cached(
       `search:${key}:${page}:${filter}`,
@@ -306,6 +315,112 @@ export class PanelService {
         // Persist so a later offline visit shows the same list.
         await this.panelCache
           .upsertList('search', key, filter, page, cleanedResult.results, cleanedResult.hasMore)
+          .catch(() => {
+            /* persistence is best-effort */
+          });
+        return cleanedResult;
+      },
+    );
+  }
+
+  /**
+   * Server-side author/artist search. Sources whose sites can filter by
+   * credit do so natively; the local metadata cache is merged in for
+   * every source (live results first, deduped by id) so cached matches
+   * show even from sites with no credit filter — and everything known
+   * anywhere is reachable offline. Page 2+ carries live results only
+   * (cached hits live on page 1, so they never repeat while paging).
+   *
+   * Persisted under a `search:<kind>:`-scoped key, like title search.
+   */
+  private searchByCredit(
+    kind: CreditKind,
+    query: string,
+    page: number,
+    toQuery: PanelSource[],
+    filter: string,
+    key: string,
+    excludedGenres: string[] | null,
+  ): Promise<SourceSearchResult> {
+    const persistKey = `${kind}:${key}`;
+    return this.cached(
+      `search:${persistKey}:${page}:${filter}`,
+      this.cacheConfig.searchMs,
+      async () => {
+        // Local matches are collected up front so they are included even
+        // when every source fails (the failure path below still surfaces
+        // an error when neither live, persisted nor cached data exists).
+        const localPromise = this.panelCache
+          .searchByCredit(
+            kind,
+            query,
+            toQuery.map((s) => s.name),
+          )
+          .catch(() => [] as PanelSummary[]);
+
+        const live = async (): Promise<SourceSearchResult> => {
+          const capable = toQuery.filter((s) => typeof s.searchByCredit === 'function');
+          if (capable.length === 0) return { results: [], page, hasMore: false };
+          const settled = await Promise.allSettled(
+            capable.map((s) => s.searchByCredit!(kind, query, page)),
+          );
+          return this.mergeSourceResults(settled, page);
+        };
+
+        let liveResult: SourceSearchResult | undefined;
+        let liveError: unknown;
+        try {
+          liveResult = await live();
+        } catch (error) {
+          liveError = error;
+        }
+
+        let base: SourceSearchResult | undefined = liveResult;
+        if (base === undefined) {
+          const persisted = await this.panelCache
+            .findList('search', persistKey, filter, page)
+            .catch(() => undefined);
+          if (persisted) {
+            base = { results: persisted.results, page: persisted.page, hasMore: persisted.hasMore };
+          }
+        }
+
+        const local = await localPromise;
+        // Cached hits only merge into page 1 — later pages would otherwise
+        // repeat the same block of cached matches on every page.
+        const merged =
+          page === 1
+            ? mergeCreditResults(base?.results ?? [], local)
+            : (base?.results ?? []);
+
+        if (base === undefined && merged.length === 0 && liveError !== undefined) {
+          const cause = liveError;
+          throw new AppError(
+            ErrorCodes.SOURCE_UNAVAILABLE,
+            `Could not reach sources to search for "${query}".`,
+            { cause: cause instanceof Error ? cause.message : String(cause) },
+          );
+        }
+        if (base === undefined) {
+          base = { results: [], page, hasMore: false };
+        }
+
+        const cleanedResult: SourceSearchResult = {
+          ...base,
+          results: applyExcludedGenres(
+            merged.map((r) => ({
+              ...r,
+              genres: (r.genres ?? []).map((genre) => cleanGenreLabel(genre)).filter(Boolean),
+            })),
+            excludedGenres,
+          ),
+          // An empty upstream page must never claim more pages (paginator
+          // chrome on empty pages kept infinite scroll fetching forever).
+          hasMore: base.hasMore && base.results.length > 0,
+        };
+        // Persist so a later offline visit shows the same list.
+        await this.panelCache
+          .upsertList('search', persistKey, filter, page, cleanedResult.results, cleanedResult.hasMore)
           .catch(() => {
             /* persistence is best-effort */
           });
@@ -716,6 +831,21 @@ export class PanelService {
     }
     return chapter;
   }
+}
+
+/** Union of live and cached credit matches, deduped by global id (live wins). */
+function mergeCreditResults(
+  live: readonly PanelSummary[],
+  cached: readonly PanelSummary[],
+): PanelSummary[] {
+  const seen = new Set<string>(live.map((r) => r.id));
+  const out = [...live];
+  for (const item of cached) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
 }
 
 /** Map a cached `panel` row back to the API's `Panel` shape. */

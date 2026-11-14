@@ -32,6 +32,7 @@ import {
   parseListPage,
   parsePanelPage,
   parseSearchPage,
+  parseTaxonomyTerms,
 } from './parser.js';
 
 /**
@@ -74,6 +75,22 @@ export class RawkumaSource implements PanelSource {
    * Absent in tests / standalone use — everything is fetched then.
    */
   private readonly findGenres?: GenreLookup;
+
+  /** Library page (large) feeds both the genre index and the author/artist
+   *  index — fetch at most once per TTL window per process. */
+  private libraryPageCache: { html: string; fetchedAt: number } | null = null;
+  private static readonly LIBRARY_PAGE_TTL_MS = 5 * 60_000;
+
+  /** Cached `/library/` fetch (HTML includes the embedded searchTerms JSON). */
+  private async libraryPage(): Promise<string> {
+    const cached = this.libraryPageCache;
+    if (cached && Date.now() - cached.fetchedAt < RawkumaSource.LIBRARY_PAGE_TTL_MS) {
+      return cached.html;
+    }
+    const { body } = await this.http.fetchText(`${this.baseUrl}/library/`);
+    this.libraryPageCache = { html: body, fetchedAt: Date.now() };
+    return body;
+  }
 
   constructor(config: SourceConfig, http?: SourceHttpClient, findGenres?: GenreLookup) {
     this.name = config.name;
@@ -175,6 +192,53 @@ export class RawkumaSource implements PanelSource {
     };
   }
 
+  /**
+   * Author/artist search through the library filter. Free text resolves to
+   * slugs from the library page's embedded taxonomy (substring match on the
+   * display name), then `advanced_search` ANDs them like the site's own
+   * picker (multi-match renders as OR server-side). The nonce scheme and
+   * payload shape are the same as the site's search box
+   * (`action=advanced_search`, `author`/`artist` as JSON slug arrays —
+   * both verified live).
+   */
+  async searchByCredit(
+    kind: 'author' | 'artist',
+    query: string,
+    page = 1,
+  ): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    const p = page >= 1 ? page : 1;
+    const q = query.trim().toLowerCase();
+    if (!q) return { results: [], page: p, hasMore: false };
+    const taxonomy = kind === 'author' ? 'series-author' : 'artist';
+    const html = await this.libraryPage();
+    // "karikari-ume" should match "@Karikari Ume" — strip everything but
+    // letters/digits on both sides before comparing.
+    const squash = (raw: string): string => raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const needle = squash(query);
+    const slugs = parseTaxonomyTerms(html, taxonomy)
+      .filter((term) => squash(term.name).includes(needle) || squash(term.slug).includes(needle))
+      .slice(0, 20)
+      .map((term) => term.slug);
+    if (slugs.length === 0) return { results: [], page: p, hasMore: false };
+    const nonce = await this.fetchSearchNonce();
+    const { body } = await this.http.postForm(`${this.baseUrl}/wp-admin/admin-ajax.php`, {
+      action: 'advanced_search',
+      nonce,
+      query: '',
+      page: String(p),
+      [kind]: JSON.stringify(slugs),
+    });
+    // Search caps at ~24 results with no pagination UI.
+    const items = parseSearchPage(body, this.baseUrl);
+    await this.enrichListGenres(items);
+    return {
+      results: items.map((item) => this.toPanelSummary(item)),
+      page: p,
+      hasMore: items.length >= 24,
+    };
+  }
+
   async latest(page = 1): Promise<SourceSearchResult> {
     this.assertEnabled();
     const url =
@@ -221,8 +285,7 @@ export class RawkumaSource implements PanelSource {
    */
   async getGenreList(): Promise<string[]> {
     this.assertEnabled();
-    const { body } = await this.http.fetchText(`${this.baseUrl}/library/`);
-    return parseGenreCatalog(body);
+    return parseGenreCatalog(await this.libraryPage());
   }
 
   /**
@@ -234,7 +297,7 @@ export class RawkumaSource implements PanelSource {
     genres: readonly string[],
     excludedGenres: readonly string[],
   ): Promise<{ includes: string[]; excludes: string[] } | null> {
-    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/library/`);
+    const indexHtml = await this.libraryPage();
     const terms = parseGenreTerms(indexHtml);
     const slugOf = (label: string): string | null =>
       terms.find((term) => term.name.toLowerCase() === label.toLowerCase())?.slug ?? null;

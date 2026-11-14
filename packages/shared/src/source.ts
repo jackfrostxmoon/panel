@@ -17,6 +17,12 @@ import type { Chapter, ChapterPages, Panel, PanelSummary } from './types.js';
  *  - Returned entities carry GLOBAL ids (prefix included, e.g.
  *    `mk:solo-leveling.21708`) so clients never have to assemble ids.
  */
+/** The credit field of a panel used by `searchByCredit`. */
+export type CreditKind = 'author' | 'artist';
+
+/** Search modes exposed by `GET /api/panel/search?mode=`: titles (default) or credits. */
+export type SearchMode = 'title' | CreditKind;
+
 export interface PanelSource {
   /** Unique source name, also used as the global id prefix, e.g. "mk". */
   readonly name: string;
@@ -27,6 +33,19 @@ export interface PanelSource {
 
   /** Search for panel by title. `page` is 1-based. */
   search(query: string, page?: number): Promise<SourceSearchResult>;
+
+  /**
+   * Optional: server-side credit (author/artist) search. Implement only
+   * when the site can filter by that credit — the UI's author/artist mode
+   * fans out to this; sources without it simply return nothing and the
+   * service merges the local metadata cache instead. `kind` is the credit
+   * to match ('author' | 'artist'), `page` is 1-based.
+   */
+  searchByCredit?(
+    kind: CreditKind,
+    query: string,
+    page?: number,
+  ): Promise<SourceSearchResult>;
 
   /** Fetch source latest updates. `page` is 1-based. */
   latest(page?: number): Promise<SourceSearchResult>;

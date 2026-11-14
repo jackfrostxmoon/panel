@@ -49,6 +49,7 @@ import type {
   BookmarksPageSettings,
   CachePageSettings,
   SourceOrderSettings,
+  SearchMode,
 } from '@panel/shared';
 
 /**
@@ -294,11 +295,12 @@ export function mergeTagSummaries(
 
 export const api = {
   /* Panel / chapters (source-backed) */
-  search: (query: string, page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[]) => {
+  search: (query: string, page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[], mode?: SearchMode) => {
     const params = new URLSearchParams({ q: query, page: String(page) });
     if (source) params.set('source', source);
     for (const genre of genres ?? []) params.append('genre', genre);
     for (const exclude of excludes ?? []) params.append('exclude', exclude);
+    if (mode && mode !== 'title') params.set('mode', mode);
     return request<SourceSearchResult>(`/api/panel/search?${params.toString()}`);
   },
   latest: (page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[]) => {

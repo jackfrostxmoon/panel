@@ -29,6 +29,7 @@ import type {
   RecordRecentlyViewedInput,
   RemoveBookmarkFromFolderInput,
   SaveProgressInput,
+  SearchMode,
   SourceSearchResult,
   SetPanelRatingInput,
   Tag,
@@ -61,8 +62,8 @@ function genreKey(labels: readonly string[] | undefined): string {
 }
 
 export const queryKeys = {
-  search: (q: string, page: number, source?: string, genres?: readonly string[], excludes?: readonly string[]) =>
-    ['search', q, page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
+  search: (q: string, page: number, source?: string, genres?: readonly string[], excludes?: readonly string[], mode?: SearchMode) =>
+    ['search', q, page, source ?? 'all', genreKey(genres), genreKey(excludes), mode ?? 'title'] as const,
   latest: (page: number, source?: string, genres?: readonly string[], excludes?: readonly string[]) =>
     ['latest', page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
   panel: (id: string) => ['panel', id] as const,
@@ -144,10 +145,11 @@ export function useSearch(
   genres?: readonly string[],
   excludes?: readonly string[],
   opts?: QueryOpts<SourceSearchResult>,
+  mode?: SearchMode,
 ) {
   return useQuery<SourceSearchResult, ApiClientError>({
-    queryKey: queryKeys.search(query, page, source, genres, excludes),
-    queryFn: () => api.search(query, page, source, genres, excludes),
+    queryKey: queryKeys.search(query, page, source, genres, excludes, mode),
+    queryFn: () => api.search(query, page, source, genres, excludes, mode),
     enabled: query.trim().length > 0,
     staleTime: 60_000,
     ...opts,

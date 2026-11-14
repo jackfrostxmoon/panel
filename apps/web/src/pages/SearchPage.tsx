@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { CardLayout, PanelStatus, SourceSearchResult } from '@panel/shared';
+import type { CardLayout, PanelStatus, SearchMode, SourceSearchResult } from '@panel/shared';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -24,6 +24,7 @@ import { hideCoverPreview, showCoverPreview } from '../components/coverPreview';
 import { LatestCardActions } from '../components/LatestCardActions';
 import { GenreMultiSelect } from '../components/GenreMultiSelect';
 import { SearchBar } from '../components/SearchBar';
+import { SearchModeToggle } from '../components/SearchModeToggle';
 import { SourceFilter } from '../components/SourceFilter';
 import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -35,6 +36,10 @@ export function SearchPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const query = (params.get('q') ?? '').trim();
+  // ?mode=author|artist — credit search (combined with the local metadata
+  // cache server-side). Anything else is a title search.
+  const modeParam = params.get('mode');
+  const mode: SearchMode = modeParam === 'author' || modeParam === 'artist' ? modeParam : 'title';
   const pageParam = Number.parseInt(params.get('page') ?? '1', 10);
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
   // Always query exactly one source — no fan-out "all sources" mode.
@@ -106,6 +111,7 @@ export function SearchPage() {
     {
       placeholderData: (previous) => previous,
     },
+    mode,
   );
 
   /**
@@ -148,6 +154,8 @@ export function SearchPage() {
   genreFilterRef.current = genreFilter;
   const excludedGenreRef = useRef(excludedGenre);
   excludedGenreRef.current = excludedGenre;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const extraPagesRef = useRef(extraPages);
   extraPagesRef.current = extraPages;
 
@@ -176,7 +184,7 @@ export function SearchPage() {
   // navigation per gesture.
   useEffect(() => {
     resetExtraPages();
-  }, [query, source, genreFilter, excludedGenre, infiniteScroll]);
+  }, [query, source, genreFilter, excludedGenre, infiniteScroll, mode]);
   const showLoading = useDelayedLoading(search.isLoading);
   const { settings } = useDisplaySettings();
 
@@ -296,16 +304,16 @@ export function SearchPage() {
 
       if ((event.key === 'ArrowLeft' || event.key === 'a') && page > 1) {
         event.preventDefault();
-        navigate(searchPath(page - 1, query, source));
+        navigate(searchPath(page - 1, query, source, mode));
       } else if ((event.key === 'ArrowRight' || event.key === 'd') && hasMore) {
         event.preventDefault();
-        navigate(searchPath(page + 1, query, source));
+        navigate(searchPath(page + 1, query, source, mode));
       }
     }
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [page, hasMore, query, source, hasResults, infiniteScroll, navigate]);
+  }, [page, hasMore, query, source, hasResults, infiniteScroll, mode, navigate]);
 
   /**
    * Append one page in infinite mode and record the new depth in the URL
@@ -331,6 +339,7 @@ export function SearchPage() {
         liveSource,
         liveGenres.length > 0 ? liveGenres : undefined,
         liveExcludes.length > 0 ? liveExcludes : undefined,
+        modeRef.current,
       );
       // Navigated away mid-flight (e.g. Home) — drop the stale page
       // instead of rewriting the new route's URL back to this search.
@@ -429,6 +438,17 @@ export function SearchPage() {
     setExcludedGenre([]);
   }
 
+  /** Title/Author/Artist switch. Changing mode resets pagination; the
+   *  active query and source are kept. */
+  function changeMode(next: SearchMode) {
+    if (next === mode) return;
+    const nextParams = new URLSearchParams(params);
+    if (next === 'title') nextParams.delete('mode');
+    else nextParams.set('mode', next);
+    nextParams.delete('page');
+    setParams(nextParams);
+  }
+
   /** Rewind the scroll-depth param after a filter refinement (replace —
       refinements aren't places, so they shouldn't add history entries). */
   function rewindPageParam() {
@@ -459,6 +479,7 @@ export function SearchPage() {
         <div className="search-toolbar__search">
           <SearchBar initialValue={query} autoFocus={query.length === 0} showPasteButton />
         </div>
+        {query.length > 0 && <SearchModeToggle mode={mode} onChange={changeMode} labelId="search-mode-label" />}
           {layoutReady && search.isSuccess && search.data.results.length > 0 && (
             <>
           <div className="search-filters search-filters--toggles" role="group" aria-label="Search view options">
@@ -547,12 +568,23 @@ export function SearchPage() {
       </div>
 
       {query.length === 0 && (
-        <EmptyState title="Search for a panel" message="Type a title above to get started." />
+        <EmptyState
+          title="Search for a panel"
+          message={
+            mode === 'author' ? 'Type an author name above to get started.'
+            : mode === 'artist' ? 'Type an artist name above to get started.'
+            : 'Type a title above to get started.'
+          }
+        />
       )}
 
 {query.length > 0 && showLoading && (
         <>
-          <p className="page-subtitle">Searching for "{query}"…</p>
+          <p className="page-subtitle">
+            {mode === 'title'
+              ? `Searching for "${query}"…`
+              : `Searching for ${mode} "${query}"…`}
+          </p>
           <div className="search-loading" aria-live="polite" />
         </>
       )}
@@ -685,13 +717,17 @@ export function SearchPage() {
                   )}
                 </>
               ) : (
-                <Pagination page={page} hasMore={search.data.hasMore} query={query} source={source} />
+                <Pagination page={page} hasMore={search.data.hasMore} query={query} source={source} mode={mode} />
               )}
             </>
           ) : (
             <EmptyState
               title="Nothing found"
-              message="Try a different title, or check the spelling."
+              message={
+                mode === 'title'
+                  ? 'Try a different title, or check the spelling.'
+                  : `No ${mode} results for "${query}". Cached titles with matching credits will appear here as you browse.`
+              }
             />
           )}
         </>
@@ -701,8 +737,9 @@ export function SearchPage() {
 }
 
 /** URL for a search-results page; shared by the pagination links and keyboard nav. */
-function searchPath(page: number, query: string, source: string): string {
+function searchPath(page: number, query: string, source: string, mode: SearchMode = 'title'): string {
   const params = new URLSearchParams({ q: query, source });
+  if (mode !== 'title') params.set('mode', mode);
   if (page > 1) params.set('page', String(page));
   return `/search?${params.toString()}`;
 }
@@ -712,18 +749,20 @@ function Pagination({
   hasMore,
   query,
   source,
+  mode,
 }: {
   page: number;
   hasMore: boolean;
   query: string;
   source: string;
+  mode: SearchMode;
 }) {
   return (
     <nav className="pagination" aria-label="Search result pages">
       {page > 1 ? (
         <Link
           className="btn btn--ghost btn--sm"
-          to={searchPath(page - 1, query, source)}
+          to={searchPath(page - 1, query, source, mode)}
           aria-keyshortcuts="ArrowLeft A"
           title="Previous page (←)"
         >
@@ -738,7 +777,7 @@ function Pagination({
       {hasMore ? (
         <Link
           className="btn btn--ghost btn--sm"
-          to={searchPath(page + 1, query, source)}
+          to={searchPath(page + 1, query, source, mode)}
           aria-keyshortcuts="ArrowRight D"
           title="Next page (→)"
         >

@@ -157,6 +157,27 @@ export class RawdexSource implements PanelSource {
     };
   }
 
+  /**
+   * Author/artist search through Madara's Advanced Search: an empty `s`
+   * with a substring `author=`/`artist=` term (verified live on the
+   * Madara engine; Mangaread confirmed). Single page, no pagination.
+   */
+  async searchByCredit(kind: 'author' | 'artist', query: string, page = 1): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    if (page > 1) {
+      return { results: [], page, hasMore: false };
+    }
+    const searchUrl = `${this.baseUrl}/?s=&post_type=wp-manga&${kind}=${encodeURIComponent(query)}`;
+    const { body } = await this.http.fetchText(searchUrl);
+    const items = parseListPage(body, this.baseUrl);
+    await this.enrichListGenres(items);
+    return {
+      results: items.map((item) => this.toPanelSummary(item)),
+      page,
+      hasMore: false,
+    };
+  }
+
   async latest(page = 1): Promise<SourceSearchResult> {
     this.assertEnabled();
     const listUrl = page > 1 ? `${this.baseUrl}/page/${page}/` : `${this.baseUrl}/`;

@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import type { PanelPage, SourceSearchResult } from '@panel/shared';
+import type { CreditKind, PanelPage, PanelStatus, PanelSummary, SourceSearchResult } from '@panel/shared';
 import { parseGlobalId, splitNativeChapterId } from '@panel/shared';
 import { chapters, chapterPages, listCache, panel, type ChapterRow, type PanelRow, type ListCacheRow } from '../db/schema.js';
 
@@ -205,6 +205,65 @@ export class PanelCacheRepository {
   async findPanelByGlobalId(globalId: string): Promise<PanelRow | undefined> {
     const [row] = await this.db.select().from(panel).where(eq(panel.globalId, globalId)).limit(1);
     return row;
+  }
+
+  /**
+   * Case-insensitive substring search over the cached credit column
+   * (`authors` / `artists`), scoped to the given sources. Used to merge
+   * already-known matches into author/artist search results — every
+   * panel whose detail page was ever opened contributes its credits
+   * here, offline and across every source (uniform floor for sources
+   * whose own sites can't filter by credit).
+   */
+  async searchByCredit(
+    kind: CreditKind,
+    query: string,
+    sources: readonly string[],
+    limit = 40,
+  ): Promise<PanelSummary[]> {
+    const q = query.trim();
+    if (!q || sources.length === 0) return [];
+    const field = kind === 'author' ? 'authors' : 'artists';
+    const escaped = escapeLikePattern(q.toLowerCase());
+    const placeholders = sources.map(() => '?').join(', ');
+    // json_each expands the JSON array into one row per entry; the
+    // lower() keeps the match case-insensitive (stored casing varies
+    // wildly by source: "ABE Akane", "Oda Eiichiro"…).
+    const sql = `
+      SELECT global_id AS "globalId", source, title, cover_url AS "coverUrl",
+             source_url AS "sourceUrl", status, genres, description
+      FROM panel
+      WHERE source IN (${placeholders})
+        AND EXISTS (
+          SELECT 1 FROM json_each(panel.${field}) AS name
+          WHERE lower(name.value) LIKE '%' || ? || '%' ESCAPE '\\'
+        )
+      ORDER BY title
+      LIMIT ?`;
+    const rows = this.db.$client
+      .query(sql)
+      .all(...sources, escaped, limit) as Array<{
+      globalId: string;
+      source: string;
+      title: string;
+      coverUrl: string | null;
+      sourceUrl: string;
+      status: string;
+      genres: string | null;
+      description: string | null;
+    }>;
+    return rows.map((row) => ({
+      id: row.globalId,
+      source: row.source,
+      title: row.title,
+      coverUrl: row.coverUrl,
+      sourceUrl: row.sourceUrl,
+      status: (row.status || 'unknown') as PanelStatus,
+      genres: safeParseStringArray(row.genres),
+      summary: row.description ?? null,
+      latestChapter: null,
+      updatedAt: null,
+    }));
   }
 
   /**
@@ -453,5 +512,25 @@ export class PanelCacheRepository {
       )
       .limit(1);
     return row;
+  }
+}
+
+/**
+ * Escape the LIKE wildcards in a raw user query (`\`, `%`, `_`) so a
+ * search for "100%" or "a_b" matches literally. The caller binds the
+ * escaped string as a parameter and appends `ESCAPE '\'` to the LIKE.
+ */
+function escapeLikePattern(raw: string): string {
+  return raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/** Parse a JSON string-array column; [] on anything unexpected. */
+function safeParseStringArray(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((g): g is string => typeof g === 'string') : [];
+  } catch {
+    return [];
   }
 }

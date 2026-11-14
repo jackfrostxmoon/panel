@@ -301,6 +301,30 @@ export class RoliaScanSource implements PanelSource {
     };
   }
 
+  /**
+   * Author/artist search. The site's "Author / Artist" filter is a single
+   * taxonomy applied server-side via `?author=` (verified live: `author=oda`
+   * narrows to a single title; `author=eiichiro-oda` resolves the "Oda
+   * Eiichiro" term — whitespace-insensitive, order-insensitive tokens).
+   * Both kinds map to that same param — the site has no separate artist
+   * list. A free-text query that matches no term falls back to the
+   * unfiltered page harmlessly; the service merges the local cache anyway.
+   */
+  async searchByCredit(kind: 'author' | 'artist', query: string, page = 1): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    const params = new URLSearchParams({ q: '', author: query });
+    if (page > 1) params.set('page', String(page));
+    const url = `${this.baseUrl}/search?${params.toString()}`;
+    const { body } = await this.http.fetchText(url);
+    const parsed = parseSearchPage(body, this.baseUrl);
+    await this.enrichListGenres(parsed.items);
+    return {
+      results: parsed.items.map((item) => this.toPanelSummary(item)),
+      page,
+      hasMore: parsed.hasMore,
+    };
+  }
+
   async latest(page = 1): Promise<SourceSearchResult> {
     this.assertEnabled();
     // "Latest updates" lives at /updated, paginated as ?page=N.

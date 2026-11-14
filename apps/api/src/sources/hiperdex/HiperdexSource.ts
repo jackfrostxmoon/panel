@@ -225,6 +225,7 @@ export class HiperdexSource implements PanelSource {
     query: string,
     genres: readonly string[],
     page: number,
+    credit?: { kind: 'author' | 'artist'; query: string },
   ): Promise<SourceSearchResult> {
     const p = page >= 1 ? page : 1;
     const cookie = await this.ensureSessionCookie();
@@ -239,6 +240,7 @@ export class HiperdexSource implements PanelSource {
         genres: [...genres],
         limit: SEARCH_PAGE_SIZE,
         offset: (p - 1) * SEARCH_PAGE_SIZE,
+        ...(credit ? { credit } : {}),
       }),
       headers,
     );
@@ -273,6 +275,18 @@ export class HiperdexSource implements PanelSource {
     const includes = genres ?? [];
     if (includes.length === 0) return this.search(query, page);
     return this.searchViaApi(query, includes, page);
+  }
+
+  /**
+   * Author/artist search through the SPA's own SearchPage filters — the
+   * production client bundle calls `search.query` with
+   * `filters: { author, artist }` as first-class params (verified in the
+   * bundle; the unauthenticated call returns 401 like the rest of the
+   * API, cookie-bootstrapped as usual).
+   */
+  async searchByCredit(kind: 'author' | 'artist', query: string, page = 1): Promise<SourceSearchResult> {
+    this.assertEnabled();
+    return this.searchViaApi('', [], page, { kind, query });
   }
 
   async latest(page = 1): Promise<SourceSearchResult> {

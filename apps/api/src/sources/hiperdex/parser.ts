@@ -607,15 +607,20 @@ export interface SearchQueryFilters {
   genres: string[];
   limit: number;
   offset: number;
+  /** Author/artist filter — the SPA sends these as first-class `filters` keys. */
+  credit?: { kind: 'author' | 'artist'; query: string };
 }
 
 export function buildSearchQueryApiUrl(baseUrl: string, params: SearchQueryFilters): string {
+  const filters: Record<string, unknown> = {};
+  if (params.genres.length > 0) filters['genres'] = params.genres;
+  if (params.credit?.query.trim()) filters[params.credit.kind] = params.credit.query;
   const input = encodeURIComponent(
     JSON.stringify({
       json: {
         q: params.q,
         sort: params.sort,
-        filters: params.genres.length > 0 ? { genres: params.genres } : {},
+        filters,
         limit: params.limit,
         offset: params.offset,
       },
