@@ -86,17 +86,35 @@ export function BookmarksPage() {
     if (sourceFilter !== '' && hiddenSources.has(sourceFilter)) setSourceFilter('');
   }, [sourceFilter, hiddenSources]);
   /**
+   * Bookmarks-page settings (`data/display/bookmarks.json`) — declared
+   * early because the feed hooks and the shelf-sort memo below read the
+   * pending sort toggle. While a save is in flight the pending value wins
+   * so the switch flips instantly instead of waiting for the round-trip.
+   */
+  const bookmarksSettingsQuery = useBookmarksSettings();
+  const saveBookmarksSettings = useSaveBookmarksSettings();
+  /**
+   * Shelf ordering, persisted server-side. On (default) fresh updates
+   * bubble to the top; off ignores chapter-cache timestamps and shows
+   * most recently added first.
+   */
+  const sortByLatestUpdate: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
+      : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
+  /**
    * Latest-updates feed for the single selected source (pages 1–3). Used to
    * re-order the shelf the way the source site itself lists recently
    * updated titles, instead of the local chapter-cache recency sort.
    * Always registered (hook count stays static); disabled — and unfetched —
-   * until a pill is picked, which keeps All-bookmarks traffic at zero. The
+   * until a pill is picked (and the "Sort by latest update" switch is on),
+   * which keeps All-bookmarks traffic at zero. The
    * server caches `latest:<page>:<source>` and persists the last good fetch
    * (`list_cache`), so re-picking a pill is cheap and offline falls back to
    * the last known feed. Pages 2–3 widen the window; a bookmark outside it
    * keeps the default recency order at the bottom.
    */
-  const feedSource = sourceFilter !== '' ? sourceFilter : undefined;
+  const feedSource = sourceFilter !== '' && sortByLatestUpdate ? sourceFilter : undefined;
   const feedPage1 = useLatest(1, feedSource, undefined, undefined, {
     enabled: feedSource !== undefined,
     placeholderData: (previous) => previous,
@@ -222,24 +240,6 @@ export function BookmarksPage() {
     () => new Set(excludedGenre.map((g) => g.toLowerCase())),
     [excludedGenre],
   );
-
-  /**
-   * Bookmarks-page settings (`data/display/bookmarks.json`) — declared
-   * early because the shelf-sort memo reads the pending sort toggle.
-   * While a save is in flight the pending value wins so the switch flips
-   * instantly instead of waiting for the round-trip.
-   */
-  const bookmarksSettingsQuery = useBookmarksSettings();
-  const saveBookmarksSettings = useSaveBookmarksSettings();
-  /**
-   * Shelf ordering, persisted server-side. On (default) fresh updates
-   * bubble to the top; off ignores chapter-cache timestamps and shows
-   * most recently added first.
-   */
-  const sortByLatestUpdate: boolean =
-    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
-      ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
-      : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
 
   const sorted = useMemo(() => {
     if (!sourceData) return [];
@@ -792,7 +792,7 @@ export function BookmarksPage() {
         />
       </div>
 
-      {sourceFilter && latestFeedFetching && (
+      {sortByLatestUpdate && sourceFilter && latestFeedFetching && (
         <p className="bookmarks-order-hint bookmarks-order-hint--busy" role="status" aria-live="polite">
           <span className="bookmarks-order-hint__spinner" aria-hidden="true">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -803,7 +803,7 @@ export function BookmarksPage() {
           <span>Fetching {sourceLabel(sourceFilter)}&rsquo;s latest updates…</span>
         </p>
       )}
-      {sourceFilter && latestFeedReady && !latestFeedFetching && (
+      {sortByLatestUpdate && sourceFilter && latestFeedReady && !latestFeedFetching && (
         <p className="bookmarks-order-hint" role="note">
           Ordered by {sourceLabel(sourceFilter)}&rsquo;s latest updates — titles outside its
           recent window keep the default order.
