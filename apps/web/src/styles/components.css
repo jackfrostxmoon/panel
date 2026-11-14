@@ -931,10 +931,12 @@ input::placeholder {
   cursor: default;
   transform: none;
 }
-/* Bookmark card: the button is a sibling of the cover <Link> (not a
-   child, so it never triggers navigation) — reveal on media hover. */
-.bookmark-card__media:hover .bookmark-card__cover-clear,
-.bookmark-card__media:focus-within .bookmark-card__cover-clear {
+/* Bookmark card: reveal like the action strip does — on hover/focus of
+   the whole card. (The button sits next to, not inside, the cover link,
+   and .bookmark-card__media is display:contents at <=640px so it can't
+   anchor the reveal.) */
+.bookmark-card:hover .panel-card__cover-clear,
+.bookmark-card:focus-within .panel-card__cover-clear {
   opacity: 1;
 }
 
