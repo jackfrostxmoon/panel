@@ -1,9 +1,11 @@
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { PanelSummary } from '@panel/shared';
-import type { MouseEvent, ReactNode } from 'react';
-import { IconBookmark, IconFolder } from './icons';
-import { sourceLabel } from '../utils/format';
+import { IconBookmark, IconFolder, IconTrash } from './icons';
+import { formatBytes, sourceLabel } from '../utils/format';
 import { CoverImage } from './CoverImage';
+import { useClearImageCacheByTag } from '../api/hooks';
+import { useToast } from './Toast';
 
 /** Joined reading progress (matches the shape on Bookmark.progress). */
 export interface PanelCardProgress {
@@ -68,6 +70,30 @@ export function PanelCard({
   const to = from
     ? `/panel/${encodeURIComponent(panel.id)}?from=${encodeURIComponent(from)}`
     : `/panel/${encodeURIComponent(panel.id)}`;
+  const { toast } = useToast();
+  const clearCoverMutation = useClearImageCacheByTag();
+  /** Bumped after clearing the cached cover so the browser's immutable
+   *  max-age on the proxied URL is busted and it refetches fresh. */
+  const [coverNonce, setCoverNonce] = useState(0);
+
+  // Delete the cached cover so a wrong/stale image gets refetched. The
+  // nonce busts the browser's immutable max-age on the proxied URL.
+  const handleClearCover = () => {
+    clearCoverMutation.mutate(
+      { what: 'cover', tag: panel.id },
+      {
+        onSuccess: (result) => {
+          setCoverNonce((n) => n + 1);
+          toast(
+            `Cleared ${result.entryCount.toLocaleString()} cached cover file${result.entryCount === 1 ? '' : 's'} (${formatBytes(result.totalBytes)}) — refetching.`,
+            'success',
+          );
+        },
+        onError: (error) =>
+          toast(error instanceof Error ? error.message : 'Could not clear the cover cache.', 'error'),
+      },
+    );
+  };
 
   const progressFooter = progress
     ? (progress.chapterTitle ?? 'Chapter')
@@ -93,6 +119,7 @@ export function PanelCard({
           coverUrl={panel.coverUrl}
           panelId={panel.id}
           title={panel.title}
+          cacheNonce={coverNonce}
         />
         {hideBadges ? null : panel.status !== 'unknown' && (
           <span className={`panel-card__status panel-card__status--${panel.status}`}>
@@ -131,6 +158,20 @@ export function PanelCard({
             )}
           </ul>
         )}
+        {/* Cover-clear: delete the cached cover so a wrong/stale image
+            refetches (same action as the details-page hero trash button).
+            Rendered after the badges so CSS can offset it below the
+            source pill when badges are shown. */}
+        <button
+          type="button"
+          className="panel-card__cover-clear"
+          onClick={handleClearCover}
+          disabled={clearCoverMutation.isPending || !panel.coverUrl}
+          aria-label="Delete cached cover image and refetch"
+          title="Delete cached cover image and refetch"
+        >
+          <IconTrash size={15} />
+        </button>
         {actions && <div className="panel-card__actions">{actions}</div>}
         {/* Stretched link covers the card so a click anywhere opens the
             details page. Sits below the action strip in z-order. */}
