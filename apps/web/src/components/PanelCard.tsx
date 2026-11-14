@@ -164,7 +164,7 @@ export function PanelCard({
             source pill when badges are shown. */}
         <button
           type="button"
-          className="panel-card__cover-clear"
+          className={`panel-card__cover-clear${hideBadges ? '' : ' panel-card__cover-clear--below-source'}`}
           onClick={handleClearCover}
           disabled={clearCoverMutation.isPending || !panel.coverUrl}
           aria-label="Delete cached cover image and refetch"

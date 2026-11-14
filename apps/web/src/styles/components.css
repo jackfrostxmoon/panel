@@ -911,7 +911,10 @@ input::placeholder {
     opacity: 1;
   }
 }
-.panel-card__source ~ .panel-card__cover-clear {
+/* Pushed below the source pill when badges render it (sibling selectors
+   can't cross the link boundary on the bookmark card, so both callers
+   opt in via this modifier). */
+.panel-card__cover-clear--below-source {
   top: calc(var(--space-2) + 24px);
 }
 .panel-card__cover-clear:hover {
@@ -927,6 +930,12 @@ input::placeholder {
   opacity: 0.45;
   cursor: default;
   transform: none;
+}
+/* Bookmark card: the button is a sibling of the cover <Link> (not a
+   child, so it never triggers navigation) — reveal on media hover. */
+.bookmark-card__media:hover .bookmark-card__cover-clear,
+.bookmark-card__media:focus-within .bookmark-card__cover-clear {
+  opacity: 1;
 }
 
 /* Action strip — fades in on hover/focus so the default card stays

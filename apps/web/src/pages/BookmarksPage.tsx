@@ -9,6 +9,7 @@ import {
   useBookmarkFolders,
   useBookmarks,
   useBookmarksSettings,
+  useClearImageCacheByTag,
   useLatest,
   useRemoveBookmark,
   useRemoveBookmarkFromFolder,
@@ -30,7 +31,7 @@ import { DragFolderOverlay } from '../components/DragFolderOverlay';
 import { FilterSearchBar } from '../components/FilterSearchBar';
 import { FolderPickerDialog } from '../components/FolderPickerDialog';
 import { GenreMultiSelect } from '../components/GenreMultiSelect';
-import { IconChevronDown, IconFolder } from '../components/icons';
+import { IconChevronDown, IconFolder, IconTrash } from '../components/icons';
 import {
   CardLayoutToggle,
   PanelList,
@@ -45,7 +46,7 @@ import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import { readDefaultFolderId, writeDefaultFolderId } from '../utils/defaultBookmarkFolder';
-import { effectiveHiddenSources, sourceLabel } from '../utils/format';
+import { effectiveHiddenSources, formatBytes, sourceLabel } from '../utils/format';
 import { rankByLatestFeed, sortBookmarks, sortByCreatedAt } from '../utils/latestFeedOrder';
 
 /**
@@ -67,6 +68,31 @@ export function BookmarksPage() {
   // W/S hold-to-glide fast scroll (shared with the latest page).
   useFastScrollKeys();
   const bookmarks = useBookmarks();
+  const clearCoverMutation = useClearImageCacheByTag();
+  /** Per-panel nonce to bust the browser cache after a cover clear. */
+  const [coverNonces, setCoverNonces] = useState<ReadonlyMap<string, number>>(new Map());
+  /** Delete the cached cover so a wrong/stale image refetches — same as
+   *  the details-page hero trash button. No confirm, nonce refetch. */
+  const handleClearCover = (bookmark: Bookmark) => {
+    clearCoverMutation.mutate(
+      { what: 'cover', tag: bookmark.panelId },
+      {
+        onSuccess: (result) => {
+          setCoverNonces((prev) => {
+            const next = new Map(prev);
+            next.set(bookmark.panelId, (prev.get(bookmark.panelId) ?? 0) + 1);
+            return next;
+          });
+          toast(
+            `Cleared ${result.entryCount.toLocaleString()} cached cover file${result.entryCount === 1 ? '' : 's'} (${formatBytes(result.totalBytes)}) — refetching.`,
+            'success',
+          );
+        },
+        onError: (error) =>
+          toast(error instanceof Error ? error.message : 'Could not clear the cover cache.', 'error'),
+      },
+    );
+  };
   const removeBookmark = useRemoveBookmark();
   const { toast } = useToast();
   const [pendingRemoval, setPendingRemoval] = useState<Bookmark | null>(null);
@@ -1058,6 +1084,7 @@ export function BookmarksPage() {
                     title={bookmark.title}
                     eager={index < 6}
                     fallbackClassName="bookmark-card__fallback"
+                    cacheNonce={coverNonces.get(bookmark.panelId)}
                   />
 
                   <span className="bookmark-card__shade" aria-hidden="true" />
@@ -1101,6 +1128,20 @@ export function BookmarksPage() {
                     </>
                   )}
                 </Link>
+
+                {/* Cover-clear: delete the cached cover (same action as
+                    the details-page hero trash). Sits outside the cover
+                    link so it never navigates. */}
+                <button
+                  type="button"
+                  className={`panel-card__cover-clear bookmark-card__cover-clear${settings.hideCoverBadges ? '' : ' panel-card__cover-clear--below-source'}`}
+                  onClick={() => handleClearCover(bookmark)}
+                  disabled={clearCoverMutation.isPending || !bookmark.coverUrl}
+                  aria-label="Delete cached cover image and refetch"
+                  title="Delete cached cover image and refetch"
+                >
+                  <IconTrash size={15} />
+                </button>
 
                 <div className="bookmark-card__actions">
                   {bookmark.progress && (
