@@ -15,6 +15,15 @@ export function sortBookmarks(bookmarks: Bookmark[]): Bookmark[] {
 }
 
 /**
+ * Sort bookmarks by when they were added, newest first. Used when the user
+ * turns off "Sort by latest update" — chapter-cache timestamps are ignored
+ * entirely.
+ */
+export function sortByCreatedAt(bookmarks: Bookmark[]): Bookmark[] {
+  return [...bookmarks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
  * Reorder `bookmarks` to match a source's latest-updates feed (pages in order).
  *
  * Titles present in the feed come first, in feed position; everything else

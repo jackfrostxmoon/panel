@@ -46,7 +46,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import { readDefaultFolderId, writeDefaultFolderId } from '../utils/defaultBookmarkFolder';
 import { effectiveHiddenSources, sourceLabel } from '../utils/format';
-import { rankByLatestFeed, sortBookmarks } from '../utils/latestFeedOrder';
+import { rankByLatestFeed, sortBookmarks, sortByCreatedAt } from '../utils/latestFeedOrder';
 
 /**
  * Initial + incremental render window for the shelf. The filter/sort above
@@ -223,6 +223,24 @@ export function BookmarksPage() {
     [excludedGenre],
   );
 
+  /**
+   * Bookmarks-page settings (`data/display/bookmarks.json`) — declared
+   * early because the shelf-sort memo reads the pending sort toggle.
+   * While a save is in flight the pending value wins so the switch flips
+   * instantly instead of waiting for the round-trip.
+   */
+  const bookmarksSettingsQuery = useBookmarksSettings();
+  const saveBookmarksSettings = useSaveBookmarksSettings();
+  /**
+   * Shelf ordering, persisted server-side. On (default) fresh updates
+   * bubble to the top; off ignores chapter-cache timestamps and shows
+   * most recently added first.
+   */
+  const sortByLatestUpdate: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
+      : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
+
   const sorted = useMemo(() => {
     if (!sourceData) return [];
     const needle = query.trim().toLowerCase();
@@ -246,12 +264,15 @@ export function BookmarksPage() {
         (excludeSet.size === 0 ||
           !(bookmark.genres ?? []).some((g) => excludeSet.has(g.toLowerCase()))),
     );
+    // "Sort by latest update" off — ignore chapter-cache timestamps and
+    // show most recently added first.
+    if (!sortByLatestUpdate) return sortByCreatedAt(filtered);
     // Single-source pill active + a feed page loaded → order by the
     // source's own latest-updates feed (titles outside the fetched window
     // keep the default recency sort behind them).
     if (sourceFilter && latestFeedReady) return rankByLatestFeed(filtered, latestFeedPages);
     return sortBookmarks(filtered);
-  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data, latestFeedReady, latestFeedPages]);
+  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data, latestFeedReady, latestFeedPages, sortByLatestUpdate]);
 
   /** Render window into `sorted` (see PAGE_SIZE): only these cards are
    *  mounted, so a 200-title shelf issues ~30 cover fetches up front and
@@ -466,10 +487,9 @@ export function BookmarksPage() {
   /**
    * Cards/list layout, persisted server-side to `data/display/bookmarks.json`.
    * While a save is in flight the pending value wins so the toggle flips
-   * instantly instead of waiting for the round-trip.
+   * instantly instead of waiting for the round-trip. (`bookmarksSettingsQuery`
+   * / `saveBookmarksSettings` are declared near the sort memo above.)
    */
-  const bookmarksSettingsQuery = useBookmarksSettings();
-  const saveBookmarksSettings = useSaveBookmarksSettings();
   const cardLayout: CardLayout =
     saveBookmarksSettings.isPending && saveBookmarksSettings.variables
       ? saveBookmarksSettings.variables.cardLayout
@@ -507,16 +527,16 @@ export function BookmarksPage() {
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen });
+    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen, sortByLatestUpdate });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen, sortByLatestUpdate });
   }
 
   function handleSearchToggle() {
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen, sortByLatestUpdate });
   }
 
   // --- Export / Import (.sql dump) --------------------------------------------

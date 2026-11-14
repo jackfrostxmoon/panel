@@ -17,16 +17,29 @@ export function bookmarksSettingsRoutes(): Hono {
       typeof body !== 'object' ||
       !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
       typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
-      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean'
+      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean' ||
+      typeof (body as { sortByLatestUpdate?: unknown }).sortByLatestUpdate !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean }.',
+        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, sortByLatestUpdate: boolean }.',
       );
     }
-    const typed = body as { cardLayout: CardLayout; filtersCollapsed: boolean; searchOpen: boolean };
+    const typed = body as {
+      cardLayout: CardLayout;
+      filtersCollapsed: boolean;
+      searchOpen: boolean;
+      sortByLatestUpdate: boolean;
+    };
     return c.json(
-      ok(saveBookmarksSettings({ cardLayout: typed.cardLayout, filtersCollapsed: typed.filtersCollapsed, searchOpen: typed.searchOpen })),
+      ok(
+        saveBookmarksSettings({
+          cardLayout: typed.cardLayout,
+          filtersCollapsed: typed.filtersCollapsed,
+          searchOpen: typed.searchOpen,
+          sortByLatestUpdate: typed.sortByLatestUpdate,
+        }),
+      ),
     );
   });
 

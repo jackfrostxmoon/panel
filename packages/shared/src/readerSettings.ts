@@ -112,13 +112,21 @@ export interface BookmarksPageSettings {
   filtersCollapsed: boolean;
   /** Show the toolbar search bar (dedicated toggle, independent of filters). */
   searchOpen: boolean;
+  /**
+   * Arrange the shelf by the latest update (most recently released chapter
+   * bubbles to the top, matching the source's latest-updates feed when a
+   * single source pill is selected). `false` = order by when each bookmark
+   * was added (newest first), ignoring chapter-cache timestamps.
+   */
+  sortByLatestUpdate: boolean;
 }
 
-/** Default: cover cards, filters collapsed. */
+/** Default: cover cards, filters collapsed, sorted by latest update. */
 export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
   cardLayout: DEFAULT_CARD_LAYOUT,
   filtersCollapsed: true,
   searchOpen: false,
+  sortByLatestUpdate: true,
 };
 
 /**

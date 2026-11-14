@@ -2942,6 +2942,11 @@ a.genre-chip {
   margin-top: var(--space-1);
 }
 
+.bookmark-folder-selector__display--flush {
+  border-top: none;
+  margin-top: 0;
+}
+
 .bookmark-folder-selector__display-label {
   display: inline-flex;
   align-items: center;

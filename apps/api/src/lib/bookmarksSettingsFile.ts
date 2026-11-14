@@ -24,6 +24,10 @@ export function loadBookmarksSettings(): BookmarksPageSettings {
         typeof parsed.searchOpen === 'boolean'
           ? parsed.searchOpen
           : DEFAULT_BOOKMARKS_PAGE_SETTINGS.searchOpen,
+      sortByLatestUpdate:
+        typeof parsed.sortByLatestUpdate === 'boolean'
+          ? parsed.sortByLatestUpdate
+          : DEFAULT_BOOKMARKS_PAGE_SETTINGS.sortByLatestUpdate,
     };
   } catch {
     return { ...DEFAULT_BOOKMARKS_PAGE_SETTINGS };
@@ -36,6 +40,7 @@ export function saveBookmarksSettings(settings: BookmarksPageSettings): Bookmark
     cardLayout: coerceCardLayout(settings.cardLayout),
     filtersCollapsed: settings.filtersCollapsed !== false,
     searchOpen: settings.searchOpen === true,
+    sortByLatestUpdate: settings.sortByLatestUpdate !== false,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

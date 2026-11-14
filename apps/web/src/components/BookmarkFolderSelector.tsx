@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   useBookmarkFolders,
+  useBookmarksSettings,
   useCreateBookmarkFolder,
   useDeleteBookmarkFolder,
   useRenameBookmarkFolder,
+  useSaveBookmarksSettings,
 } from '../api/hooks';
+import { DEFAULT_BOOKMARKS_PAGE_SETTINGS } from '@panel/shared';
 import {
   IconEye,
   IconMenu,
   IconMore,
   IconPencil,
+  IconRefresh,
   IconStar,
   IconTrash,
 } from './icons';
@@ -73,6 +77,22 @@ export function BookmarkFolderSelector({
   const deleteFolder = useDeleteBookmarkFolder();
   const { settings: displaySettings, update: updateDisplaySettings } =
     useDisplaySettings();
+  const bookmarksSettingsQuery = useBookmarksSettings();
+  const saveBookmarksSettings = useSaveBookmarksSettings();
+  /** "Sort by latest update" — persisted server-side with the other
+   *  bookmarks-page preferences; same pending-wins pattern as the page
+   *  toggles so the switch flips instantly. Defaults on. */
+  const sortByLatestUpdate =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
+      : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
+  const handleSortByLatestUpdateChange = (checked: boolean) => {
+    const base =
+      saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+        ? saveBookmarksSettings.variables
+        : (bookmarksSettingsQuery.data ?? DEFAULT_BOOKMARKS_PAGE_SETTINGS);
+    saveBookmarksSettings.mutate({ ...base, sortByLatestUpdate: checked });
+  };
 
   /** True while a bookmark card is being dragged (T2-8). Suppresses the
    *  outside-click close so the menu stays open as the user drags a card
@@ -367,6 +387,18 @@ export function BookmarkFolderSelector({
               checked={!displaySettings.hideCoverBadges}
               onChange={(checked) => updateDisplaySettings({ hideCoverBadges: !checked })}
               labelledBy="cover-badges-label"
+            />
+          </div>
+
+          <div className="bookmark-folder-selector__display bookmark-folder-selector__display--flush">
+            <span id="sort-latest-update-label" className="bookmark-folder-selector__display-label">
+              <IconRefresh size={13} aria-hidden="true" />
+              Sort by latest update
+            </span>
+            <Switch
+              checked={sortByLatestUpdate}
+              onChange={handleSortByLatestUpdateChange}
+              labelledBy="sort-latest-update-label"
             />
           </div>
         </div>
