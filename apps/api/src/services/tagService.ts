@@ -106,6 +106,26 @@ export class TagService {
   }
 }
 
+/** Small words kept lowercase mid-name (matches how source genres render). */
+const SMALL_WORDS = new Set(['of', 'the', 'a', 'an', 'and', 'or', 'in', 'on', 'to', 'for', 'with', 'at', 'by', 'vs']);
+
+/**
+ * Display form for tag names: tags are stored lowercased (for dedup), but
+ * the UI presents them title-cased like the source's genre labels —
+ * "test" → "Test", "my test tag" → "My Test Tag", "slice of life" → "Slice of Life".
+ * Round-trips safely through import/export: the server re-lowercases on write.
+ */
+function displayTagName(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && SMALL_WORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
 function toApiTag(row: TagRow): Tag {
-  return { id: row.id, name: row.name };
+  return { id: row.id, name: displayTagName(row.name) };
 }
