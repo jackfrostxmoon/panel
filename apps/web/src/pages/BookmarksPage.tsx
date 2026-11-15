@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BackupExportScope, Bookmark, CardLayout, PanelStatus } from '@panel/shared';
 import { api } from '../api/client';
@@ -96,7 +96,24 @@ export function BookmarksPage() {
   const removeBookmark = useRemoveBookmark();
   const { toast } = useToast();
   const [pendingRemoval, setPendingRemoval] = useState<Bookmark | null>(null);
-  const [sourceFilter, setSourceFilter] = useState('');
+  /**
+   * Source pill filter — persisted in the URL (`/bookmarks?source=roliascan`)
+   * exactly like the latest page, so a refresh, share or back-navigation
+   * restores the selection. No param → "All". Pill taps push a history
+   * entry; the automatic hidden-source remap below replaces it.
+   */
+  const [params, setParams] = useSearchParams();
+  const sourceFilter = params.get('source') ?? '';
+  /** Write the source param, keeping any other params untouched. */
+  const setSourceFilter = useCallback(
+    (next: string, { replace = false }: { replace?: boolean } = {}) => {
+      const nextParams = new URLSearchParams(params);
+      if (next) nextParams.set('source', next);
+      else nextParams.delete('source');
+      setParams(nextParams, replace ? { replace: true } : undefined);
+    },
+    [params, setParams],
+  );
   /**
    * Sources hidden via the Sources page toggle — their pills vanish (via
    * SourceFilter) and their cards are filtered out of the grid below.
@@ -108,9 +125,10 @@ export function BookmarksPage() {
   );
   // A toggle flipped while this filter points at the source resets to All
   // (the pill is gone, so the stale value would otherwise show nothing).
+  // Replaces the URL entry — an automatic remap isn't a place in history.
   useEffect(() => {
-    if (sourceFilter !== '' && hiddenSources.has(sourceFilter)) setSourceFilter('');
-  }, [sourceFilter, hiddenSources]);
+    if (sourceFilter !== '' && hiddenSources.has(sourceFilter)) setSourceFilter('', { replace: true });
+  }, [sourceFilter, hiddenSources, setSourceFilter]);
   /**
    * Bookmarks-page settings (`data/display/bookmarks.json`) — declared
    * early because the feed hooks and the shelf-sort memo below read the
@@ -369,7 +387,8 @@ export function BookmarksPage() {
     excludedGenre.length;
 
   function clearAllFilters() {
-    setSourceFilter('');
+    // Bulk reset — refine params, don't litter history with an entry.
+    setSourceFilter('', { replace: true });
     setQuery('');
     setTagFilter('');
     setStatusFilter('');
