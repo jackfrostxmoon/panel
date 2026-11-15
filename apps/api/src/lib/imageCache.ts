@@ -1509,6 +1509,45 @@ export class ImageCache {
     return work;
   }
 
+  /**
+   * Root-relative paths of every cover file on disk (folder-organized or
+   * flat, legacy included). Read-only counterpart to `clear('cover')`'s
+   * enumeration walk; used by the cover optimizer to schedule re-encodes.
+   */
+  async listCoverFiles(signal?: AbortSignal): Promise<string[]> {
+    await this.ensureDirs();
+    signal?.throwIfAborted();
+    const matching: string[] = [];
+    for (const rel of await this.listFiles(signal)) {
+      const e = pathBasename(rel);
+      if (this.fileKind(rel, e) !== 'cover') continue;
+      matching.push(rel);
+    }
+    return matching;
+  }
+
+  /**
+   * Atomically swap a cached file for a re-encoded counterpart that may carry
+   * a different name/extension. `stagingAbs` must hold the final bytes, live
+   * on the same volume as `newRel`, and be a file the caller just wrote. The
+   * old path is removed first from the in-memory indexes, the new one is
+   * added; the size/tag memos are invalidated but NOTHING else is flushed —
+   * unlike `dropMemoryIndex`, this keeps in-flight fetch state intact.
+   * Used by the cover optimizer.
+   */
+  async swapFile(oldRel: string, newRel: string, stagingAbs: string): Promise<void> {
+    const newAbs = join(this.deps.dir, newRel);
+    const oldAbs = join(this.deps.dir, oldRel);
+    await rm(newAbs, { force: true });
+    await rename(stagingAbs, newAbs);
+    if (oldRel !== newRel) {
+      await rm(oldAbs, { force: true });
+    }
+    this.indexRemoveMany([oldRel]);
+    this.indexWrite(newRel);
+    this.invalidateSizeMemo();
+  }
+
   private async computeSizeInfo(kind: ImageKind, signal?: AbortSignal): Promise<ImageCacheSizeInfo> {
     await this.ensureDirs();
     signal?.throwIfAborted();

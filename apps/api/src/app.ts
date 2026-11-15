@@ -44,7 +44,9 @@ import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
 import { cacheSettingsRoutes } from './routes/cache-settings.js';
 import { sourceOrderRoutes } from './routes/source-order.js';
 import { memoryFlushRoutes } from './routes/memory-flush.js';
+import { optimizeCoversRoutes } from './routes/optimize-covers.js';
 import { ImageCache } from './lib/imageCache.js';
+import { CoverOptimizer } from './lib/coverOptimizer.js';
 import { panelFolderName, folderTagHash, chapterFolderName, formatChapterLabel } from './lib/imageCacheFolders.js';
 import { PrefetchWorker } from './lib/prefetchWorker.js';
 
@@ -141,6 +143,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   // Constructed here, started by index.ts (never auto-started — test
   // apps get the routes without a background loop).
   const prefetchWorker = new PrefetchWorker({ db, registry, imageCache, panelService });
+  const coverOptimizer = new CoverOptimizer(imageCache, config.imageCache.dir);
 
   const app = new Hono();
 
@@ -206,6 +209,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/source-order', sourceOrderRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));
   app.route('/api/memory-flush', memoryFlushRoutes(panelService, imageCache));
+  app.route('/api/optimize-covers', optimizeCoversRoutes(coverOptimizer));
 
   return { app, prefetchWorker, panelService, imageCache };
 }

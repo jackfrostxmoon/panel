@@ -379,3 +379,43 @@ export interface UpsertReadingListInput {
   sourceUrl: string;
 }
 
+/** Lifecycle of the bulk cover re-encode job (`/api/optimize-covers`). */
+export type OptimizeCoversState = 'idle' | 'running' | 'done' | 'error';
+
+/**
+ * Status snapshot of the cover-optimization job. Read via
+ * GET /api/optimize-covers (polled by the cache-settings page while a run
+ * is active); POST /api/optimize-covers starts a new run and returns
+ * 409 while one is already in flight.
+ *
+ * `bytesBefore`/`bytesAfter` account for every file that went through the
+ * pipeline, but not for ones that could not even be stat'd. Skipped files
+ * still count toward `bytesAfter` at their unchanged size, so
+ * `bytesBefore - bytesAfter` is always the net disk saved.
+ */
+export interface OptimizeCoversStatus {
+  state: OptimizeCoversState;
+  /** ISO timestamp the current/last run started, or null before the first run. */
+  startedAt: string | null;
+  /** ISO timestamp the last run finished (done or error), or null. */
+  finishedAt: string | null;
+  /** Cover files scheduled for the current/last run. */
+  total: number;
+  /** Files fully processed so far (converted or skipped). */
+  processed: number;
+  /** Files re-encoded and replaced. */
+  converted: number;
+  /** Skipped: already WebP, or the re-encode would not save bytes. */
+  skippedOptimal: number;
+  /** Skipped: animated (GIF / APNG / animated WebP) — never flattened. */
+  skippedAnimated: number;
+  /** Skipped: undecodable or otherwise failed conversion. */
+  skippedError: number;
+  bytesBefore: number;
+  bytesAfter: number;
+  /** Basename of the file currently being processed, or null. */
+  currentFile: string | null;
+  /** Set when state is 'error' (the per-file errors are logged, not surfaced). */
+  error: string | null;
+}
+

@@ -50,6 +50,7 @@ import type {
   CachePageSettings,
   SourceOrderSettings,
   SearchMode,
+  OptimizeCoversStatus,
 } from '@panel/shared';
 
 /**
@@ -626,6 +627,18 @@ export const api = {
       `/api/health/benchmark${source ? `?source=${encodeURIComponent(source)}` : ''}`,
       { method: 'POST' },
     ),
+
+  /**
+   * Bulk cover optimization. `POST` kicks off the server-side job (it runs
+   * in the background; 409 while one is already running) and returns
+   * immediately; `GET` reports the status snapshot the cache-settings page
+   * polls to render progress.
+   */
+  startOptimizeCovers: () =>
+    request<{ started: true }>('/api/optimize-covers', { method: 'POST' }),
+
+  getOptimizeCoversStatus: (signal?: AbortSignal) =>
+    request<OptimizeCoversStatus>('/api/optimize-covers', { signal }),
 
   /**
    * Purge the on-disk cache of proxied images. `what` selects covers,

@@ -13,6 +13,8 @@ import {
   useClearImageCache,
   useClearImageCacheByTag,
   useClearRecentlyViewed,
+  useOptimizeCovers,
+  useOptimizeCoversStatus,
   useImageCacheTags,
   useImageCacheTagsSize,
   useImageCacheStats,
@@ -36,6 +38,7 @@ import { Switch } from '../components/Switch';
 import {
   IconArrowLeft,
   IconChevronRight,
+  IconCompress,
   IconExternal,
   IconTrash,
   IconX,
@@ -488,6 +491,34 @@ const [panelQuery, setPanelQuery] = useState('');
   const isPending =
     clearMutation.isPending || clearByTagMutation.isPending || pruneLegacyMutation.isPending;
 
+  const optimizeMutation = useOptimizeCovers();
+  const optimizeStatusQuery = useOptimizeCoversStatus();
+  const optimizing = optimizeStatusQuery.data?.state === 'running';
+  /** Net bytes saved by the last (or current) run while it is running; null when idle. */
+  const [pendingOptimize, setPendingOptimize] = useState(false);
+  /* When the job transitions running → done, refresh the same queries the
+     clear actions refresh and tell the user what was saved. Kept in a ref of
+     the previous state so it fires once per transition, not per render. */
+  const prevOptimizeState = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const s = optimizeStatusQuery.data?.state;
+    if (s !== prevOptimizeState.current) {
+      if (prevOptimizeState.current === 'running' && s === 'done' && optimizeStatusQuery.data) {
+        const d = optimizeStatusQuery.data;
+        const saved = d.bytesBefore - d.bytesAfter;
+        const skipped = d.skippedOptimal + d.skippedAnimated + d.skippedError;
+        toast(
+          `Optimized ${d.converted.toLocaleString()} cover${d.converted === 1 ? '' : 's'} — ${formatBytes(saved)} saved${skipped > 0 ? `, ${skipped.toLocaleString()} skipped` : ''}.`,
+          'success',
+        );
+        refetchAllRef.current();
+      } else if (prevOptimizeState.current === 'running' && s === 'error') {
+        toast(optimizeStatusQuery.data?.error ?? 'Cover optimization failed.', 'error');
+      }
+      prevOptimizeState.current = s;
+    }
+  }, [optimizeStatusQuery.data, toast]);
+
   // Per-kind breakdown. The stats endpoint always returns both kinds.
   const cover = stats.data?.cover ?? { entryCount: 0, totalBytes: 0 };
   const chapter = stats.data?.chapter ?? { entryCount: 0, totalBytes: 0 };
@@ -557,6 +588,15 @@ const [panelQuery, setPanelQuery] = useState('');
       );
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Could not prune legacy cache files.', 'error');
+    }
+  }
+
+  async function doOptimize() {
+    try {
+      await optimizeMutation.mutateAsync();
+      // The heavy lifting runs server-side; useOptimizeCoversStatus polls it.
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not start optimization.', 'error');
     }
   }
 
@@ -1019,6 +1059,50 @@ const [panelQuery, setPanelQuery] = useState('');
             </p>
           </section>
 
+          <section className="cache-settings__section" aria-labelledby="cache-optimize-heading">
+            <header className="section-header">
+              <h2 id="cache-optimize-heading" className="section-title">Optimize covers</h2>
+            </header>
+            <p className="cache-settings__help">
+              Re-encode every cached cover to WebP: PNG sources losslessly, JPEGs at q85
+              (visually indistinguishable). Animated and undecodable files are skipped and
+              reported, never flattened. Originals are replaced in place; chapter pages are
+              untouched. Covers fetched later stay unconverted until you run this again.
+            </p>
+            <div className="cache-settings__actions-grid">
+              <button
+                type="button"
+                className="cache-settings__action"
+                disabled={isPending || optimizing || optimizeMutation.isPending || cover.entryCount === 0}
+                onClick={() => setPendingOptimize(true)}
+                aria-label={`Optimize ${cover.entryCount} cached cover images`}
+              >
+                <span className="cache-settings__action-head">
+                  <span className="cache-settings__action-title">Optimize covers</span>
+                  <IconCompress size={16} aria-hidden="true" />
+                </span>
+                <span className="cache-settings__action-meta">
+                  {optimizing && optimizeStatusQuery.data
+                    ? `Processing ${optimizeStatusQuery.data.processed.toLocaleString()} / ${optimizeStatusQuery.data.total.toLocaleString()}…`
+                    : `${cover.entryCount.toLocaleString()} files · ${formatBytes(cover.totalBytes)}`}
+                </span>
+              </button>
+            </div>
+            {optimizeStatusQuery.data && optimizeStatusQuery.data.state !== 'idle' ? (
+              <p className="cache-settings__limit-meta" aria-live="polite">
+                {optimizeStatusQuery.data.state === 'running'
+                  ? `Optimizing… ${optimizeStatusQuery.data.processed.toLocaleString()} of ${optimizeStatusQuery.data.total.toLocaleString()} covers done (${optimizeStatusQuery.data.converted.toLocaleString()} converted so far).`
+                  : optimizeStatusQuery.data.state === 'done'
+                    ? `Done: ${optimizeStatusQuery.data.converted.toLocaleString()} converted, ${(
+                        optimizeStatusQuery.data.skippedOptimal +
+                        optimizeStatusQuery.data.skippedAnimated +
+                        optimizeStatusQuery.data.skippedError
+                      ).toLocaleString()} skipped, ${formatBytes(optimizeStatusQuery.data.bytesBefore - optimizeStatusQuery.data.bytesAfter)} saved.`
+                    : `Optimization failed: ${optimizeStatusQuery.data.error ?? 'unknown error'}.`}
+              </p>
+            ) : null}
+          </section>
+
           <section className="cache-settings__section" aria-labelledby="cache-actions-heading">
             <header className="section-header">
               <h2 id="cache-actions-heading" className="section-title">Clear all</h2>
@@ -1298,6 +1382,19 @@ const [panelQuery, setPanelQuery] = useState('');
           void clearRecentlyViewedMutation.mutateAsync();
         }}
         onCancel={() => setPendingClear(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingOptimize}
+        title="Optimize cached covers?"
+        message={`This re-encodes ${cover.entryCount.toLocaleString()} cover file(s) (${formatBytes(cover.totalBytes)}) to WebP — PNGs losslessly, JPEGs visually losslessly (q85). Animated and undecodable files are skipped, and files that would not shrink are kept. Every image can always be re-fetched from the source.`}
+        confirmLabel="Optimize"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setPendingOptimize(false);
+          void doOptimize();
+        }}
+        onCancel={() => setPendingOptimize(false)}
       />
 
       {drillPanel ? (

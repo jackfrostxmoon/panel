@@ -36,6 +36,7 @@ import type {
   TagWithPanel,
   UpdateBookmarkFolderInput,
   UpsertReadingListInput,
+  OptimizeCoversStatus,
 } from '@panel/shared';
 import { log as rootLog } from '../lib/logger';
 import { ApiClientError } from './client';
@@ -88,6 +89,8 @@ export const queryKeys = {
   tags: () => ['tags'] as const,
   tagsByPanel: (panelId: string) => ['tags', 'by-panel', panelId] as const,
   imageCacheStats: () => ['imageCache', 'stats'] as const,
+  /** Status of the bulk cover re-encode job (polled while it runs). */
+  optimizeCoversStatus: () => ['optimizeCovers', 'status'] as const,
   /** Custom size-limit override for the on-disk image cache. */
   imageCacheLimit: () => ['imageCache', 'limit'] as const,
   /** Upstream-fetch concurrency override for the image proxy. */
@@ -1028,6 +1031,37 @@ export function useSetImageCacheLimit() {
       queryClient.invalidateQueries({ queryKey: queryKeys.imageCacheLimit() });
       queryClient.invalidateQueries({ queryKey: queryKeys.imageCacheStats() });
     },
+  });
+}
+
+/**
+ * Start the bulk cover re-encode job. The server does the work in the
+ * background; poll `useOptimizeCoversStatus` until it reports `done` (or
+ * `error`). Invalidating the status query makes the poll see the fresh
+ * `running` snapshot immediately instead of after the next interval.
+ */
+export function useOptimizeCovers() {
+  const queryClient = useQueryClient();
+  return useMutation<{ started: true }, ApiClientError, void>({
+    mutationFn: () => api.startOptimizeCovers(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.optimizeCoversStatus() });
+    },
+  });
+}
+
+/**
+ * Status of the cover-optimization job. Self-polls every 1.5s while the
+ * last-known state is `running` (and goes quiet otherwise) — TanStack
+ * Query evaluates `refetchInterval` against the freshest data, so the
+ * page doesn't need to thread a `running` flag down.
+ */
+export function useOptimizeCoversStatus() {
+  return useQuery<OptimizeCoversStatus, ApiClientError>({
+    queryKey: queryKeys.optimizeCoversStatus(),
+    queryFn: ({ signal }) => api.getOptimizeCoversStatus(signal),
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? 1_500 : false),
+    staleTime: 0,
   });
 }
 
