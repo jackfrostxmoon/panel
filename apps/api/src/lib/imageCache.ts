@@ -875,6 +875,45 @@ export class ImageCache {
    * back to one recursive scan matching the chapter folder's hash suffix
    * and the page number.
    */
+  private missScanMemo: { at: number; rels: string[] } | null = null;
+  private static readonly MISS_SCAN_MEMO_MS = 2_000;
+
+  /** Whole-tree fallback, shared for ~2 s so a burst of misses (disk
+   *  verification of many chapters at once) costs ONE recursive walk
+   *  instead of one per missing page. */
+  private async listFilesCached(): Promise<string[]> {
+    const memo = this.missScanMemo;
+    if (memo && Date.now() - memo.at < ImageCache.MISS_SCAN_MEMO_MS) return memo.rels;
+    const rels = await this.listFiles();
+    this.missScanMemo = { at: Date.now(), rels };
+    return rels;
+  }
+
+  /** Recursive walk scoped to ONE panel folder. Numbered page lookups
+   *  fall back to this when the direct stat misses — tens of files
+   *  instead of 25k-file walks per missing page. */
+  private async listPanelFiles(panelFolderRel: string): Promise<string[]> {
+    const out: string[] = [];
+    const walk = async (absDir: string, relDir: string): Promise<void> => {
+      let dirents;
+      try {
+        dirents = await readdir(absDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const d of dirents) {
+        const rel = relDir ? join(relDir, d.name) : d.name;
+        if (d.isDirectory()) {
+          await walk(join(absDir, d.name), rel);
+        } else if (d.isFile() && !d.name.endsWith('.tmp')) {
+          out.push(rel);
+        }
+      }
+    };
+    await walk(join(this.deps.dir, panelFolderRel), panelFolderRel);
+    return out;
+  }
+
   private async readNumberedPage(tag: string, pageNumber: number): Promise<string | null> {
     const tagHash = this.tagHash(tag);
     const pageStem = String(pageNumber).padStart(3, '0');
@@ -890,7 +929,16 @@ export class ImageCache {
         }
       }
     }
-    for (const rel of await this.listFiles()) {
+    if (folders?.panelFolder) {
+      for (const rel of await this.listPanelFiles(folders.panelFolder)) {
+        const base = pathBasename(rel);
+        if (!base.startsWith(`${pageStem}.`)) continue;
+        const parent = dirname(rel);
+        if (parent !== folders.panelFolder && this.chapterDirHash(pathBasename(parent)) === tagHash) return rel;
+      }
+      return null;
+    }
+    for (const rel of await this.listFilesCached()) {
       const base = pathBasename(rel);
       if (!base.startsWith(`${pageStem}.`)) continue;
       const parent = dirname(rel);
@@ -1200,7 +1248,7 @@ export class ImageCache {
     if (!tag && !stableKey) {
       return this.readdirFlatLegacy(kind, url);
     }
-    const entries = await this.listFiles();
+    const entries = await this.listFilesCached();
     const urlHash = url ? this.urlSuffix(url) : '';
     const tagHash = this.tagPrefix(kind, tag);
     for (const rel of entries) {
