@@ -4,6 +4,7 @@ import type { PanelSummary } from '@panel/shared';
 import { IconBookmark, IconFolder, IconTrash } from './icons';
 import { formatBytes, sourceLabel } from '../utils/format';
 import { CoverImage } from './CoverImage';
+import { CoverZoomButton } from './CoverZoomButton';
 import { useClearImageCacheByTag } from '../api/hooks';
 import { useToast } from './Toast';
 
@@ -158,6 +159,18 @@ export function PanelCard({
             )}
           </ul>
         )}
+        {/* Cover-zoom: opens the cover in the interactive lightbox.
+            Rendered on the LEFT — opposite the trash — below the status pill
+            when badges show it. Sits above the stretched link like the
+            trash so the click never navigates. */}
+        <CoverZoomButton
+          source={panel.source}
+          coverUrl={panel.coverUrl}
+          panelId={panel.id}
+          title={panel.title}
+          belowStatus={!hideBadges}
+          cacheNonce={coverNonce}
+        />
         {/* Cover-clear: delete the cached cover so a wrong/stale image
             refetches (same action as the details-page hero trash button).
             Rendered after the badges so CSS can offset it below the

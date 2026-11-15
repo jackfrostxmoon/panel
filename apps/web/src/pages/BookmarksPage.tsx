@@ -27,6 +27,7 @@ import { ALL_BOOKMARKS_ID, BookmarkFolderSelector } from '../components/Bookmark
 import { BackupExportDialog } from '../components/BackupExportDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { CoverImage } from '../components/CoverImage';
+import { CoverZoomButton } from '../components/CoverZoomButton';
 import { DragFolderOverlay } from '../components/DragFolderOverlay';
 import { FilterSearchBar } from '../components/FilterSearchBar';
 import { FolderPickerDialog } from '../components/FolderPickerDialog';
@@ -1147,6 +1148,18 @@ export function BookmarksPage() {
                     </>
                   )}
                 </Link>
+
+                {/* Cover-zoom: opens the cover in the interactive lightbox —
+                    LEFT side, opposite the trash button. Portal-rendered, so
+                    it escapes the card's overflow. */}
+                <CoverZoomButton
+                  source={bookmark.source}
+                  coverUrl={bookmark.coverUrl}
+                  panelId={bookmark.panelId}
+                  title={bookmark.title}
+                  belowStatus={!settings.hideCoverBadges}
+                  cacheNonce={coverNonces.get(bookmark.panelId)}
+                />
 
                 {/* Cover-clear: delete the cached cover (same action as
                     the details-page hero trash). Sits outside the cover
