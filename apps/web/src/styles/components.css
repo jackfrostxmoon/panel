@@ -620,6 +620,9 @@ input::placeholder {
   gap: 2px;
   height: 100%;
   padding: 0 var(--space-1);
+  /* Never squeezed into the animating container's intermediate width —
+     render at the natural size and let the container clip reveal it. */
+  width: max-content;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s ease 0.08s;
@@ -629,6 +632,7 @@ input::placeholder {
   pointer-events: auto;
 }
 .star-rating__star {
+  flex: 0 0 auto;
   background: transparent;
   border: 0;
   padding: 0 2px;
