@@ -6,6 +6,7 @@ import {
 } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
 import { dedupeGenreLabels } from '../lib/text.js';
+import { safeCoverUrl } from '../lib/coverGuard.js';
 import type { BookmarkFolderRepository } from '../repositories/bookmarkRepository.js';
 import type { BookmarkRepository } from '../repositories/bookmarkRepository.js';
 import type { PanelCacheRepository } from '../repositories/panelCacheRepository.js';
@@ -183,7 +184,7 @@ function toBookmarkSummary(
     id: row.id,
     panelId: panel.globalId,
     title: panel.title,
-    coverUrl: panel.coverUrl,
+    coverUrl: safeCoverUrl(panel.coverUrl),
     source: panel.source,
     sourceUrl: panel.sourceUrl,
     createdAt: row.createdAt.toISOString(),

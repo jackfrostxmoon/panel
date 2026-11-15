@@ -1,5 +1,6 @@
 import { ErrorCodes, parseGlobalId, type ReadingListEntry, type ReadingListStatus, type UpsertReadingListInput } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
+import { safeCoverUrl } from '../lib/coverGuard.js';
 import { logger } from '../lib/logger.js';
 import type { PanelCacheRepository } from '../repositories/panelCacheRepository.js';
 import type { ReadingListRepository } from '../repositories/readingListRepository.js';
@@ -104,7 +105,7 @@ function toEntry(entry: {
     createdAt: entry.row.createdAt.toISOString(),
     updatedAt: entry.row.updatedAt.toISOString(),
     title: entry.panel.title,
-    coverUrl: entry.panel.coverUrl,
+    coverUrl: safeCoverUrl(entry.panel.coverUrl),
     source: entry.panel.source,
     sourceUrl: entry.panel.sourceUrl,
     progress: entry.progress

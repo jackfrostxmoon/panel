@@ -17,6 +17,7 @@ import type { PanelRow, ChapterRow } from '../db/schema.js';
 import { InFlight, TtlCache } from '../lib/cache.js';
 import { AppError } from '../lib/errors.js';
 import { recordSourceCacheHit, recordSourceCacheMiss } from '../lib/stats.js';
+import { isChapterImageLikeCover, safeCoverUrl } from '../lib/coverGuard.js';
 import { cleanGenreLabel, dedupeGenreLabels } from '../lib/text.js';
 import type { SourceRegistry } from '../sources/registry.js';
 
@@ -302,6 +303,7 @@ export class PanelService {
           results: applyExcludedGenres(
             result.results.map((r) => ({
               ...r,
+              coverUrl: safeCoverUrl(r.coverUrl),
               genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
             })),
             x,
@@ -410,6 +412,7 @@ export class PanelService {
           results: applyExcludedGenres(
             merged.map((r) => ({
               ...r,
+              coverUrl: safeCoverUrl(r.coverUrl),
               genres: (r.genres ?? []).map((genre) => cleanGenreLabel(genre)).filter(Boolean),
             })),
             excludedGenres,
@@ -477,6 +480,7 @@ export class PanelService {
           results: applyExcludedGenres(
             result.results.map((r) => ({
               ...r,
+              coverUrl: safeCoverUrl(r.coverUrl),
               genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
             })),
             x,
@@ -517,12 +521,21 @@ export class PanelService {
       // the critical path), then refresh from live in the background so
       // the next visit sees fresh metadata.
       const stored = await this.panelCache.findPanelByGlobalId(globalId).catch(() => undefined);
+      // Fast path: serve the DB row immediately (no source round-trip on
+      // the critical path), then refresh from live in the background so
+      // the next visit sees fresh metadata. A stored row whose cover is a
+      // chapter page is legacy import damage — it is never served; the
+      // live fetch below repairs the row (coverGuard.ts).
+      const storedCoverBroken = isChapterImageLikeCover(stored?.coverUrl);
       const fast = toApiPanel(stored);
-      if (fast) {
+      if (fast && !storedCoverBroken) {
         void this.refreshPanel(globalId).catch(() => {});
         return fast;
       }
       const panel = await this.withOfflineFallback(
+        // Offline resilience is preserved, but a chapter-like cover is
+        // withheld (initials fallback) rather than served — see the
+        // toApiPanel cover sanitizer.
         async () => toApiPanel(await this.panelCache.findPanelByGlobalId(globalId)),
         () => source.getPanel(nativeId),
         (cause) =>
@@ -855,7 +868,7 @@ function toApiPanel(row: PanelRow | undefined): Panel | undefined {
     id: row.globalId,
     source: row.source,
     title: row.title,
-    coverUrl: row.coverUrl,
+    coverUrl: safeCoverUrl(row.coverUrl),
     sourceUrl: row.sourceUrl,
     status: (row.status as Panel['status']) ?? 'unknown',
     genres: (row.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),

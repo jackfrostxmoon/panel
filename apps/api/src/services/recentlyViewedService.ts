@@ -6,6 +6,7 @@ import {
   type RecordRecentlyViewedInput,
 } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
+import { safeCoverUrl } from '../lib/coverGuard.js';
 import type { BookmarkRepository } from '../repositories/bookmarkRepository.js';
 import type { PanelCacheRepository } from '../repositories/panelCacheRepository.js';
 import type { RecentlyViewedRepository } from '../repositories/recentlyViewedRepository.js';
@@ -92,7 +93,7 @@ function toRecentlyViewedPanel(
   return {
     id: panel.globalId,
     title: panel.title,
-    coverUrl: panel.coverUrl,
+    coverUrl: safeCoverUrl(panel.coverUrl),
     source: panel.source,
     sourceUrl: panel.sourceUrl,
     status,

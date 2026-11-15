@@ -2,6 +2,7 @@ import { ErrorCodes, parseGlobalId, type Bookmark, type CreateBookmarkInput } fr
 import { AppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { dedupeGenreLabels } from '../lib/text.js';
+import { safeCoverUrl } from '../lib/coverGuard.js';
 import type { BookmarkFolderRepository, BookmarkRepository } from '../repositories/bookmarkRepository.js';
 import type { PanelCacheRepository } from '../repositories/panelCacheRepository.js';
 import type { BookmarkRow, PanelRow } from '../db/schema.js';
@@ -143,7 +144,7 @@ function toBookmark(
     id: row.id,
     panelId: panel.globalId,
     title: panel.title,
-    coverUrl: panel.coverUrl,
+    coverUrl: safeCoverUrl(panel.coverUrl),
     source: panel.source,
     sourceUrl: panel.sourceUrl,
     createdAt: row.createdAt.toISOString(),

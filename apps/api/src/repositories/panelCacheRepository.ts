@@ -3,6 +3,7 @@ import type { Database } from '../db/client.js';
 import type { CreditKind, PanelPage, PanelStatus, PanelSummary, SourceSearchResult } from '@panel/shared';
 import { parseGlobalId, splitNativeChapterId } from '@panel/shared';
 import { chapters, chapterPages, listCache, panel, type ChapterRow, type PanelRow, type ListCacheRow } from '../db/schema.js';
+import { pickStoredCoverUrl, safeCoverUrl } from '../lib/coverGuard.js';
 
 /**
  * Repository for the panel/chapter metadata cache. Source payloads are
@@ -58,7 +59,10 @@ export class PanelCacheRepository {
     // fields fall back to stored values; inserts (no existing row) keep the
     // previous defaults.
     const existing = await this.findPanelByGlobalId(data.globalId);
-    const coverUrl = data.coverUrl?.trim() ? data.coverUrl : (existing?.coverUrl ?? null);
+    // Chapter-page URLs must never be stored (or kept) as the cover — see
+    // coverGuard.ts. A chapter-like incoming value falls back to a good
+    // stored cover; a chapter-like stored value never persists forward.
+    const coverUrl = pickStoredCoverUrl(data.coverUrl, existing?.coverUrl);
     const title = data.title?.trim() ? data.title : (existing?.title ?? data.title);
     const sourceUrl = data.sourceUrl?.trim() ? data.sourceUrl : (existing?.sourceUrl ?? data.sourceUrl);
     const status = data.status?.trim() ? data.status : (existing?.status ?? 'unknown');
@@ -256,7 +260,7 @@ export class PanelCacheRepository {
       id: row.globalId,
       source: row.source,
       title: row.title,
-      coverUrl: row.coverUrl,
+      coverUrl: safeCoverUrl(row.coverUrl),
       sourceUrl: row.sourceUrl,
       status: (row.status || 'unknown') as PanelStatus,
       genres: safeParseStringArray(row.genres),
@@ -484,9 +488,12 @@ export class PanelCacheRepository {
     results: SourceSearchResult['results'],
     hasMore: boolean,
   ): Promise<void> {
+    // Chapter-page URLs must never enter the list cache either — sanitize
+    // every persisted summary's cover (see coverGuard.ts).
+    const sanitized = results.map((item) => ({ ...item, coverUrl: safeCoverUrl(item.coverUrl) }));
     await this.db
       .insert(listCache)
-      .values({ kind, key, source, page, results, hasMore })
+      .values({ kind, key, source, page, results: sanitized, hasMore })
       .onConflictDoUpdate({
         target: [listCache.kind, listCache.key, listCache.source, listCache.page],
         set: { results, hasMore },

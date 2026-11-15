@@ -7,6 +7,7 @@ import {
   type SaveProgressInput,
 } from '@panel/shared';
 import { AppError } from '../lib/errors.js';
+import { safeCoverUrl } from '../lib/coverGuard.js';
 import type { PanelCacheRepository } from '../repositories/panelCacheRepository.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import { chapterNumberFromToken as chapterNumberFromTokenMk } from '../sources/mangakatana/parser.js';
@@ -115,7 +116,7 @@ export class ProgressService {
       chapterId: chapterRow.globalId,
       updatedAt: row.updatedAt.toISOString(),
       panelTitle: panelRow.title,
-      coverUrl: panelRow.coverUrl,
+      coverUrl: safeCoverUrl(panelRow.coverUrl),
       chapterTitle: chapterRow.title,
       sourceUrl: panelRow.sourceUrl,
     };
@@ -136,7 +137,7 @@ export class ProgressService {
       chapterId: row.chapterGlobalId,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
-      coverUrl: row.coverUrl,
+      coverUrl: safeCoverUrl(row.coverUrl),
       chapterTitle: row.chapterTitle,
       sourceUrl: row.sourceUrl,
     }));
@@ -149,7 +150,7 @@ export class ProgressService {
       chapterId: row.chapterGlobalId,
       updatedAt: row.progress.updatedAt.toISOString(),
       panelTitle: row.panelTitle,
-      coverUrl: row.coverUrl,
+      coverUrl: safeCoverUrl(row.coverUrl),
       chapterTitle: row.chapterTitle,
       sourceUrl: row.sourceUrl,
     }));
