@@ -52,6 +52,29 @@ export function CoverLightbox({
   const panRef = useRef<{ pointer: Point; scroll: Point } | null>(null);
   /** Set during a zoom gesture; consumed in useLayoutEffect to keep the image point under the cursor stationary. */
   const anchorRef = useRef<{ ix: number; iy: number; clientX: number; clientY: number } | null>(null);
+  /** Controls auto-hide: visible until IDLE_MS pass without pointer movement. */
+  const IDLE_MS = 2500;
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideTimerRef = useRef<number | null>(null);
+  const lastMoveRef = useRef(0);
+
+  const scheduleHide = useCallback(() => {
+    if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = window.setTimeout(() => setControlsVisible(false), IDLE_MS);
+  }, []);
+
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  // Start the idle countdown on mount; clear it on unmount.
+  useEffect(() => {
+    scheduleHide();
+    return () => {
+      if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+    };
+  }, [scheduleHide]);
 
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -124,14 +147,16 @@ export function CoverLightbox({
     if (!overlay) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
+      showControls();
       const factor = Math.exp(-event.deltaY * 0.0018);
       zoomTo(scale * factor, { x: event.clientX, y: event.clientY });
     };
     overlay.addEventListener('wheel', onWheel, { passive: false });
     return () => overlay.removeEventListener('wheel', onWheel);
-  }, [scale, zoomTo]);
+  }, [scale, zoomTo, showControls]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    showControls();
     if (event.button !== 0 || scale <= 1) return;
     if ((event.target as HTMLElement).closest('button')) return;
     const overlay = overlayRef.current;
@@ -145,6 +170,12 @@ export function CoverLightbox({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Throttled: any mouse movement reveals the controls and resets the idle timer.
+    const now = performance.now();
+    if (now - lastMoveRef.current > 120) {
+      lastMoveRef.current = now;
+      showControls();
+    }
     const pan = panRef.current;
     const overlay = overlayRef.current;
     if (!pan || !overlay) return;
@@ -168,7 +199,7 @@ export function CoverLightbox({
     <>
       <div
         ref={overlayRef}
-        className={`cover-lightbox__overlay${zoomed ? ' cover-lightbox__overlay--zoomed' : ''}${panning ? ' cover-lightbox__overlay--panning' : ''}`}
+        className={`cover-lightbox__overlay${zoomed ? ' cover-lightbox__overlay--zoomed' : ''}${panning ? ' cover-lightbox__overlay--panning' : ''}${controlsVisible ? '' : ' cover-lightbox__overlay--idle'}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Cover image for ${title}`}
@@ -204,49 +235,55 @@ export function CoverLightbox({
           />
         </div>
       </div>
-      <button
-        ref={closeRef}
-        type="button"
-        className="cover-lightbox__close"
-        aria-label="Close cover view"
-        onClick={onClose}
+      <div
+        className={`cover-lightbox__controls${controlsVisible ? '' : ' cover-lightbox__controls--hidden'}`}
+        onFocusCapture={showControls}
+        onBlurCapture={scheduleHide}
       >
-        <IconX size={18} />
-      </button>
-      <div className="cover-lightbox__toolbar" role="toolbar" aria-label="Zoom controls">
         <button
+          ref={closeRef}
           type="button"
-          className="cover-lightbox__zoom-btn"
-          aria-label="Zoom out"
-          title="Zoom out"
-          onClick={() => zoomTo(scale / ZOOM_STEP)}
-          disabled={scale <= MIN_SCALE}
+          className="cover-lightbox__close"
+          aria-label="Close cover view"
+          onClick={onClose}
         >
-          <IconZoomOut size={16} />
+          <IconX size={18} />
         </button>
-        <button
-          type="button"
-          className="cover-lightbox__zoom-value"
-          aria-label="Reset zoom to fit"
-          title="Reset zoom to fit"
-          onClick={() => setScale(1)}
-        >
-          {Math.round(scale * 100)}%
-        </button>
-        <button
-          type="button"
-          className="cover-lightbox__zoom-btn"
-          aria-label="Zoom in"
-          title="Zoom in"
-          onClick={() => zoomTo(scale * ZOOM_STEP)}
-          disabled={scale >= MAX_SCALE}
-        >
-          <IconZoomIn size={16} />
-        </button>
+        <div className="cover-lightbox__toolbar" role="toolbar" aria-label="Zoom controls">
+          <button
+            type="button"
+            className="cover-lightbox__zoom-btn"
+            aria-label="Zoom out"
+            title="Zoom out"
+            onClick={() => zoomTo(scale / ZOOM_STEP)}
+            disabled={scale <= MIN_SCALE}
+          >
+            <IconZoomOut size={16} />
+          </button>
+          <button
+            type="button"
+            className="cover-lightbox__zoom-value"
+            aria-label="Reset zoom to fit"
+            title="Reset zoom to fit"
+            onClick={() => setScale(1)}
+          >
+            {Math.round(scale * 100)}%
+          </button>
+          <button
+            type="button"
+            className="cover-lightbox__zoom-btn"
+            aria-label="Zoom in"
+            title="Zoom in"
+            onClick={() => zoomTo(scale * ZOOM_STEP)}
+            disabled={scale >= MAX_SCALE}
+          >
+            <IconZoomIn size={16} />
+          </button>
+        </div>
+        <p className="cover-lightbox__hint" aria-hidden="true">
+          Scroll to zoom · Drag to pan · Double-click toggles
+        </p>
       </div>
-      <p className="cover-lightbox__hint" aria-hidden="true">
-        Scroll to zoom · Drag to pan · Double-click toggles
-      </p>
     </>
   );
 }

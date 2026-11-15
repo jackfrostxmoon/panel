@@ -2717,6 +2717,33 @@ input::placeholder {
 .cover-lightbox__overlay--panning {
   cursor: grabbing;
 }
+/* Idle: hide the cursor for a distraction-free look (video-player style). */
+.cover-lightbox__overlay--idle {
+  cursor: none;
+}
+
+/* Floating chrome (close button, zoom pill, hint). Auto-hides after a few
+   idle seconds; any pointer movement reveals it again — see CoverLightbox. */
+.cover-lightbox__controls {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--duration-med) var(--ease-out), visibility var(--duration-med) var(--ease-out);
+}
+.cover-lightbox__controls > * {
+  pointer-events: auto;
+  position: absolute;
+}
+.cover-lightbox__controls--hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+.cover-lightbox__controls--hidden > * {
+  pointer-events: none;
+}
 
 @keyframes cover-lightbox-fade {
   from { opacity: 0; }
@@ -2756,10 +2783,8 @@ input::placeholder {
 }
 
 .cover-lightbox__close {
-  position: fixed;
   top: var(--space-4);
   right: var(--space-4);
-  z-index: 1001;
   display: grid;
   place-items: center;
   width: 36px;
@@ -2784,11 +2809,9 @@ input::placeholder {
 
 /* Zoom pill, floating at the bottom of the viewport. */
 .cover-lightbox__toolbar {
-  position: fixed;
   bottom: var(--space-6);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1001;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -2847,11 +2870,9 @@ input::placeholder {
 }
 
 .cover-lightbox__hint {
-  position: fixed;
   bottom: var(--space-2);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1001;
   margin: 0;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.55);
