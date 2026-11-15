@@ -119,14 +119,21 @@ export interface BookmarksPageSettings {
    * was added (newest first), ignoring chapter-cache timestamps.
    */
   sortByLatestUpdate: boolean;
+  /**
+   * Auto-open the "Choose folders" dialog after a new bookmark is added on
+   * the details page (only when there is more than one folder to pick).
+   * `false` keeps the bookmark in All bookmarks without interrupting.
+   */
+  autoOpenFolderPicker: boolean;
 }
 
-/** Default: cover cards, filters collapsed, sorted by latest update. */
+/** Default: cover cards, filters collapsed, sorted by latest update, folder picker on. */
 export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
   cardLayout: DEFAULT_CARD_LAYOUT,
   filtersCollapsed: true,
   searchOpen: false,
   sortByLatestUpdate: true,
+  autoOpenFolderPicker: true,
 };
 
 /**

@@ -148,6 +148,15 @@ export function BookmarksPage() {
       ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
       : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
   /**
+   * "Ask where to save" — auto-open the Choose folders dialog on the details
+   * page after bookmarking. Persisted server-side; threaded through the
+   * full-replace saves below so it survives every settings write.
+   */
+  const autoOpenFolderPicker: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.autoOpenFolderPicker ?? true)
+      : (bookmarksSettingsQuery.data?.autoOpenFolderPicker ?? true);
+  /**
    * Latest-updates feed for the single selected source (pages 1–3). Used to
    * re-order the shelf the way the source site itself lists recently
    * updated titles, instead of the local chapter-cache recency sort.
@@ -573,16 +582,16 @@ export function BookmarksPage() {
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen, sortByLatestUpdate });
+    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen, sortByLatestUpdate });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
   }
 
   function handleSearchToggle() {
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen, sortByLatestUpdate });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
   }
 
   // --- Export / Import (.sql dump) --------------------------------------------

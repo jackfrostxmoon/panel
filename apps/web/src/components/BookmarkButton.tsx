@@ -4,6 +4,7 @@ import {
   useAddBookmark,
   useBookmarkByPanel,
   useBookmarkFolders,
+  useBookmarksSettings,
   useRemoveBookmark,
 } from '../api/hooks';
 import { useToast } from './Toast';
@@ -27,6 +28,10 @@ import { IconBookmark } from './icons';
 export function BookmarkToggle({ panel }: { panel: Panel }) {
   const { data: bookmark, isLoading } = useBookmarkByPanel(panel.id);
   const { data: folderData } = useBookmarkFolders();
+  // "Ask where to save" (Bookmarks page folder menu): off = never pop the
+  // Choose folders dialog after adding; the bookmark lands in All bookmarks.
+  // Default on — existing installs keep the popup until the file says otherwise.
+  const autoOpenFolderPicker = useBookmarksSettings().data?.autoOpenFolderPicker ?? true;
   const addBookmark = useAddBookmark();
   const removeBookmark = useRemoveBookmark();
   const { toast } = useToast();
@@ -54,9 +59,9 @@ export function BookmarkToggle({ panel }: { panel: Panel }) {
         window.setTimeout(() => setJustAdded(false), 450);
         toast('Added to bookmarks', 'success');
         // Skip the folder picker when there is no choice to make (a single
-        // folder, or the folder list hasn't loaded) — the bookmark already
-        // lives in the only available folder.
-        if ((folderData?.folders.length ?? 0) > 1) {
+        // folder, or the folder list hasn't loaded) or the user turned off
+        // "Ask where to save" in the bookmarks folder menu.
+        if ((folderData?.folders.length ?? 0) > 1 && autoOpenFolderPicker) {
           setPickerOpen(true);
         }
       })

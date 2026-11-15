@@ -18,11 +18,12 @@ export function bookmarksSettingsRoutes(): Hono {
       !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
       typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
       typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean' ||
-      typeof (body as { sortByLatestUpdate?: unknown }).sortByLatestUpdate !== 'boolean'
+      typeof (body as { sortByLatestUpdate?: unknown }).sortByLatestUpdate !== 'boolean' ||
+      typeof (body as { autoOpenFolderPicker?: unknown }).autoOpenFolderPicker !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, sortByLatestUpdate: boolean }.',
+        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, sortByLatestUpdate: boolean, autoOpenFolderPicker: boolean }.',
       );
     }
     const typed = body as {
@@ -30,6 +31,7 @@ export function bookmarksSettingsRoutes(): Hono {
       filtersCollapsed: boolean;
       searchOpen: boolean;
       sortByLatestUpdate: boolean;
+      autoOpenFolderPicker: boolean;
     };
     return c.json(
       ok(
@@ -38,6 +40,7 @@ export function bookmarksSettingsRoutes(): Hono {
           filtersCollapsed: typed.filtersCollapsed,
           searchOpen: typed.searchOpen,
           sortByLatestUpdate: typed.sortByLatestUpdate,
+          autoOpenFolderPicker: typed.autoOpenFolderPicker,
         }),
       ),
     );

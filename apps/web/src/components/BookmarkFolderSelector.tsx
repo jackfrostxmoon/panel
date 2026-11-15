@@ -10,6 +10,7 @@ import {
 import { DEFAULT_BOOKMARKS_PAGE_SETTINGS } from '@panel/shared';
 import {
   IconEye,
+  IconFolder,
   IconMenu,
   IconMore,
   IconPencil,
@@ -86,12 +87,30 @@ export function BookmarkFolderSelector({
     saveBookmarksSettings.isPending && saveBookmarksSettings.variables
       ? (saveBookmarksSettings.variables.sortByLatestUpdate ?? true)
       : (bookmarksSettingsQuery.data?.sortByLatestUpdate ?? true);
+  /**
+   * "Ask where to save" — persisted server-side alongside the other
+   * bookmarks toggles. Controls whether the details page pops the
+   * "Choose folders" dialog after a bookmark is added (only when there is
+   * more than one folder to pick from). Off = the bookmark lands in All
+   * bookmarks without interrupting; the manual folder button is untouched.
+   */
+  const autoOpenFolderPicker =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.autoOpenFolderPicker ?? true)
+      : (bookmarksSettingsQuery.data?.autoOpenFolderPicker ?? true);
   const handleSortByLatestUpdateChange = (checked: boolean) => {
     const base =
       saveBookmarksSettings.isPending && saveBookmarksSettings.variables
         ? saveBookmarksSettings.variables
         : (bookmarksSettingsQuery.data ?? DEFAULT_BOOKMARKS_PAGE_SETTINGS);
     saveBookmarksSettings.mutate({ ...base, sortByLatestUpdate: checked });
+  };
+  const handleAutoOpenFolderPickerChange = (checked: boolean) => {
+    const base =
+      saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+        ? saveBookmarksSettings.variables
+        : (bookmarksSettingsQuery.data ?? DEFAULT_BOOKMARKS_PAGE_SETTINGS);
+    saveBookmarksSettings.mutate({ ...base, autoOpenFolderPicker: checked });
   };
 
   /** True while a bookmark card is being dragged (T2-8). Suppresses the
@@ -399,6 +418,18 @@ export function BookmarkFolderSelector({
               checked={sortByLatestUpdate}
               onChange={handleSortByLatestUpdateChange}
               labelledBy="sort-latest-update-label"
+            />
+          </div>
+
+          <div className="bookmark-folder-selector__display bookmark-folder-selector__display--flush">
+            <span id="ask-where-to-save-label" className="bookmark-folder-selector__display-label">
+              <IconFolder size={13} aria-hidden="true" />
+              Ask where to save
+            </span>
+            <Switch
+              checked={autoOpenFolderPicker}
+              onChange={handleAutoOpenFolderPickerChange}
+              labelledBy="ask-where-to-save-label"
             />
           </div>
         </div>
