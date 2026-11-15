@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { BULK_CHAPTER_LIMIT, parseGlobalId, type Chapter } from '@panel/shared';
 import { useChapters, usePanel, useRecentProgress, useLatestProgressForPanel, useProgressForPanel, useChapterBookmarks, useAddChapterBookmarks, useAddChapterBookmark, useRemoveChapterBookmark, useBulkMarkChaptersRead, useClearProgress, useReadingListByPanel, useUpsertReadingList, useRemoveReadingList, usePanelRating, useImageCacheTags, usePrefetchJobsByChapters, useChaptersDiskState, useRecordRecentlyViewed, useBookmarkByPanel, useCacheSettings, useTagsByPanel, useClearImageCacheByTag } from '../api/hooks';
 import { ShareDialog } from '../components/ShareDialog';
+import { CoverLightbox } from '../components/CoverLightbox';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useChapterDownloader } from '../hooks/useChapterDownloader';
@@ -22,7 +23,7 @@ import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash } from '../components/icons';
+import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash, IconZoomIn } from '../components/icons';
 import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
@@ -117,6 +118,8 @@ export function PanelDetailsPage() {
   const fromSection = from ? SECTION_CRUMBS[from] : undefined;
   /** Share dialog (QR code + link). */
   const [shareOpen, setShareOpen] = useState(false);
+  /** Cover lightbox (full-viewport view of the hero cover). */
+  const [coverZoomOpen, setCoverZoomOpen] = useState(false);
   /** Batch chapter-bookmark actions (lives next to the sort control). */
   const [showChapterActions, setShowChapterActions] = useState(false);
 
@@ -1135,6 +1138,16 @@ const filteredAndSortedChapters = useMemo(() => {
           </div>
           <button
             type="button"
+            className="panel-details__cover-zoom"
+            onClick={() => setCoverZoomOpen(true)}
+            disabled={!m.coverUrl}
+            aria-label="View cover image full screen"
+            title="View cover image full screen"
+          >
+            <IconZoomIn size={16} />
+          </button>
+          <button
+            type="button"
             className="panel-details__cover-clear"
             onClick={handleClearCover}
             disabled={clearCoverMutation.isPending || !m.coverUrl}
@@ -1895,6 +1908,13 @@ const filteredAndSortedChapters = useMemo(() => {
           title={panel.data?.title ?? id}
           url={window.location.href}
           onClose={() => setShareOpen(false)}
+        />
+      )}
+      {coverZoomOpen && backdropCover && (
+        <CoverLightbox
+          title={panel.data?.title ?? id}
+          src={backdropCover}
+          onClose={() => setCoverZoomOpen(false)}
         />
       )}
 
