@@ -555,14 +555,82 @@ input::placeholder {
 }
 
 /* 1–5 star rating (T3-3). Gold — the conventional rating hue — rather than
-   the brand red, which reads as "destructive" when lit up. Sized to align
-   with the 36–44px action controls it sits beside on the details page. */
+   the brand red, which reads as "destructive" when lit up. Collapsed by
+   default (single star face in a 36px toolbar segment); hovering, focusing
+   or tapping the face expands the full 5-star radiogroup in place. The two
+   faces are stacked in one animated-width container (inline-grid), and the
+   hidden face is removed from the tab order — see StarRating.tsx. */
 .star-rating {
+  display: inline-grid;
+  align-items: center;
+  height: 36px;
+  max-width: 52px;
+  overflow: hidden;
+  transition: max-width 0.25s ease;
+}
+.star-rating--expanded {
+  max-width: 220px;
+}
+.star-rating__face {
+  grid-area: 1 / 1;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  max-width: 52px;
+  opacity: 1;
+  transition: max-width 0.25s ease, opacity 0.18s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+.star-rating__face:hover,
+.star-rating__face:focus-visible {
+  color: var(--bookmark-single);
+}
+.star-rating__face:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.star-rating__face-star--active {
+  color: var(--bookmark-single);
+}
+.star-rating--expanded .star-rating__face {
+  max-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  padding: 0;
+}
+.star-rating__face-value {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+.star-rating__full {
+  grid-area: 1 / 1;
+  justify-self: center;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 36px;
+  height: 100%;
   padding: 0 var(--space-1);
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: max-width 0.3s ease, opacity 0.22s ease;
+}
+.star-rating--expanded .star-rating__full {
+  max-width: 220px;
+  opacity: 1;
+  pointer-events: auto;
 }
 .star-rating__star {
   background: transparent;

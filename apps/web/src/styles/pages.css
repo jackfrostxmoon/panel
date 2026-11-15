@@ -1811,7 +1811,7 @@ a.genre-chip {
 
 .panel-details__toolbar-item--rating .star-rating {
   height: 100%;
-  padding: 0 var(--space-3);
+  justify-self: center;
 }
 
 .panel-details__toolbar-item--status .reading-list-status {
@@ -1998,7 +1998,6 @@ a.genre-chip {
     width: 100%;
     height: 100%;
     justify-content: center;
-    padding: 0 var(--space-3);
   }
   .panel-details__toolbar .star-rating__star svg {
     width: 16px;
