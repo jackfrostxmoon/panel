@@ -406,19 +406,26 @@
   max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
-/* Fit-to-height (paged mode only): contain the page vertically so the whole
-   image is visible without scrolling. The width slider is ignored — the
-   height constraint drives the layout and the width follows the aspect
-   ratio via object-fit: contain. */
-.paged-reader--fit-height .paged-reader__viewport {
-  height: 100%;
-  max-height: 100dvh;
-  width: auto;
-  max-width: 100%;
+/* Fit-to-height (paged mode only): the page fills the reader stage's full
+   height, up- or downscaling, so the whole image is visible without
+   scrolling. The width slider is ignored — the height constraint drives
+   the layout and the width follows the aspect ratio. The old cap-only
+   rules resolved nothing (a min-height parent gives children an `auto`
+   height to resolve against), so the page rendered at its natural size —
+   fix is a definite height on the root + a real height: 100% chain. */
+.paged-reader--fit-height {
+  height: 100dvh;
 }
 
-.reader--toolbar-clear .paged-reader--fit-height .paged-reader__viewport {
-  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
+.reader--toolbar-clear .paged-reader--fit-height {
+  height: calc(100dvh - 2 * var(--reader-toolbar-height));
+}
+
+.paged-reader--fit-height .paged-reader__viewport {
+  height: 100%;
+  max-height: none;
+  width: auto;
+  max-width: 100%;
 }
 
 .paged-reader--fit-height .paged-reader__stage {
@@ -430,20 +437,17 @@
 }
 
 .paged-reader--fit-height .paged-reader__stage .reader-image {
-  width: auto;
-  max-width: 100%;
+  height: 100%;
   max-height: 100%;
+  max-width: 100%;
 }
 
 .paged-reader--fit-height .paged-reader__stage .reader-image__img {
-  width: auto;
-  max-width: 100%;
-  max-height: 100dvh;
+  height: 100%;
+  width: 100%;
+  max-width: none;
+  max-height: 100%;
   object-fit: contain;
-}
-
-.reader--toolbar-clear .paged-reader--fit-height .paged-reader__stage .reader-image__img {
-  max-height: calc(100dvh - 2 * var(--reader-toolbar-height));
 }
 
 .paged-reader--fit-height .paged-reader__spread {
@@ -460,8 +464,17 @@
   max-height: 100%;
 }
 
-.paged-reader--fit-height .paged-reader__sheet .reader-image__img {
+.paged-reader--fit-height .paged-reader__sheet .reader-image {
+  height: 100%;
   max-height: 100%;
+  max-width: 100%;
+}
+
+.paged-reader--fit-height .paged-reader__sheet .reader-image__img {
+  height: 100%;
+  width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .paged-reader__zone {
