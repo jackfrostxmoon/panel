@@ -1534,6 +1534,72 @@
   outline-offset: 2px;
 }
 
+/* "Search elsewhere" dropdown — anchored right of the trigger so it can
+   never clip off the viewport; scrolls when the alias list is long. */
+.search-elsewhere {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.search-elsewhere__menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 15rem;
+  max-width: min(20rem, 78vw);
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.search-elsewhere__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.search-elsewhere__label {
+  padding: 2px var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+.search-elsewhere__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.search-elsewhere__item:hover,
+.search-elsewhere__item:focus-visible {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.search-elsewhere__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .panel-details__title {
   font-size: clamp(var(--font-size-2xl), 4vw, var(--font-size-4xl));
   font-weight: var(--font-weight-bold);

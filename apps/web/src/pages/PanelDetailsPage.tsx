@@ -23,7 +23,8 @@ import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
-import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash, IconZoomIn, IconSearch } from '../components/icons';
+import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash, IconZoomIn } from '../components/icons';
+import { SearchElsewhereMenu } from '../components/SearchElsewhereMenu';
 import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
@@ -1163,15 +1164,12 @@ const filteredAndSortedChapters = useMemo(() => {
             <h1 id="panel-title" className="panel-details__title">
               {m.title}
             </h1>
-            <button
-              type="button"
-              className="panel-details__search"
-              onClick={() => navigate(`/search?q=${encodeURIComponent(m.title)}`)}
-              aria-label="Search other sources for this title"
-              title="Search other sources for this title"
-            >
-              <IconSearch size={18} />
-            </button>
+            <SearchElsewhereMenu
+              title={m.title}
+              altTitles={m.altTitles}
+              authors={m.authors}
+              artists={m.artists}
+            />
           </div>
 
           <dl className="panel-details__meta">
