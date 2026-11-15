@@ -566,7 +566,7 @@ input::placeholder {
   height: 36px;
   max-width: 52px;
   overflow: hidden;
-  transition: max-width 0.25s ease;
+  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .star-rating--expanded {
   max-width: 220px;
@@ -586,7 +586,7 @@ input::placeholder {
   cursor: pointer;
   max-width: 52px;
   opacity: 1;
-  transition: max-width 0.25s ease, opacity 0.18s ease, color 0.12s ease;
+  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1), color 0.12s ease;
   white-space: nowrap;
 }
 .star-rating__face:hover,
@@ -625,7 +625,7 @@ input::placeholder {
   overflow: hidden;
   pointer-events: none;
   white-space: nowrap;
-  transition: max-width 0.3s ease, opacity 0.22s ease;
+  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .star-rating--expanded .star-rating__full {
   max-width: 220px;
