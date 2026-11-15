@@ -1497,7 +1497,41 @@
 }
 
 .panel-details__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   margin-bottom: var(--space-2);
+}
+
+/* Ghost icon button next to the title — deep-links into search pre-filled
+   with this panel's title so the user can check other sources. */
+.panel-details__search {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.panel-details__search:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+  transform: scale(1.06);
+}
+.panel-details__search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .panel-details__title {
@@ -1514,6 +1548,9 @@
 }
 
 @media (max-width: 768px) {
+  .panel-details__header {
+    justify-content: center;
+  }
   .panel-details__title {
     font-size: clamp(1.15rem, 5.5vw, 1.4rem);
     text-align: center;
