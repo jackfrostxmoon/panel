@@ -561,33 +561,34 @@ input::placeholder {
    faces are stacked in one animated-width container (inline-grid), and the
    hidden face is removed from the tab order — see StarRating.tsx. */
 .star-rating {
-  display: inline-grid;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   height: 36px;
   max-width: 52px;
   overflow: hidden;
-  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  white-space: nowrap;
+  transition: max-width 0.75s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .star-rating--expanded {
   max-width: 220px;
 }
 .star-rating__face {
-  grid-area: 1 / 1;
-  justify-self: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 100%;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  height: 100%;
   padding: 0 var(--space-2);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-faint);
   cursor: pointer;
-  max-width: 52px;
   opacity: 1;
-  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1), color 0.12s ease;
-  white-space: nowrap;
+  transition: opacity 0.3s ease, color 0.12s ease;
 }
 .star-rating__face:hover,
 .star-rating__face:focus-visible {
@@ -601,10 +602,8 @@ input::placeholder {
   color: var(--bookmark-single);
 }
 .star-rating--expanded .star-rating__face {
-  max-width: 0;
   opacity: 0;
   pointer-events: none;
-  padding: 0;
 }
 .star-rating__face-value {
   font-size: var(--font-size-xs);
@@ -613,22 +612,19 @@ input::placeholder {
   color: inherit;
 }
 .star-rating__full {
-  grid-area: 1 / 1;
-  justify-self: center;
+  position: absolute;
+  left: 0;
+  top: 0;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   height: 100%;
   padding: 0 var(--space-1);
-  max-width: 0;
   opacity: 0;
-  overflow: hidden;
   pointer-events: none;
-  white-space: nowrap;
-  transition: max-width 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.4s ease 0.08s;
 }
 .star-rating--expanded .star-rating__full {
-  max-width: 220px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -664,6 +660,15 @@ input::placeholder {
   font-size: var(--font-size-xs);
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+/* Honor reduced-motion: snap the faces open/closed instead of wiping. */
+@media (prefers-reduced-motion: reduce) {
+  .star-rating,
+  .star-rating__face,
+  .star-rating__full {
+    transition: none;
+  }
 }
 
 /* Custom tag editor (T3-4). Sits on the details page directly under the
