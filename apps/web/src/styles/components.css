@@ -560,13 +560,20 @@ input::placeholder {
    or tapping the face expands the full 5-star radiogroup in place. The two
    faces are stacked in one animated-width container (inline-grid), and the
    hidden face is removed from the tab order — see StarRating.tsx. */
+/* Hovering/focusing expands the collapsed face into the full 5-star
+   radiogroup. The width change uses a long, gentle glide — `--ease-out`
+   (cubic-bezier(0.22, 1, 0.36, 1)) — so the segment appears to extend rather
+   than snap. The collapsed face and full face cross-fade their opacity at a
+   slightly different rate than the width so they don't feel locked together,
+   and the stars drift in with a soft left-to-right stagger for a gliding
+   feel. Collapse uses no stagger delays so the bar settles quickly. */
 .star-rating {
   display: inline-grid;
   align-items: center;
   height: 36px;
   max-width: 52px;
   overflow: hidden;
-  transition: max-width 0.25s ease;
+  transition: max-width 0.5s var(--ease-out);
 }
 .star-rating--expanded {
   max-width: 220px;
@@ -586,7 +593,11 @@ input::placeholder {
   cursor: pointer;
   max-width: 52px;
   opacity: 1;
-  transition: max-width 0.25s ease, opacity 0.18s ease, color 0.12s ease;
+  transition:
+    max-width 0.5s var(--ease-out),
+    padding 0.5s var(--ease-out),
+    opacity 0.32s ease,
+    color var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
 .star-rating__face:hover,
@@ -625,7 +636,7 @@ input::placeholder {
   overflow: hidden;
   pointer-events: none;
   white-space: nowrap;
-  transition: max-width 0.3s ease, opacity 0.22s ease;
+  transition: max-width 0.55s var(--ease-out), opacity 0.38s ease 0.06s;
 }
 .star-rating--expanded .star-rating__full {
   max-width: 220px;
@@ -640,11 +651,32 @@ input::placeholder {
   align-items: center;
   color: var(--text-faint);
   cursor: pointer;
-  transition: color 0.12s ease, transform 0.12s ease;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition:
+    color var(--duration-fast) ease,
+    opacity 0.3s ease,
+    transform 0.5s var(--ease-out);
 }
+.star-rating--expanded .star-rating__star {
+  opacity: 1;
+  transform: translateX(0);
+}
+/* Left-to-right stagger as the stars glide in. Delay applies only to the
+   opacity/transform tracks (color stays instant for hover feedback) and
+   only while expanded, so collapse settles without lag. */
+.star-rating--expanded .star-rating__star:nth-child(1) { transition-delay: 0s, 60ms, 60ms; }
+.star-rating--expanded .star-rating__star:nth-child(2) { transition-delay: 0s, 110ms, 110ms; }
+.star-rating--expanded .star-rating__star:nth-child(3) { transition-delay: 0s, 160ms, 160ms; }
+.star-rating--expanded .star-rating__star:nth-child(4) { transition-delay: 0s, 210ms, 210ms; }
+.star-rating--expanded .star-rating__star:nth-child(5) { transition-delay: 0s, 260ms, 260ms; }
 .star-rating__star:hover,
 .star-rating__star:focus-visible {
   color: var(--bookmark-single);
+  transform: scale(1.12);
+}
+.star-rating--expanded .star-rating__star:hover,
+.star-rating--expanded .star-rating__star:focus-visible {
   transform: scale(1.12);
 }
 .star-rating__star:focus-visible {
