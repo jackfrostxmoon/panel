@@ -2678,6 +2678,10 @@ input::placeholder {
    often only a few hundred px wide, so the stage renders it as large as the
    viewport allows (object-fit: contain) and the user can inspect it with
    interactive zoom/pan — see CoverLightbox.tsx. */
+/* The overlay is the scrollport: zooming the cover enlarges the stage to
+   `fit × scale`, and the user scrolls (or drags) to pan around it. The auto
+   margins on the stage keep it centered when smaller than the viewport and
+   fall back to 0 when larger, so both modes behave. */
 .cover-lightbox__overlay {
   position: fixed;
   inset: 0;
@@ -2685,11 +2689,33 @@ input::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: auto;
   padding: var(--space-4);
   background: rgba(0, 0, 0, 0.78);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   animation: cover-lightbox-fade var(--duration-fast) var(--ease-out);
+  touch-action: none;
+  user-select: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+.cover-lightbox__overlay::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cover-lightbox__overlay::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-full);
+}
+.cover-lightbox__overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cover-lightbox__overlay--zoomed {
+  cursor: grab;
+}
+.cover-lightbox__overlay--panning {
+  cursor: grabbing;
 }
 
 @keyframes cover-lightbox-fade {
@@ -2698,20 +2724,17 @@ input::placeholder {
 }
 
 .cover-lightbox__stage {
+  flex: none;
+  margin: auto;
   position: relative;
   width: min(94vw, 1000px);
   height: min(86vh, 1000px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   animation: cover-lightbox-pop var(--duration-med) var(--ease-out);
-  touch-action: none;
-  user-select: none;
 }
 
 @keyframes cover-lightbox-pop {
@@ -2725,27 +2748,18 @@ input::placeholder {
   }
 }
 
-.cover-lightbox__stage--zoomed {
-  cursor: grab;
-}
-.cover-lightbox__stage--dragging {
-  cursor: grabbing;
-}
-
 .cover-lightbox__img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  transform-origin: center center;
-  will-change: transform;
   -webkit-user-drag: none;
 }
 
 .cover-lightbox__close {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  z-index: 2;
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 1001;
   display: grid;
   place-items: center;
   width: 36px;
@@ -2768,13 +2782,13 @@ input::placeholder {
   outline-offset: 2px;
 }
 
-/* Zoom pill, floating at the bottom of the stage. */
+/* Zoom pill, floating at the bottom of the viewport. */
 .cover-lightbox__toolbar {
-  position: absolute;
+  position: fixed;
   bottom: var(--space-6);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 1001;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -2833,11 +2847,11 @@ input::placeholder {
 }
 
 .cover-lightbox__hint {
-  position: absolute;
+  position: fixed;
   bottom: var(--space-2);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1;
+  z-index: 1001;
   margin: 0;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.55);
