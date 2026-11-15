@@ -141,7 +141,18 @@ export function IconGear({ size = 16, className, style }: IconProps) {
   );
 }
 
-/** Zoom in — magnifying glass with a plus, for the cover-lightbox button. */
+/** Zoom out — magnifying glass with a minus, for the cover lightbox. */
+export function IconZoomOut({ size = 16, className, style }: IconProps) {
+  return (
+    <svg {...base(size, className, style)}>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.5" y2="16.5" />
+      <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+  );
+}
+
+/** Zoom in — magnifying glass with a plus, for the cover lightbox. */
 export function IconZoomIn({ size = 16, className, style }: IconProps) {
   return (
     <svg {...base(size, className, style)}>
