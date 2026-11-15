@@ -556,11 +556,11 @@ input::placeholder {
 
 /* 1–5 star rating (T3-3). Gold — the conventional rating hue — rather than
    the brand red, which reads as "destructive" when lit up. Collapsed by
-   default (single star face in a 36px toolbar segment); hovering, focusing
-   or tapping the face expands the full 5-star radiogroup in place. The two
+   default (single star face in a 36px toolbar segment); clicking/tapping the
+   face (or focusing it) expands the full 5-star radiogroup in place. The two
    faces are stacked in one animated-width container (inline-grid), and the
    hidden face is removed from the tab order — see StarRating.tsx. */
-/* Hovering/focusing expands the collapsed face into the full 5-star
+/* Clicking/focusing expands the collapsed face into the full 5-star
    radiogroup. The width change uses a long, gentle glide — `--ease-out`
    (cubic-bezier(0.22, 1, 0.36, 1)) — so the segment appears to extend rather
    than snap. The collapsed face and full face cross-fade their opacity at a

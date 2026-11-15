@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useClearPanelRating, useSetPanelRating } from '../api/hooks';
 import { useToast } from './Toast';
 import { IconStar } from './icons';
@@ -9,11 +9,13 @@ import { IconStar } from './icons';
  *
  * Collapsed by default so the details toolbar stays compact: it renders a
  * single star face (gold when the panel is rated, faint otherwise) next to
- * the current value. Hovering or focusing the segment — or tapping/clicking
- * the face — expands the full 5-star radiogroup in place; it collapses back
- * when the pointer/focus leaves, after a selection, or on Escape. The face
- * and the full radiogroup are stacked in one animated-width container, and
- * the stars are removed from the tab order while collapsed.
+ * the current value. Clicking/tapping the face — or focusing it — expands
+ * the full 5-star radiogroup in place. It is intentionally click-driven
+ * rather than hover-driven: hover expansion flickered when the pointer sat
+ * near the segment edge. The full face collapses after a selection, on
+ * Escape, or when a pointer-down lands outside the widget. The face and the
+ * full radiogroup are stacked in one animated-width container, and the
+ * stars are removed from the tab order while collapsed.
  */
 export function StarRating({ panelId, rating }: { panelId: string; rating: number | null | undefined }) {
   const setRating = useSetPanelRating();
@@ -22,18 +24,18 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
   /** Star the pointer is hovering (null = not hovering). */
   const [hover, setHover] = useState<number | null>(null);
   /** Expand state, tracked per trigger so they don't fight each other. */
-  const [hovering, setHovering] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const expanded = hovering || focused || pinned;
+  const expanded = focused || pinned;
   const shown = hover ?? rating ?? 0;
   /** Used to return focus to the face button when the widget collapses via Escape. */
   const faceRef = useRef<HTMLButtonElement>(null);
+  /** Root element, used to collapse the pinned face when a pointer-down lands outside. */
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const handlePick = (value: number) => {
-    // Keep the collapsed/expanded state stable for the common case (the
-    // full face collapses once the pointer leaves); on touch we collapse
-    // after a selection so the toolbar settles.
+    // Collapse back to the compact face after a selection so the toolbar
+    // settles.
     setPinned(false);
     if (value === rating) {
       clearRating.mutate(panelId, {
@@ -58,25 +60,35 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
     setFocused(false);
   };
 
+  // Collapse a pinned (click-to-open) widget when a pointer-down lands
+  // outside it — there is no hover-leave to trigger the collapse anymore.
+  useEffect(() => {
+    if (!pinned) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setPinned(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [pinned]);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape') return;
     setPinned(false);
-    setHovering(false);
     setFocused(false);
     faceRef.current?.focus();
   };
 
   return (
     <div
+      ref={rootRef}
       className={`star-rating${expanded ? ' star-rating--expanded' : ''}`}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={handleBlur}
       onKeyDown={handleKeyDown}
     >
       {/* Collapsed face — a single star + value. Expands on click/tap
-          (pinned), or via the hover/focus paths shared with the full face. */}
+          (pinned), or via keyboard focus. */}
       <button
         type="button"
         ref={faceRef}
