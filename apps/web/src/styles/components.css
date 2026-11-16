@@ -697,38 +697,6 @@ input::placeholder {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
-/* Mobile: use the original collapse/expand rating animation instead of the
-   smooth "showing all the stars" glide. The long ease, delayed fade and
-   per-star left-to-right stagger feel laggy on the stacked mobile toolbar,
-   so tapping responds with the quick max-width ease and static stars the
-   control was first built with. Desktop keeps the staggered glide. */
-@media (max-width: 640px) {
-  .star-rating {
-    transition: max-width 0.25s ease;
-  }
-  .star-rating__face {
-    transition: max-width 0.25s ease, opacity 0.18s ease, color 0.12s ease;
-  }
-  .star-rating__full {
-    transition: max-width 0.3s ease, opacity 0.22s ease;
-  }
-  .star-rating__star {
-    opacity: 1;
-    transform: none;
-    transition: color 0.12s ease, transform 0.12s ease;
-  }
-  .star-rating--expanded .star-rating__star {
-    opacity: 1;
-    transform: none;
-  }
-  .star-rating--expanded .star-rating__star:nth-child(1),
-  .star-rating--expanded .star-rating__star:nth-child(2),
-  .star-rating--expanded .star-rating__star:nth-child(3),
-  .star-rating--expanded .star-rating__star:nth-child(4),
-  .star-rating--expanded .star-rating__star:nth-child(5) {
-    transition-delay: 0s;
-  }
-}
 
 /* Custom tag editor (T3-4). Sits on the details page directly under the
    genres block, mirroring its presentation: label + count header, chip row,
