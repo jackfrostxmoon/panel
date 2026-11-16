@@ -46,17 +46,19 @@ export function FolderPickerDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Reset the local selection every time the dialog opens for a different
-  // bookmark (or re-opens for the same one with a fresh state). The
-  // folderIds reference is captured into a stable string so the effect
-  // doesn't refire on every parent render.
+  // bookmark (or re-opens for the same one with a fresh state). Keyed only
+  // on the stable id/folderIds strings — parents pass a fresh `bookmark`
+  // object identity on every render, so it must NOT be a dependency or the
+  // effect refires on every re-render and wipes in-progress state (e.g. an
+  // open "new folder" input).
   const bookmarkId = bookmark?.id ?? null;
   const folderIdsKey = bookmark?.folderIds.join('|') ?? '';
   useEffect(() => {
-    if (!open || !bookmark) return;
-    setSelected(new Set(bookmark.folderIds));
+    if (!open || !bookmarkId) return;
+    setSelected(new Set(folderIdsKey ? folderIdsKey.split('|') : []));
     setCreating(false);
     setNewName('');
-  }, [open, bookmarkId, folderIdsKey, bookmark]);
+  }, [open, bookmarkId, folderIdsKey]);
 
   // Mirror the open prop into the native dialog.
   useEffect(() => {
