@@ -100,10 +100,6 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
       >
         <IconStar size={18} filled={shown > 0} className={shown > 0 ? 'star-rating__face-star--active' : undefined} />
         {rating ? <span className="star-rating__face-value">{rating}</span> : null}
-        {/* Mobile-only wording (CSS hides this on desktop) so the collapsed
-            segment reads as an action — "Rate" — like the labelled Bookmark
-            row beside it. */}
-        <span className="star-rating__face-label">{rating ? `${rating} / 5` : 'Rate'}</span>
       </button>
 
       {/* Full face — the actual 5-star radiogroup. In the tab order only
