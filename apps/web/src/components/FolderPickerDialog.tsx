@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   useAddBookmarkToFolder,
   useBookmarkFolders,
+  useCreateBookmarkFolder,
   useRemoveBookmarkFromFolder,
 } from '../api/hooks';
 import { useToast } from './Toast';
@@ -32,6 +33,7 @@ export function FolderPickerDialog({
   onApplied?: () => void;
 }) {
   const folders = useBookmarkFolders();
+  const createFolder = useCreateBookmarkFolder();
   const addItem = useAddBookmarkToFolder();
   const removeItem = useRemoveBookmarkFromFolder();
   const { toast } = useToast();
@@ -39,6 +41,8 @@ export function FolderPickerDialog({
    *  through to the server until Done is clicked, so users can cancel. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Reset the local selection every time the dialog opens for a different
@@ -50,6 +54,8 @@ export function FolderPickerDialog({
   useEffect(() => {
     if (!open || !bookmark) return;
     setSelected(new Set(bookmark.folderIds));
+    setCreating(false);
+    setNewName('');
   }, [open, bookmarkId, folderIdsKey, bookmark]);
 
   // Mirror the open prop into the native dialog.
@@ -80,6 +86,21 @@ export function FolderPickerDialog({
       else next.add(folderId);
       return next;
     });
+  };
+
+  const handleCreate = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    try {
+      const created = await createFolder.mutateAsync({ name: trimmed });
+      // Auto-check the fresh folder so it's applied on Done.
+      setSelected((prev) => new Set(prev).add(created.id));
+      setNewName('');
+      setCreating(false);
+      toast(`Folder "${trimmed}" created`, 'success');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not create folder.', 'error');
+    }
   };
 
   const handleApply = async () => {
@@ -156,7 +177,7 @@ export function FolderPickerDialog({
             </li>
           )}
           {customFolders.length === 0 && !defaultFolder && (
-            <li className="folder-picker__empty">No folders yet — create one from the menu.</li>
+            <li className="folder-picker__empty">No folders yet — create one below.</li>
           )}
           {customFolders.map((folder) => (
             <li key={folder.id}>
@@ -172,6 +193,52 @@ export function FolderPickerDialog({
             </li>
           ))}
         </ul>
+
+        {creating ? (
+          <form
+            className="folder-picker__create"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleCreate();
+            }}
+          >
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Folder name"
+              autoFocus
+              aria-label="New folder name"
+              disabled={createFolder.isPending}
+            />
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => {
+                setCreating(false);
+                setNewName('');
+              }}
+              disabled={createFolder.isPending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn--primary btn--sm"
+              disabled={createFolder.isPending || !newName.trim()}
+            >
+              {createFolder.isPending ? 'Creating…' : 'Create'}
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="folder-picker__new-btn"
+            onClick={() => setCreating(true)}
+          >
+            <span aria-hidden="true">+</span> New folder
+          </button>
+        )}
 
         <div className="dialog__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose} disabled={saving}>

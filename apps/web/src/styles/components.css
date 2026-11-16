@@ -1894,6 +1894,45 @@ input::placeholder {
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
 }
+.folder-picker__new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.folder-picker__new-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.folder-picker__create {
+  display: flex;
+  gap: var(--space-1);
+}
+.folder-picker__create input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85rem;
+}
+.folder-picker__create input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 
 /* --- Keyboard shortcuts help (ShortcutsDialog, reader-settings panel) ------ */
 
