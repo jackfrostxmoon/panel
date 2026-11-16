@@ -2110,6 +2110,9 @@ a.genre-chip {
   }
   .panel-details__toolbar-item--rating {
     grid-area: rating;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .panel-details__toolbar-item--status {
     grid-area: status;
@@ -2145,7 +2148,12 @@ a.genre-chip {
     width: 44px;
     align-self: center;
   }
-  .panel-details__toolbar-item--rating .star-rating,
+  /* Rating row: the collapsed face is centred by the flex item (the base
+     `.star-rating` keeps its 52px max-width) instead of being clamped to
+     the left edge of a full-width row. */
+  .panel-details__toolbar-item--rating .star-rating {
+    height: 100%;
+  }
   .panel-details__toolbar-item--status .reading-list-status {
     width: 100%;
     height: 100%;
