@@ -58,6 +58,9 @@ export function ReadingListStatusControl({
             onClick={() => handleSelect(status)}
           >
             {STATUS_ICON[status]}
+            {/* Mobile-only wording (CSS hides this on desktop) — bare icons
+                don't read as a control without a label. */}
+            <span className="reading-list-status__label">{STATUS_LABEL[status]}</span>
           </button>
         );
       })}
