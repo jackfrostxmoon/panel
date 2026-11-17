@@ -1684,34 +1684,36 @@ const filteredAndSortedChapters = useMemo(() => {
                 aria-label={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''}. Activate to switch.`}
                 title={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''} — click to cycle Newest → Oldest → Bookmarked Newest → Bookmarked Oldest`}
               >
-                {listMode.startsWith('bookmark') ? (
-                  <IconBookmark size={14} filled />
-                ) : (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    {listMode === 'newest' ? (
-                      <>
-                        <path d="m7 9 5-5 5 5" />
-                        <path d="M12 4v16" />
-                      </>
-                    ) : (
-                      <>
-                        <path d="m7 15 5 5 5-5" />
-                        <path d="M12 20V4" />
-                      </>
-                    )}
-                  </svg>
-                )}
-                {LIST_MODE_LABELS[listMode]}
+                {listMode.startsWith('bookmark') && <IconBookmark size={14} filled />}
+                {(() => {
+                  const ascending = listMode === 'oldest' || listMode === 'bookmark-oldest';
+                  return (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      {ascending ? (
+                        <>
+                          <path d="m7 15 5 5 5-5" />
+                          <path d="M12 20V4" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="m7 9 5-5 5 5" />
+                          <path d="M12 4v16" />
+                        </>
+                      )}
+                    </svg>
+                  );
+                })()}
+                {listMode.startsWith('bookmark') ? 'Bookmarked' : LIST_MODE_LABELS[listMode]}
               </button>
               {id && (
                 <button
