@@ -29,9 +29,9 @@ import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
 
-/** Cycle order for the chapter-list control (single button). */
-const LIST_MODE_CYCLE = ['newest', 'oldest', 'bookmark-newest', 'bookmark-oldest'] as const;
-const LIST_MODE_LABELS: Record<(typeof LIST_MODE_CYCLE)[number], string> = {
+import { readListMode, writeListMode, LIST_MODES, type ChapterListMode } from '../utils/listMode';
+
+const LIST_MODE_LABELS: Record<ChapterListMode, string> = {
   newest: 'Newest',
   oldest: 'Oldest',
   'bookmark-newest': 'Bookmarked Newest',
@@ -118,14 +118,17 @@ export function PanelDetailsPage() {
   const altTitlesRef = useRef<HTMLElement>(null);
   const [isAltTitlesTruncated, setIsAltTitlesTruncated] = useState(false);
   /**
-   * Single cycling list control: every chapter newest-first → oldest-first,
-   * then bookmarked-only newest-first → oldest-first, and back around.
-   * Session-only (resets on page leave). `sortOrder` / `listFilter` derive
-   * from it for the list pipeline and the locked-row restriction.
+   * Single cycling list control, persisted per browser (localStorage) so the
+   * chosen view survives reloads and applies to every panel's details page.
+   * Cycles: Newest → Oldest → Bookmarked Newest → Bookmarked Oldest.
+   * `sortOrder` / `listFilter` derive from it for the list pipeline and the
+   * locked-row restriction.
    */
-  const [listMode, setListMode] = useState<
-    'newest' | 'oldest' | 'bookmark-newest' | 'bookmark-oldest'
-  >('newest');
+  const [listMode, setListMode] = useState<ChapterListMode>(readListMode);
+  // Persist on every change (and once on mount, normalizing invalid storage).
+  useEffect(() => {
+    writeListMode(listMode);
+  }, [listMode]);
   const sortOrder: 'newest' | 'oldest' =
     listMode === 'oldest' || listMode === 'bookmark-oldest' ? 'oldest' : 'newest';
   const listFilter: 'all' | 'bookmarked' = listMode.startsWith('bookmark') ? 'bookmarked' : 'all';
@@ -1677,8 +1680,8 @@ const filteredAndSortedChapters = useMemo(() => {
                 className={`sort-toggle__option${listMode.startsWith('bookmark') ? ' sort-toggle__option--accent-active' : ' sort-toggle__option--active'}`}
                 onClick={() =>
                   setListMode((mode) => {
-                    const idx = LIST_MODE_CYCLE.indexOf(mode);
-                    return LIST_MODE_CYCLE[(idx + 1) % LIST_MODE_CYCLE.length] ?? 'newest';
+                    const idx = LIST_MODES.indexOf(mode);
+                    return LIST_MODES[(idx + 1) % LIST_MODES.length] ?? 'newest';
                   })
                 }
                 aria-label={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''}. Activate to switch.`}
