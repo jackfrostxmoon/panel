@@ -29,6 +29,15 @@ import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
 
+/** Cycle order for the chapter-list control (single button). */
+const LIST_MODE_CYCLE = ['newest', 'oldest', 'bookmark-newest', 'bookmark-oldest'] as const;
+const LIST_MODE_LABELS: Record<(typeof LIST_MODE_CYCLE)[number], string> = {
+  newest: 'Newest',
+  oldest: 'Oldest',
+  'bookmark-newest': 'Bookmarked Newest',
+  'bookmark-oldest': 'Bookmarked Oldest',
+};
+
 /** Sections that can hand off to the details page, for the breadcrumb trail. */
 const SECTION_CRUMBS: Record<string, { label: string; to: string }> = {
   latest: { label: 'Latest updates', to: '/latest' },
@@ -108,10 +117,18 @@ export function PanelDetailsPage() {
   const [showAllAltTitles, setShowAllAltTitles] = useState(false);
   const altTitlesRef = useRef<HTMLElement>(null);
   const [isAltTitlesTruncated, setIsAltTitlesTruncated] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  /** Which chapters the list shows — every chapter (default) or only the
-      bookmarked ones. Session-only, like `sortOrder`. */
-  const [listFilter, setListFilter] = useState<'all' | 'bookmarked'>('all');
+  /**
+   * Single cycling list control: every chapter newest-first → oldest-first,
+   * then bookmarked-only newest-first → oldest-first, and back around.
+   * Session-only (resets on page leave). `sortOrder` / `listFilter` derive
+   * from it for the list pipeline and the locked-row restriction.
+   */
+  const [listMode, setListMode] = useState<
+    'newest' | 'oldest' | 'bookmark-newest' | 'bookmark-oldest'
+  >('newest');
+  const sortOrder: 'newest' | 'oldest' =
+    listMode === 'oldest' || listMode === 'bookmark-oldest' ? 'oldest' : 'newest';
+  const listFilter: 'all' | 'bookmarked' = listMode.startsWith('bookmark') ? 'bookmarked' : 'all';
   const [showAllChapters, setShowAllChapters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(
@@ -1651,61 +1668,50 @@ const filteredAndSortedChapters = useMemo(() => {
           </div>
           <div className="section-controls">
             <div className="sort-toggle" role="group" aria-label="Chapter list controls">
-              {/* Single sort-direction toggle: reflects the current state
-                  and flips on each press. */}
+              {/* Single cycling list control: Newest → Oldest →
+                  Bookmarked Newest → Bookmarked Oldest → back around.
+                  Bookmarked modes also gate which rows may open the reader
+                  (see `lockedChapterIds`). */}
               <button
                 type="button"
-                className="sort-toggle__option sort-toggle__option--active"
-                onClick={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')}
-                aria-label={`Chapter order: ${sortOrder === 'newest' ? 'newest first' : 'oldest first'}. Activate to switch.`}
-                title={`Sort chapters: ${sortOrder === 'newest' ? 'newest first' : 'oldest first'} — click to switch`}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  {sortOrder === 'newest' ? (
-                    <>
-                      <path d="m7 9 5-5 5 5" />
-                      <path d="M12 4v16" />
-                    </>
-                  ) : (
-                    <>
-                      <path d="m7 15 5 5 5-5" />
-                      <path d="M12 20V4" />
-                    </>
-                  )}
-                </svg>
-                {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
-              </button>
-              {/* Bookmarked-only list view: swaps the list to the chapters
-                  the user has bookmarked. Bookmarked chapters open only in
-                  this view (see `lockedChapterIds`). */}
-              <button
-                type="button"
-                className={`sort-toggle__option${listFilter === 'bookmarked' ? ' sort-toggle__option--accent-active' : ''}`}
-                onClick={() => setListFilter((current) => (current === 'bookmarked' ? 'all' : 'bookmarked'))}
-                aria-pressed={listFilter === 'bookmarked'}
-                aria-label={
-                  listFilter === 'bookmarked'
-                    ? `Showing bookmarked chapters only (${bookmarkedChapterIds.size}). Activate to show all chapters.`
-                    : `Show bookmarked chapters only (${bookmarkedChapterIds.size} bookmarked).`
+                className={`sort-toggle__option${listMode.startsWith('bookmark') ? ' sort-toggle__option--accent-active' : ' sort-toggle__option--active'}`}
+                onClick={() =>
+                  setListMode((mode) => {
+                    const idx = LIST_MODE_CYCLE.indexOf(mode);
+                    return LIST_MODE_CYCLE[(idx + 1) % LIST_MODE_CYCLE.length] ?? 'newest';
+                  })
                 }
-                title={
-                  listFilter === 'bookmarked'
-                    ? 'Showing bookmarked chapters — click to show all'
-                    : 'Show only bookmarked chapters'
-                }
+                aria-label={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''}. Activate to switch.`}
+                title={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''} — click to cycle Newest → Oldest → Bookmarked Newest → Bookmarked Oldest`}
               >
-                <IconBookmark size={14} filled={listFilter === 'bookmarked'} />
-                {`Bookmarked ${bookmarkedChapterIds.size}`}
+                {listMode.startsWith('bookmark') ? (
+                  <IconBookmark size={14} filled />
+                ) : (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    {listMode === 'newest' ? (
+                      <>
+                        <path d="m7 9 5-5 5 5" />
+                        <path d="M12 4v16" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="m7 15 5 5 5-5" />
+                        <path d="M12 20V4" />
+                      </>
+                    )}
+                  </svg>
+                )}
+                {LIST_MODE_LABELS[listMode]}
               </button>
               {id && (
                 <button
