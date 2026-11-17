@@ -109,6 +109,9 @@ export function PanelDetailsPage() {
   const altTitlesRef = useRef<HTMLElement>(null);
   const [isAltTitlesTruncated, setIsAltTitlesTruncated] = useState(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  /** Which chapters the list shows — every chapter (default) or only the
+      bookmarked ones. Session-only, like `sortOrder`. */
+  const [listFilter, setListFilter] = useState<'all' | 'bookmarked'>('all');
   const [showAllChapters, setShowAllChapters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(
@@ -254,6 +257,25 @@ export function PanelDetailsPage() {
     return ids;
   }, [chapterBookmarks.data]);
 
+  /**
+   * Hard restriction: in the default "All" list, bookmarked rows can't be
+   * opened — they only become readable once the list is showing the
+   * bookmarked chapters. Empty set while the bookmarked view is active
+   * (nothing is locked there).
+   */
+  const lockedChapterIds = useMemo(
+    () => (listFilter === 'all' ? bookmarkedChapterIds : new Set<string>()),
+    [listFilter, bookmarkedChapterIds],
+  );
+  const handleLockedChapterAttempt = useCallback(
+    () =>
+      toast(
+        'This chapter is bookmarked — switch the list to Bookmarked to read it.',
+        'info',
+      ),
+    [toast],
+  );
+
   // Per-panel latest progress — the Continue button's primary source. The
   // global recent list is capped (top 10), so a panel read days ago falls
   // out of it and Continue silently vanishes even though the progress row
@@ -343,6 +365,9 @@ export function PanelDetailsPage() {
 
 const filteredAndSortedChapters = useMemo(() => {
     let list = chapters.data ?? [];
+    if (listFilter === 'bookmarked') {
+      list = list.filter((c) => bookmarkedChapterIds.has(c.id));
+    }
     const q = filter.trim().toLowerCase();
     if (q) {
       list = list.filter((c) => c.title.toLowerCase().includes(q));
@@ -353,7 +378,7 @@ const filteredAndSortedChapters = useMemo(() => {
       return sortOrder === 'newest' ? numB - numA : numA - numB;
     });
     return list;
-  }, [chapters.data, filter, sortOrder]);
+  }, [chapters.data, filter, sortOrder, listFilter, bookmarkedChapterIds]);
 
   // Show only the first 5 chapters until the user expands the list.
   const visibleChapters = useMemo(() => {
@@ -1660,6 +1685,28 @@ const filteredAndSortedChapters = useMemo(() => {
                 </svg>
                 {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
               </button>
+              {/* Bookmarked-only list view: swaps the list to the chapters
+                  the user has bookmarked. Bookmarked chapters open only in
+                  this view (see `lockedChapterIds`). */}
+              <button
+                type="button"
+                className={`sort-toggle__option${listFilter === 'bookmarked' ? ' sort-toggle__option--accent-active' : ''}`}
+                onClick={() => setListFilter((current) => (current === 'bookmarked' ? 'all' : 'bookmarked'))}
+                aria-pressed={listFilter === 'bookmarked'}
+                aria-label={
+                  listFilter === 'bookmarked'
+                    ? `Showing bookmarked chapters only (${bookmarkedChapterIds.size}). Activate to show all chapters.`
+                    : `Show bookmarked chapters only (${bookmarkedChapterIds.size} bookmarked).`
+                }
+                title={
+                  listFilter === 'bookmarked'
+                    ? 'Showing bookmarked chapters — click to show all'
+                    : 'Show only bookmarked chapters'
+                }
+              >
+                <IconBookmark size={14} filled={listFilter === 'bookmarked'} />
+                {`Bookmarked ${bookmarkedChapterIds.size}`}
+              </button>
               {id && (
                 <button
                   type="button"
@@ -1821,8 +1868,24 @@ const filteredAndSortedChapters = useMemo(() => {
           />
         ) : filteredAndSortedChapters.length === 0 ? (
           <EmptyState
-            title={filter ? 'No chapters match your filter.' : 'No chapters found.'}
-            message={filter ? undefined : "This source doesn't have any chapters yet."}
+            title={
+              listFilter === 'bookmarked'
+                ? filter
+                  ? 'No bookmarked chapters match your filter.'
+                  : 'No bookmarked chapters yet.'
+                : filter
+                  ? 'No chapters match your filter.'
+                  : 'No chapters found.'
+            }
+            message={
+              listFilter === 'bookmarked'
+                ? filter
+                  ? undefined
+                  : 'Bookmark chapters with the bookmark button on each row — they will show up here, and this is the only view where they can be opened.'
+                : filter
+                  ? undefined
+                  : "This source doesn't have any chapters yet."
+            }
           />
         ) : (
           <div className={`chapter-list-container${selectionMode ? ' chapter-list-container--selecting' : ''}`}>
@@ -1832,6 +1895,8 @@ const filteredAndSortedChapters = useMemo(() => {
               bookmarkedChapterIds={bookmarkedChapterIds}
               panelId={id}
               sortOrder={sortOrder}
+              lockedChapterIds={lockedChapterIds}
+              onLockedChapterAttempt={handleLockedChapterAttempt}
               onChapterClick={navigateToChapter}
               onKeyDown={handleKeyDown}
               onChapterAction={handleChapterAction}

@@ -2493,6 +2493,18 @@ a.genre-chip {
   box-shadow: var(--shadow-sm);
 }
 
+/* Accent-filled active state — marks an active list filter (Bookmarked),
+   distinct from the neutral sort pill next to it. */
+.sort-toggle__option--accent-active {
+  background: var(--accent);
+  color: var(--text-on-accent, #fff);
+  box-shadow: var(--shadow-sm);
+}
+
+.sort-toggle__option--accent-active:hover {
+  color: var(--text-on-accent, #fff);
+}
+
 .sort-toggle__option:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -2874,6 +2886,41 @@ a.genre-chip {
 
 .chapter-context-menu__item:hover {
   background: var(--surface-2);
+}
+
+.chapter-context-menu__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chapter-context-menu__item:disabled:hover {
+  background: transparent;
+}
+
+/* Locked (bookmarked, default list) rows — readable only in the Bookmarked
+   view. Dimmed title + lock glyph; interactive clusters keep pointer. */
+.chapter-list__item--locked {
+  cursor: not-allowed;
+}
+
+.chapter-list__item--locked:hover {
+  background: transparent;
+}
+
+.chapter-list__item--locked .chapter-list__title,
+.chapter-list__item--locked .chapter-list__date {
+  opacity: 0.55;
+}
+
+.chapter-list__item--locked button {
+  cursor: pointer;
+}
+
+.chapter-list__lock {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-faint);
 }
 
 /* --- Responsive ----------------------------------------------------------- */

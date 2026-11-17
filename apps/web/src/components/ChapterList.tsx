@@ -6,6 +6,7 @@ import { chapterMarker } from '../utils/chapterMarkers';
 import { ChapterBookmarkButton } from './ChapterBookmarkButton';
 import { ChapterDownloadButton } from './ChapterDownloadButton';
 import { ChapterSelectCheckbox } from './ChapterSelectCheckbox';
+import { IconLock } from './icons';
 
 const LONG_PRESS_MS = 350;
 const LONG_PRESS_MOVE_PX = 10;
@@ -28,6 +29,14 @@ export function ChapterList({
   onKeyDown,
   onChapterAction,
   onReadChapter,
+  /** Ids of chapters whose rows must not navigate to the reader — the
+      "Bookmarked" hard restriction on the details page, where bookmarked
+      chapters are only readable in the bookmarked list view. Locked rows
+      render as non-anchor elements so middle-click / new-tab can't bypass
+      the restriction. */
+  lockedChapterIds,
+  /** Fired when the user tries to open a locked chapter row. */
+  onLockedChapterAttempt,
   /** Per-chapter download state + actions, owned by the parent (the
        panel-details page) so the same downloader drives both the row
        button and the bulk "Download all" panel without duplicating state. */
@@ -50,6 +59,10 @@ export function ChapterList({
   /** Open the reader for the given chapter. Wired by the parent to its
       router so navigation stays a page responsibility. */
   onReadChapter?: (chapterId: string) => void;
+  /** Ids of chapters whose rows must not navigate to the reader. */
+  lockedChapterIds?: Set<string>;
+  /** Fired when the user tries to activate a locked chapter row. */
+  onLockedChapterAttempt?: () => void;
   downloader?: {
     /** True while this chapter is actively downloading. */
     isActive: (chapterId: string) => boolean;
@@ -108,7 +121,7 @@ export function ChapterList({
   }, []);
 
   const handleClick = useCallback(
-    (chapterId: string, e: React.MouseEvent) => {
+    (chapter: Chapter, locked: boolean, e: React.MouseEvent) => {
       // Don't navigate if the click originated from the bookmark button
       const target = e.target as HTMLElement;
       if (
@@ -124,13 +137,19 @@ export function ChapterList({
       // opening the reader — the user is explicitly building a batch.
       if (selectionMode && onToggleSelected) {
         e.preventDefault();
-        onToggleSelected(chapterId);
+        onToggleSelected(chapter.id);
+        return;
+      }
+      // Locked chapter (bookmarked, in the default list): never navigate.
+      if (locked) {
+        e.preventDefault();
+        onLockedChapterAttempt?.();
         return;
       }
       // Parent always supplies `onChapterClick`; navigation is its job.
-      onChapterClick?.(chapterId);
+      onChapterClick?.(chapter.id);
     },
-    [onChapterClick, selectionMode, onToggleSelected],
+    [onChapterClick, onLockedChapterAttempt, selectionMode, onToggleSelected],
   );
 
   const openMenu = useCallback((chapter: Chapter, x: number, y: number) => {
@@ -197,39 +216,42 @@ export function ChapterList({
           const selected = selectedIds?.has(chapter.id) ?? false;
           const marker = chapterMarker(chapter);
           const publishedLabel = formatDate(chapter.publishedAt);
-          return (
-            <li key={chapter.id} className="chapter-list__item-wrapper">
-              <Link
-                to={`/read/${encodeURIComponent(chapter.id)}`}
-                className={`chapter-list__item${started ? ' chapter-list__item--read' : ''}${bookmarked ? ' chapter-list__item--bookmarked' : ''}${pressing ? ' chapter-list__item--pressing' : ''}${selected ? ' chapter-list__item--selected' : ''}`}
-                aria-label={`${chapter.title}${started ? ', in progress' : ''}${bookmarked ? ', bookmarked' : ''}${selected ? ', selected' : ''}${chapter.publishedAt ? `, published ${formatDate(chapter.publishedAt)}` : ''}`}
-                onClick={(e) => {
-                  if (pressing || Date.now() < suppressClickUntilRef.current) {
-                    e.preventDefault();
-                    clearPress();
-                    return;
-                  }
-                  handleClick(chapter.id, e);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (selectionMode && onToggleSelected) {
-                      onToggleSelected(chapter.id);
-                    } else if (onChapterClick) {
-                      onChapterClick(chapter.id);
-                    }
-                    clearPress();
-                    return;
-                  }
-                  onKeyDown?.(e, chapter.id);
-                }}
-                onPointerDown={(e) => onDown(chapter, e)}
-                onPointerMove={(e) => onMove(chapter, e)}
-                onPointerUp={onUp}
-                onPointerCancel={onUp}
-                onPointerLeave={onUp}
-              >
+          /** Locked = bookmarked chapter in the default ("All") list; the
+              reader opens only from the bookmarked view. */
+          const locked = lockedChapterIds?.has(chapter.id) ?? false;
+          const rowClassName = `chapter-list__item${started ? ' chapter-list__item--read' : ''}${bookmarked ? ' chapter-list__item--bookmarked' : ''}${pressing ? ' chapter-list__item--pressing' : ''}${selected ? ' chapter-list__item--selected' : ''}${locked ? ' chapter-list__item--locked' : ''}`;
+          const rowAriaLabel = `${chapter.title}${started ? ', in progress' : ''}${bookmarked ? ', bookmarked' : ''}${selected ? ', selected' : ''}${locked ? ', bookmarked — opens only in the Bookmarked view' : ''}${chapter.publishedAt ? `, published ${formatDate(chapter.publishedAt)}` : ''}`;
+          const rowOnClick = (e: React.MouseEvent) => {
+            if (pressing || Date.now() < suppressClickUntilRef.current) {
+              e.preventDefault();
+              clearPress();
+              return;
+            }
+            handleClick(chapter, locked, e);
+          };
+          const rowOnKeyDown = (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (selectionMode && onToggleSelected) {
+                onToggleSelected(chapter.id);
+              } else if (locked) {
+                onLockedChapterAttempt?.();
+              } else if (onChapterClick) {
+                onChapterClick(chapter.id);
+              }
+              clearPress();
+              return;
+            }
+            onKeyDown?.(e, chapter.id);
+          };
+          const pointerProps = {
+            onPointerDown: (e: React.PointerEvent) => onDown(chapter, e),
+            onPointerMove: (e: React.PointerEvent) => onMove(chapter, e),
+            onPointerUp: onUp,
+            onPointerCancel: onUp,
+            onPointerLeave: onUp,
+          };
+          const rowContent = (
                 <div className="chapter-list__content">
                   <div className="chapter-list__title-group">
                     <span className="chapter-list__title">{chapter.title}</span>
@@ -239,6 +261,14 @@ export function ChapterList({
                         title="Side content — safe to skip without missing the main story"
                       >
                         Filler
+                      </span>
+                    )}
+                    {locked && (
+                      <span
+                        className="chapter-list__lock"
+                        title="Bookmarked — switch the list to Bookmarked to read it"
+                      >
+                        <IconLock size={12} />
                       </span>
                     )}
                     {panelId && (
@@ -286,13 +316,43 @@ export function ChapterList({
                     </div>
                   )}
                 </div>
-              </Link>
+          );
+          return (
+            <li key={chapter.id} className="chapter-list__item-wrapper">
+              {locked ? (
+                <div
+                  className={rowClassName}
+                  role="button"
+                  aria-disabled="true"
+                  tabIndex={0}
+                  title="Bookmarked — switch the list to Bookmarked to read it"
+                  aria-label={rowAriaLabel}
+                  onClick={rowOnClick}
+                  onKeyDown={rowOnKeyDown}
+                  {...pointerProps}
+                >
+                  {rowContent}
+                </div>
+              ) : (
+                <Link
+                  to={`/read/${encodeURIComponent(chapter.id)}`}
+                  className={rowClassName}
+                  aria-label={rowAriaLabel}
+                  onClick={rowOnClick}
+                  onKeyDown={rowOnKeyDown}
+                  {...pointerProps}
+                >
+                  {rowContent}
+                </Link>
+              )}
             </li>
           );
         })}
       </ul>
 
-      {menu && (
+      {menu && (() => {
+        const menuLocked = lockedChapterIds?.has(menu.chapter.id) ?? false;
+        return (
         <div
           className="chapter-context-menu"
           style={{
@@ -357,6 +417,8 @@ export function ChapterList({
             type="button"
             role="menuitem"
             className="chapter-context-menu__item"
+            disabled={menuLocked}
+            title={menuLocked ? 'Bookmarked — switch the list to Bookmarked to read it' : undefined}
             onClick={() => {
               setMenu(null);
               onReadChapter?.(menu.chapter.id);
@@ -365,7 +427,8 @@ export function ChapterList({
             Read chapter
           </button>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
