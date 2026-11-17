@@ -1684,7 +1684,6 @@ const filteredAndSortedChapters = useMemo(() => {
                 aria-label={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''}. Activate to switch.`}
                 title={`Chapter list: ${LIST_MODE_LABELS[listMode]}${listMode.startsWith('bookmark') ? ` (${bookmarkedChapterIds.size} bookmarked)` : ''} — click to cycle Newest → Oldest → Bookmarked Newest → Bookmarked Oldest`}
               >
-                {listMode.startsWith('bookmark') && <IconBookmark size={14} filled />}
                 {(() => {
                   const ascending = listMode === 'oldest' || listMode === 'bookmark-oldest';
                   return (
