@@ -1,6 +1,7 @@
 import { useCallback, type ReactElement } from 'react';
 import type { ReadingListStatus } from '@panel/shared';
 import { IconBookOpen, IconCheckCircle, IconClipboard, IconX } from './icons';
+import { useIncognito } from '../hooks/useIncognito';
 
 const STATUSES: ReadingListStatus[] = ['want_to_read', 'reading', 'completed'];
 
@@ -38,10 +39,15 @@ export function ReadingListStatusControl({
     [disabled, panelId, onUpsert],
   );
 
+  const { enabled: incognito } = useIncognito();
+
   const handleRemove = useCallback(() => {
     if (disabled) return;
     onRemove();
   }, [disabled, onRemove]);
+
+  // Incognito: the reading list is hidden with the other user-data controls.
+  if (incognito) return null;
 
   return (
     <div className="reading-list-status" role="group" aria-label="Reading list status">

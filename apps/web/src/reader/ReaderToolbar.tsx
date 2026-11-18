@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import type { Chapter } from '@panel/shared';
 import { useAddChapterBookmark, useChapterBookmarks, useRemoveChapterBookmark } from '../api/hooks';
 import { useToast } from '../components/Toast';
+import { useIncognito } from '../hooks/useIncognito';
 import { IconArrowLeft, IconBookmark, IconCompress, IconExpand, IconGear, IconX } from '../components/icons';
 
 /**
@@ -125,6 +126,9 @@ export function ReaderToolbar({
 }) {
   const { isCurrentChapterBookmarked, toggleBookmark, isBookmarkPending } =
     useChapterBookmarkToggle({ panelId, chapterTitle, chapterId, chapters });
+  // Incognito hides every bookmark affordance — the chapter-bookmark
+  // button included.
+  const { enabled: incognito } = useIncognito();
 
   return (
     <>
@@ -145,6 +149,7 @@ export function ReaderToolbar({
         </div>
 
         <div className="reader-toolbar__group">
+          {!incognito && (
           <button
             type="button"
             className={`reader-toolbar__btn chapter-bookmark-toolbar-btn${isCurrentChapterBookmarked ? ' chapter-bookmark-toolbar-btn--active' : ''}`}
@@ -159,6 +164,7 @@ export function ReaderToolbar({
               <IconBookmark size={18} filled={isCurrentChapterBookmarked} />
             </span>
           </button>
+          )}
           {showAutoScrollButton && (
           <button
             type="button"

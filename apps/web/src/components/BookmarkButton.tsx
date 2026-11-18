@@ -11,6 +11,7 @@ import { useToast } from './Toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import { FolderPickerDialog } from './FolderPickerDialog';
 import { IconBookmark } from './icons';
+import { useIncognito } from '../hooks/useIncognito';
 
 
 /**
@@ -38,8 +39,11 @@ export function BookmarkToggle({ panel }: { panel: Panel }) {
   const [justAdded, setJustAdded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Incognito: bookmarks are hidden entirely.
+  const { enabled: incognito } = useIncognito();
 
   const busy = addBookmark.isPending || removeBookmark.isPending || isLoading;
+  if (incognito) return null;
 
   const handleClick = () => {
     if (bookmark) {
@@ -130,8 +134,10 @@ export function BookmarkToggle({ panel }: { panel: Panel }) {
 export function BookmarkFolderPicker({ panel }: { panel: Panel }) {
   const { data: bookmark } = useBookmarkByPanel(panel.id);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { enabled: incognito } = useIncognito();
 
-  if (!bookmark) return null;
+  // Incognito: folder management is hidden with the bookmark UI.
+  if (incognito || !bookmark) return null;
 
   const pickerBookmark =
     (bookmark.folderIds ?? []).length > 0

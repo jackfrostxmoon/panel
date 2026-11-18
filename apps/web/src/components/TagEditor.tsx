@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSetPanelTags, useTagsByPanel } from '../api/hooks';
 import { useToast } from './Toast';
 import { IconX } from './icons';
+import { useIncognito } from '../hooks/useIncognito';
 
 /** Renders just the tag chips as `<li>` items (no list wrapper, no label) —
  *  used to fold the panel's tags into the genres row of the details page.
@@ -10,8 +11,9 @@ export function TagChipItems({ panelId }: { panelId: string }) {
   const tags = useTagsByPanel(panelId);
   const setTags = useSetPanelTags();
   const { toast } = useToast();
+  const { enabled: incognito } = useIncognito();
 
-  if (tags.isLoading) return null;
+  if (incognito || tags.isLoading) return null;
 
   const remove = (name: string) => {
     setTags.mutate(
@@ -70,6 +72,7 @@ export function TagEditor({
   /** The add-tag form starts collapsed; a "+ Add tag" chip expands it. */
   const [adding, setAdding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { enabled: incognito } = useIncognito();
 
   useEffect(() => {
     if (adding) inputRef.current?.focus();
@@ -105,6 +108,9 @@ export function TagEditor({
   const remove = (name: string) => {
     commit((tags.data ?? []).filter((t) => t.name !== name).map((t) => t.name));
   };
+
+  // Incognito: tags are hidden with the other user-data controls.
+  if (incognito) return null;
 
   const chipsList = (
     <ul className="tag-editor__chips" role="list" aria-labelledby="tag-editor-label">

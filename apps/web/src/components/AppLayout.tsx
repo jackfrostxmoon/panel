@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, loadTheme, saveTheme, type Theme } from '../theme';
 import { hideCoverPreview } from './coverPreview';
+import { useIncognito } from '../hooks/useIncognito';
 
 /** Scroll past this distance before the header is allowed to hide. */
 const HIDE_THRESHOLD = 100;
@@ -41,6 +42,7 @@ export function AppLayout() {
   const [headerHidden, setHeaderHidden] = useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const { pathname, search } = useLocation();
+  const { enabled: incognito, toggle: toggleIncognito } = useIncognito();
 
   /** Reader-style auto-hide header is active on the long grid pages. */
   const autoHideHeader = pathname === '/latest' || pathname === '/bookmarks';
@@ -239,10 +241,23 @@ export function AppLayout() {
               <NavLink to="/latest" className={navClass}>
                 Latest
               </NavLink>
-              <NavLink to="/bookmarks" className={navClass}>
-                Bookmarks
-              </NavLink>
+              {!incognito && (
+                <NavLink to="/bookmarks" className={navClass}>
+                  Bookmarks
+                </NavLink>
+              )}
             </nav>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={incognito}
+              className={`btn btn--ghost theme-toggle incognito-toggle${incognito ? ' incognito-toggle--on' : ''}`}
+              onClick={toggleIncognito}
+              aria-label={incognito ? 'Turn incognito off — data will be saved again' : 'Turn incognito on — nothing will be saved'}
+              title={incognito ? 'Incognito on — nothing is saved' : 'Incognito off'}
+            >
+              <IncognitoIcon />
+            </button>
             <button
               type="button"
               className="btn btn--ghost theme-toggle"
@@ -255,6 +270,13 @@ export function AppLayout() {
           </div>
         </div>
       </header>
+
+      {incognito && (
+        <div className="incognito-banner" role="status">
+          <IncognitoIcon size={14} />
+          Incognito — nothing you do is saved to this server. Progress and history stay in this browser.
+        </div>
+      )}
 
       <main className="app-main">
         <Outlet />
@@ -272,6 +294,27 @@ export function AppLayout() {
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `app-nav__link${isActive ? ' app-nav__link--active' : ''}`;
+}
+
+function IncognitoIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 10h4a2 2 0 0 1 4-2h2a2 2 0 0 1 4 2h4" />
+      <circle cx="7" cy="14.5" r="2.5" />
+      <circle cx="17" cy="14.5" r="2.5" />
+      <path d="M9.5 14.5h5" />
+    </svg>
+  );
 }
 
 function SunIcon() {

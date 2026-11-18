@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout } from './components/AppLayout';
 import { ToastProvider } from './components/Toast';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { useIncognito } from './hooks/useIncognito';
 import { useWarmCovers } from './utils/imageCache';
 
 // Route-level code splitting: the reader (heaviest screen) and secondary
@@ -68,6 +69,21 @@ const queryClient = new QueryClient({
  * images, it never issues a new API request.
  */
 /**
+ * Incognito gate for the bookmarks area: in incognito the whole page is
+ * off-limits (it renders and mutates user data only). Any stale link or
+ * bookmark to `/bookmarks` bounces home instead.
+ */
+function BookmarksGate() {
+  const { enabled } = useIncognito();
+  if (enabled) return <Navigate to="/" replace />;
+  return (
+    <Suspense fallback={null}>
+      <BookmarksPage />
+    </Suspense>
+  );
+}
+
+/**
  * Legacy redirect: pre-Panel builds linked details pages at `/manga/:id`
  * (browser bookmarks, shared links, QR codes). Keep resolving them —
  * including the `?from=` origin hint — so old links don't land on the
@@ -128,11 +144,7 @@ function AppContent() {
           />
           <Route
             path="bookmarks"
-            element={
-              <Suspense fallback={null}>
-                <BookmarksPage />
-              </Suspense>
-            }
+            element={<BookmarksGate />}
           />
           <Route
             path="settings/cache"

@@ -22,6 +22,7 @@ const HTTP_STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   [ErrorCodes.UNKNOWN_SOURCE]: 400,
   [ErrorCodes.DATABASE_ERROR]: 500,
   [ErrorCodes.RATE_LIMITED]: 429,
+  [ErrorCodes.INCOGNITO_MODE]: 403,
   [ErrorCodes.NOT_FOUND]: 404,
   [ErrorCodes.INTERNAL_ERROR]: 500,
 };

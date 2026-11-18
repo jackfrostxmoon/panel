@@ -26,6 +26,7 @@ import { useToast } from '../components/Toast';
 import { IconChevronDown, IconChevronUp, IconCheck, IconDownload, IconUndo, IconX, IconBookmark, IconTrash, IconZoomIn } from '../components/icons';
 import { SearchElsewhereMenu } from '../components/SearchElsewhereMenu';
 import { chapterLabel, formatBytes, getProxiedImageUrl } from '../utils/format';
+import { useIncognito } from '../hooks/useIncognito';
 import { recordRecentlyViewed } from '../utils/recentlyViewed';
 import { cacheTagPrefix } from '../utils/sha256';
 
@@ -2053,6 +2054,7 @@ function ChapterSelectActions({
   isBookmarking: boolean;
   isMarking: boolean;
 }) {
+  const { enabled: incognito } = useIncognito();
   if (!selectionMode) return null;
 
   const allSelected = chapters.length > 0 && selectedCount === chapters.length;
@@ -2083,6 +2085,7 @@ function ChapterSelectActions({
         {allSelected ? 'Clear' : `Select all (${chapters.length})`}
       </button>
 
+      {!incognito && (
       <button
         type="button"
         className="btn btn--ghost btn--sm chapter-select-actions__bookmark"
@@ -2102,6 +2105,7 @@ function ChapterSelectActions({
         </span>
         Bookmark selected ({selectedCount})
       </button>
+      )}
 
       <button
         type="button"

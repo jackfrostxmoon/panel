@@ -40,6 +40,21 @@ import type {
   OptimizeCoversStatus,
 } from '@panel/shared';
 import { log as rootLog } from '../lib/logger';
+import { isIncognito } from '../utils/incognito';
+import {
+  getLocalProgress,
+  recentLocalProgress,
+  latestLocalProgressForPanel,
+  localProgressForPanel,
+  saveLocalProgress,
+  clearLocalProgressForPanel,
+  bulkMarkLocalProgress,
+} from '../utils/incognitoProgress';
+import {
+  loadRecentlyViewed,
+  recordRecentlyViewed,
+  clearRecentlyViewed,
+} from '../utils/recentlyViewed';
 import { ApiClientError } from './client';
 import {
   api,
@@ -562,7 +577,9 @@ export function useProgress(
 ) {
   return useQuery<ReadingProgress | null, ApiClientError>({
     queryKey: queryKeys.progress(panelId, chapterId),
-    queryFn: () => api.getProgress(panelId, chapterId),
+    queryFn: () =>
+      // Incognito: browser-only progress store, never the network.
+      isIncognito() ? Promise.resolve(getLocalProgress(panelId, chapterId)) : api.getProgress(panelId, chapterId),
     staleTime: 30_000,
     ...opts,
   });
@@ -571,7 +588,8 @@ export function useProgress(
 export function useRecentProgress(opts?: QueryOpts<ReadingProgressEntry[]>) {
   return useQuery<ReadingProgressEntry[], ApiClientError>({
     queryKey: queryKeys.recentProgress(),
-    queryFn: () => api.getRecentProgress(),
+    queryFn: () =>
+      isIncognito() ? Promise.resolve(recentLocalProgress()) : api.getRecentProgress(),
     ...opts,
   });
 }
@@ -583,7 +601,25 @@ export function useRecentProgress(opts?: QueryOpts<ReadingProgressEntry[]>) {
 export function useRecentlyViewed(opts?: QueryOpts<RecentlyViewedPanel[]>) {
   return useQuery<RecentlyViewedPanel[], ApiClientError>({
     queryKey: queryKeys.recentlyViewed(),
-    queryFn: () => api.getRecentlyViewed(),
+    queryFn: () => {
+      // Incognito: the rail is sourced from localStorage only — the
+      // server-side history is not read either, let alone written.
+      if (isIncognito()) {
+        return Promise.resolve(
+          loadRecentlyViewed().map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            coverUrl: entry.coverUrl,
+            source: entry.source,
+            sourceUrl: entry.sourceUrl ?? '',
+            status: entry.status ?? 'unknown',
+            latestChapter: entry.latestChapter ?? null,
+            viewedAt: entry.viewedAt,
+          })),
+        );
+      }
+      return api.getRecentlyViewed();
+    },
     staleTime: 30_000,
     ...opts,
   });
@@ -597,7 +633,10 @@ export function useRecentlyViewed(opts?: QueryOpts<RecentlyViewedPanel[]>) {
 export function useLatestProgressForPanel(panelId: string, opts?: QueryOpts<ReadingProgressEntry | null>) {
   return useQuery<ReadingProgressEntry | null, ApiClientError>({
     queryKey: queryKeys.progressLatestByPanel(panelId),
-    queryFn: () => api.getLatestProgressByPanel(panelId),
+    queryFn: () =>
+      isIncognito()
+        ? Promise.resolve(latestLocalProgressForPanel(panelId))
+        : api.getLatestProgressByPanel(panelId),
     enabled: panelId.length > 0,
     staleTime: 30_000,
     ...opts,
@@ -612,7 +651,10 @@ export function useLatestProgressForPanel(panelId: string, opts?: QueryOpts<Read
 export function useProgressForPanel(panelId: string, opts?: QueryOpts<ReadingProgressEntry[]>) {
   return useQuery<ReadingProgressEntry[], ApiClientError>({
     queryKey: queryKeys.progressByPanel(panelId),
-    queryFn: () => api.getProgressForPanel(panelId),
+    queryFn: () =>
+      isIncognito()
+        ? Promise.resolve(localProgressForPanel(panelId))
+        : api.getProgressForPanel(panelId),
     enabled: panelId.length > 0,
     staleTime: 30_000,
     ...opts,
@@ -651,7 +693,33 @@ export function useRemoveBookmark() {
 export function useRecordRecentlyViewed() {
   const queryClient = useQueryClient();
   return useMutation<RecentlyViewedPanel, ApiClientError, RecordRecentlyViewedInput>({
-    mutationFn: (input) => api.recordRecentlyViewed(input),
+    mutationFn: (input): Promise<RecentlyViewedPanel> => {
+      // Incognito: write the browser-only rail and resolve with a
+      // synthesized row — the server is never touched.
+      if (isIncognito()) {
+        recordRecentlyViewed({
+          id: input.panelId,
+          title: input.title,
+          coverUrl: input.coverUrl ?? null,
+          source: input.source,
+          sourceUrl: input.sourceUrl,
+          status: input.status,
+          latestChapter: null,
+          updatedAt: null,
+        });
+        return Promise.resolve({
+          id: input.panelId,
+          title: input.title,
+          coverUrl: input.coverUrl ?? null,
+          source: input.source,
+          sourceUrl: input.sourceUrl,
+          status: input.status ?? 'unknown',
+          latestChapter: null,
+          viewedAt: new Date().toISOString(),
+        });
+      }
+      return api.recordRecentlyViewed(input);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recentlyViewed() });
     },
@@ -661,7 +729,14 @@ export function useRecordRecentlyViewed() {
 export function useClearRecentlyViewed() {
   const queryClient = useQueryClient();
   return useMutation<{ count: number }, ApiClientError, void>({
-    mutationFn: () => api.clearRecentlyViewed(),
+    mutationFn: () => {
+      if (isIncognito()) {
+        const count = loadRecentlyViewed().length;
+        clearRecentlyViewed();
+        return Promise.resolve({ count });
+      }
+      return api.clearRecentlyViewed();
+    },
     onSuccess: () => {
       queryClient.setQueryData<RecentlyViewedPanel[]>(queryKeys.recentlyViewed(), []);
     },
@@ -715,7 +790,10 @@ export function useClearChapterBookmarks() {
 export function useClearProgress() {
   const queryClient = useQueryClient();
   return useMutation<{ count: number }, ApiClientError, string>({
-    mutationFn: (panelId) => api.clearProgress(panelId),
+    mutationFn: (panelId) =>
+      isIncognito()
+        ? Promise.resolve({ count: clearLocalProgressForPanel(panelId) })
+        : api.clearProgress(panelId),
     onSuccess: (_data, panelId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.recentProgress() });
       queryClient.invalidateQueries({ queryKey: queryKeys.progressLatestByPanel(panelId) });
@@ -732,7 +810,8 @@ export function useClearProgress() {
 export function useSaveProgress() {
   const queryClient = useQueryClient();
   return useMutation<ReadingProgress, ApiClientError, SaveProgressInput>({
-    mutationFn: (input) => api.saveProgress(input),
+    mutationFn: (input): Promise<ReadingProgress> =>
+      isIncognito() ? Promise.resolve(saveLocalProgress(input)) : api.saveProgress(input),
     onSuccess: (progress) => {
       queryClient.setQueryData(queryKeys.progress(progress.panelId, progress.chapterId), progress);
       // Keep the home "continue reading" rail fresh.
@@ -790,7 +869,10 @@ export function useRemoveReadingList() {
 export function useBulkMarkChaptersRead() {
   const queryClient = useQueryClient();
   return useMutation<{ markedRead: number; markedUnread: number }, ApiClientError, BulkMarkChaptersReadInput>({
-    mutationFn: (input) => api.bulkMarkChaptersRead(input),
+    mutationFn: (input) =>
+      isIncognito()
+        ? Promise.resolve(bulkMarkLocalProgress(input.panelId, input.chapters))
+        : api.bulkMarkChaptersRead(input),
     onSuccess: (_data, variables) => {
       // The read-marker set is derived from the per-panel progress cache
       // (with the `recent` list as a fallback while it loads).

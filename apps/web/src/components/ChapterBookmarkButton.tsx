@@ -4,6 +4,7 @@ import { useAddChapterBookmark, useRemoveChapterBookmark } from '../api/hooks';
 import { useToast } from './Toast';
 import { ConfirmDialog } from './ConfirmDialog';
 import { IconBookmark } from './icons';
+import { useIncognito } from '../hooks/useIncognito';
 
 interface ChapterBookmarkButtonProps {
   chapter: Chapter;
@@ -22,8 +23,12 @@ export function ChapterBookmarkButton({
   const removeBookmark = useRemoveChapterBookmark();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
+  const { enabled: incognito } = useIncognito();
 
   const busy = addBookmark.isPending || removeBookmark.isPending;
+
+  // Incognito: chapter bookmarks are hidden entirely.
+  if (incognito) return null;
 
   const handleAdd = async () => {
     try {

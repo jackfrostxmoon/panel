@@ -4,6 +4,7 @@ import { BULK_CHAPTER_LIMIT, type Chapter } from '@panel/shared';
 import { useAddChapterBookmarks, useClearChapterBookmarks, useBulkMarkChaptersRead } from '../api/hooks';
 import { useToast } from './Toast';
 import { ConfirmDialog } from './ConfirmDialog';
+import { useIncognito } from '../hooks/useIncognito';
 import { IconArrowLeft, IconCheck, IconRefresh, IconUndo, IconX } from './icons';
 
 interface ChapterBookmarkActionsProps {
@@ -43,6 +44,9 @@ export function ChapterBookmarkActions({
   const [confirmingBulkRead, setConfirmingBulkRead] = useState(false);
   const [confirmingBulkUnread, setConfirmingBulkUnread] = useState(false);
   const [confirmingMarkUntil, setConfirmingMarkUntil] = useState(false);
+  // Incognito: bookmark actions are hidden; the read-tracker bulk
+  // actions stay (they fall back to browser-local progress).
+  const { enabled: incognito } = useIncognito();
 
   const busy = addBookmarks.isPending || clearBookmarks.isPending || bulkMark.isPending;
 
@@ -160,6 +164,9 @@ export function ChapterBookmarkActions({
 
   return (
     <div className="chapter-bookmark-actions" role="group" aria-label="Chapter bookmark actions">
+      {/* Incognito: bookmark actions hidden. The read-tracker bulk
+          actions below stay — they write browser-local progress. */}
+      {!incognito && (
       <button
         type="button"
         className="btn btn--bookmark-multi"
@@ -183,6 +190,7 @@ export function ChapterBookmarkActions({
         </svg>
         Bookmark All ({chapters.length})
       </button>
+      )}
 
       {/* Bulk read actions (T1-6) + "Select chapters" entry. Grouped in a
           single cluster so the three buttons read as the same "bulk chapter
@@ -231,7 +239,7 @@ export function ChapterBookmarkActions({
         {selectChaptersSlot}
       </div>
 
-      {bookmarkedCount > 0 && (
+      {!incognito && bookmarkedCount > 0 && (
         <button
           type="button"
           className="btn btn--ghost btn--sm"

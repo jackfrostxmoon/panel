@@ -13,6 +13,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys, useCacheSettings, useChapterPages, useChapters, useProgress, useSaveProgress, usePrefetchChapterPages } from '../api/hooks';
 import { api } from '../api/client';
+import { isIncognito } from '../utils/incognito';
+import { saveLocalProgress } from '../utils/incognitoProgress';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ErrorState } from '../components/StateView';
@@ -536,6 +538,12 @@ export function ReaderPage() {
     const payload = pendingSaveRef.current;
     if (!payload) return;
     pendingSaveRef.current = null;
+    // Incognito: the beacon never reaches the network — progress is
+    // browser-local, same as the hook-driven saves.
+    if (isIncognito()) {
+      saveLocalProgress(payload);
+      return;
+    }
     void api.saveProgressBeacon(payload);
   }, []);
 
@@ -738,6 +746,8 @@ export function ReaderPage() {
         // Bookmark / unbookmark the current chapter — same toggle (and
         // toasts) as the toolbar button. Served via the ref so this hot
         // effect never re-subscribes when the toggle identity changes.
+        // Incognito: the affordance is hidden, table the shortcut too.
+        if (isIncognito()) return;
         event.preventDefault();
         void toggleBookmarkRef.current();
         return;

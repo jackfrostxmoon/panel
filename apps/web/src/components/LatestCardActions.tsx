@@ -5,6 +5,7 @@ import { FolderPickerDialog } from './FolderPickerDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useAddBookmark, useBookmarks, useRemoveBookmark } from '../api/hooks';
 import { useToast } from './Toast';
+import { useIncognito } from '../hooks/useIncognito';
 import type { PanelCardProgress } from './PanelCard';
 
 /**
@@ -39,6 +40,8 @@ export function LatestCardActions({
   const removeBookmark = useRemoveBookmark();
   const bookmarks = useBookmarks();
   const { toast } = useToast();
+  // Incognito: bookmark affordances are hidden; Continue/Open remain.
+  const { enabled: incognito } = useIncognito();
   const bookmark = (bookmarks.data ?? []).find((b) => b.panelId === panelId) ?? null;
 
   /** Stop the click from reaching the wrapping stretched-link. */
@@ -107,7 +110,7 @@ export function LatestCardActions({
             <span>Continue</span>
           </Link>
         )}
-        {isBookmarked ? (
+        {!incognito && (isBookmarked ? (
           <>
             <button
               type="button"
@@ -192,6 +195,30 @@ export function LatestCardActions({
             </svg>
             <span>Bookmark</span>
           </button>
+        ))}
+        {incognito && (
+          <Link
+            to={openUrl}
+            className="btn btn--ghost btn--sm latest-card-actions__open"
+            aria-label={`Open ${title}`}
+            title="Open panel"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            </svg>
+            <span>Open</span>
+          </Link>
         )}
       </div>
       {isBookmarked && (

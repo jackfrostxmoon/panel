@@ -1,4 +1,5 @@
 import { isDebugEnabled, log as rootLog } from '../lib/logger';
+import { isIncognito } from '../utils/incognito';
 import { splitDumpIntoChunks } from '../utils/bookmarkExport';
 import type {
   AddBookmarkToFolderInput,
@@ -138,7 +139,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        // Incognito: the server refuses user-data writes when this is set.
+        // Never persisted server-side — rides along as a request header only.
+        ...(isIncognito() ? { 'X-Panel-Incognito': '1' } : {}),
+        ...init?.headers,
+      },
       ...init,
     });
   } catch (error) {

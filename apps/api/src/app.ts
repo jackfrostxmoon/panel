@@ -4,6 +4,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { AppConfig } from './config.js';
 import type { Database } from './db/client.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { incognitoGuard } from './middleware/incognito.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { BookmarkFolderRepository, BookmarkRepository, PanelRatingRepository, TagRepository } from './repositories/bookmarkRepository.js';
@@ -155,9 +156,13 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
     cors({
       origin: config.corsOrigin,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      // The incognito marker rides as a custom header; list it explicitly
+      // so LAN/preflight traffic isn't rejected.
+      allowHeaders: ['Content-Type', 'X-Panel-Incognito'],
       maxAge: 600,
     }),
   );
+  app.use('/api/*', incognitoGuard);
   // Generous local-dev limits; still guards the upstream source from abuse.
   // Sized for this app's own burst patterns, which all count toward the one
   // bucket: the bookmarks grid renders every card (551 covers on a fast

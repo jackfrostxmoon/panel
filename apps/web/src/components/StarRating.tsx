@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useClearPanelRating, useSetPanelRating } from '../api/hooks';
 import { useToast } from './Toast';
 import { IconStar } from './icons';
+import { useIncognito } from '../hooks/useIncognito';
 
 /**
  * 1–5 star rating control (T3-3). Click a star to rate; clicking the active
@@ -32,6 +33,8 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
   const faceRef = useRef<HTMLButtonElement>(null);
   /** Root element, used to collapse the pinned face when a pointer-down lands outside. */
   const rootRef = useRef<HTMLDivElement>(null);
+  // Incognito: ratings are hidden with the other user-data controls.
+  const { enabled: incognito } = useIncognito();
 
   const handlePick = (value: number) => {
     // Collapse back to the compact face after a selection so the toolbar
@@ -78,6 +81,9 @@ export function StarRating({ panelId, rating }: { panelId: string; rating: numbe
     setFocused(false);
     faceRef.current?.focus();
   };
+
+  // Incognito: ratings are hidden entirely.
+  if (incognito) return null;
 
   return (
     <div

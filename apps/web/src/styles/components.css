@@ -256,6 +256,27 @@ input::placeholder {
   border-radius: var(--radius-full);
 }
 
+/* Incognito switch — same footprint as the theme toggle; when on it takes
+   the accent for both the icon and the ring. */
+.incognito-toggle--on {
+  color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Slim strip under the header while incognito is on. */
+.incognito-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--font-size-xs);
+  color: var(--text-soft);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
 /* --- Hamburger menu (unused — kept for reference) -------------------------- */
 
 .app-nav__link {
