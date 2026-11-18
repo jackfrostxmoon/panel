@@ -1094,6 +1094,15 @@ input::placeholder {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Mobile mode (grid cards reflow small): the two corner buttons steal
+   tap targets from the stretched open-link, so they're hidden entirely.
+   Applies everywhere a panel card renders (home/latest/search/bookmarks). */
+@media (max-width: 640px) {
+  .panel-card__cover-zoom,
+  .panel-card__cover-clear {
+    display: none;
+  }
+}
 .panel-card__cover-zoom:disabled {
   opacity: 0.45;
   cursor: default;
