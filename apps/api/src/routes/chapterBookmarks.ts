@@ -49,6 +49,11 @@ const createChapterBookmarksSchema = z.object({
 export function chapterBookmarkRoutes(chapterBookmarkService: ChapterBookmarkService): Hono {
   const app = new Hono();
 
+  // GET /api/chapter-bookmarks/panels (per-panel counts, any panel)
+  app.get('/panels', async (c) => {
+    return c.json(ok(await chapterBookmarkService.listPanelCounts()));
+  });
+
   // GET /api/chapter-bookmarks?panelId=
   app.get('/', async (c) => {
     const panelId = c.req.query('panelId');

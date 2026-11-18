@@ -1,8 +1,9 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
 import {
   chapterBookmarks,
   chapters,
+  panel,
   type ChapterBookmarkRow,
   type ChapterRow,
 } from '../db/schema.js';
@@ -31,6 +32,21 @@ export class ChapterBookmarkRepository {
       bookmark: row.bookmark,
       chapter: row.chapter,
     }));
+  }
+
+  /** Per-panel bookmarked-chapter counts (join on the panel cache for the
+      global id). Panels with zero bookmarks are simply absent. */
+  async listPanelCounts(): Promise<Array<{ panelId: string; count: number }>> {
+    const rows = await this.db
+      .select({
+        panelId: panel.globalId,
+        count: count(),
+      })
+      .from(chapterBookmarks)
+      .innerJoin(panel, eq(chapterBookmarks.panelId, panel.id))
+      .groupBy(panel.globalId);
+
+    return rows;
   }
 
   async findByPanelAndChapter(panelRowId: string, chapterRowId: string): Promise<ChapterBookmarkRow | undefined> {

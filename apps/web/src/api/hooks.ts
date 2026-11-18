@@ -8,6 +8,7 @@ import type {
   BulkMarkChaptersReadInput,
   Chapter,
   ChapterBookmark,
+  ChapterBookmarkPanelSummary,
   ChapterPages,
   CreateBookmarkFolderInput,
   CreateBookmarkInput,
@@ -75,6 +76,8 @@ export const queryKeys = {
   /** Server-side recently-viewed history backing the home-page rail. */
   recentlyViewed: () => ['recently-viewed'] as const,
   chapterBookmarks: (panelId: string) => ['chapterBookmarks', panelId] as const,
+  /** Per-panel bookmarked-chapter counts (bookmarks-page filter dropdown). */
+  chapterBookmarkPanels: () => ['chapterBookmarkPanels'] as const,
   progress: (panelId: string, chapterId: string) => ['progress', panelId, chapterId] as const,
   recentProgress: () => ['progress', 'recent'] as const,
   progressLatestByPanel: (panelId: string) => ['progress', 'latest-by-panel', panelId] as const,
@@ -541,6 +544,17 @@ export function useChapterBookmarks(panelId: string, opts?: QueryOpts<ChapterBoo
   });
 }
 
+/** Per-panel bookmarked-chapter counts — joins against the bookmarks shelf
+    for the "With/Without bookmarked chapters" filter. Fetched once per
+    session; invalidated by the chapter-bookmark mutations. */
+export function useChapterBookmarkPanels(opts?: QueryOpts<ChapterBookmarkPanelSummary[]>) {
+  return useQuery<ChapterBookmarkPanelSummary[], ApiClientError>({
+    queryKey: queryKeys.chapterBookmarkPanels(),
+    queryFn: () => api.getChapterBookmarkPanels(),
+    ...opts,
+  });
+}
+
 export function useProgress(
   panelId: string,
   chapterId: string,
@@ -660,6 +674,7 @@ export function useAddChapterBookmark() {
     mutationFn: (input) => api.addChapterBookmark(input),
     onSuccess: (bookmark) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarks(bookmark.panelId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarkPanels() });
     },
   });
 }
@@ -670,6 +685,7 @@ export function useAddChapterBookmarks() {
     mutationFn: (input) => api.addChapterBookmarks(input),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarks(variables.panelId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarkPanels() });
     },
   });
 }
@@ -680,6 +696,7 @@ export function useRemoveChapterBookmark() {
     mutationFn: ({ panelId, chapterId }) => api.removeChapterBookmark(panelId, chapterId),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarks(variables.panelId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarkPanels() });
     },
   });
 }
@@ -690,6 +707,7 @@ export function useClearChapterBookmarks() {
     mutationFn: (panelId) => api.clearChapterBookmarks(panelId),
     onSuccess: (_data, panelId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarks(panelId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.chapterBookmarkPanels() });
     },
   });
 }

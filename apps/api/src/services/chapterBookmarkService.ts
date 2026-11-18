@@ -2,6 +2,7 @@ import {
   ErrorCodes,
   parseGlobalId,
   type ChapterBookmark,
+  type ChapterBookmarkPanelSummary,
   type CreateChapterBookmarkInput,
   type CreateChapterBookmarksInput,
   type ParsedGlobalId,
@@ -23,6 +24,13 @@ export class ChapterBookmarkService {
     private readonly panelCache: PanelCacheRepository,
     private readonly registry?: SourceRegistry,
   ) {}
+
+  /** Per-panel bookmarked-chapter counts for every panel that has at least
+      one. Used by the bookmarks-page filter dropdown — the client joins
+      these counts against its own bookmark list. */
+  async listPanelCounts(): Promise<ChapterBookmarkPanelSummary[]> {
+    return this.chapterBookmarks.listPanelCounts();
+  }
 
   async listByPanelId(globalPanelId: string): Promise<ChapterBookmark[]> {
     const panelRow = await this.panelCache.findPanelByGlobalId(globalPanelId);

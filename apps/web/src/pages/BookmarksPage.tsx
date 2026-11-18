@@ -9,6 +9,7 @@ import {
   useBookmarkFolders,
   useBookmarks,
   useBookmarksSettings,
+  useChapterBookmarkPanels,
   useClearImageCacheByTag,
   useLatest,
   useRemoveBookmark,
@@ -202,6 +203,10 @@ export function BookmarksPage() {
   const [statusFilter, setStatusFilter] = useState<PanelStatus | ''>('');
   const [genreFilter, setGenreFilter] = useState<string[]>([]);
   const [excludedGenre, setExcludedGenre] = useState<string[]>([]);
+  /** Bookmarked-chapters filter: narrow the shelf to panels that do (or
+      don't) have at least one bookmarked chapter. `all` keeps everything. */
+  const [chapterBookmarkFilter, setChapterBookmarkFilter] = useState<'all' | 'with' | 'without'>('all');
+  const chapterBookmarkPanels = useChapterBookmarkPanels();
   const allTags = useTags();
   /** Active folder (T2-8). `null` = the user's default folder (Reading
    *  list by default, or whichever folder the user has explicitly
@@ -294,6 +299,11 @@ export function BookmarksPage() {
     () => new Set(excludedGenre.map((g) => g.toLowerCase())),
     [excludedGenre],
   );
+  /** Global panel id → bookmarked-chapter count (absent = 0). */
+  const chapterBookmarkCountByPanel = useMemo(
+    () => new Map((chapterBookmarkPanels.data ?? []).map((s) => [s.panelId, s.count] as const)),
+    [chapterBookmarkPanels.data],
+  );
 
   const sorted = useMemo(() => {
     if (!sourceData) return [];
@@ -313,6 +323,9 @@ export function BookmarksPage() {
         (!needle || bookmark.title.toLowerCase().includes(needle)) &&
         (!tagFilter || panelTags.get(bookmark.panelId)?.has(tagFilter)) &&
         (!statusFilter || bookmark.status === statusFilter) &&
+        (chapterBookmarkFilter === 'all' ||
+          ((chapterBookmarkCountByPanel.get(bookmark.panelId) ?? 0) > 0) ===
+            (chapterBookmarkFilter === 'with')) &&
         (includeSet.size === 0 ||
           (bookmark.genres ?? []).some((g) => includeSet.has(g.toLowerCase()))) &&
         (excludeSet.size === 0 ||
@@ -326,7 +339,7 @@ export function BookmarksPage() {
     // keep the default recency sort behind them).
     if (sourceFilter && latestFeedReady) return rankByLatestFeed(filtered, latestFeedPages);
     return sortBookmarks(filtered);
-  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, includeSet, excludeSet, allTags.data, latestFeedReady, latestFeedPages, sortByLatestUpdate]);
+  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, chapterBookmarkFilter, chapterBookmarkCountByPanel, includeSet, excludeSet, allTags.data, latestFeedReady, latestFeedPages, sortByLatestUpdate]);
 
   /** Render window into `sorted` (see PAGE_SIZE): only these cards are
    *  mounted, so a 200-title shelf issues ~30 cover fetches up front and
@@ -346,6 +359,7 @@ export function BookmarksPage() {
     query,
     tagFilter,
     statusFilter,
+    chapterBookmarkFilter,
     genreFilter,
     excludedGenre,
   ]);
@@ -385,6 +399,7 @@ export function BookmarksPage() {
     query.trim() !== '' ||
     tagFilter !== '' ||
     statusFilter !== '' ||
+    chapterBookmarkFilter !== 'all' ||
     genreFilter.length > 0 ||
     excludedGenre.length > 0;
 
@@ -393,6 +408,7 @@ export function BookmarksPage() {
   const activeFilterCount =
     (tagFilter !== '' ? 1 : 0) +
     (statusFilter !== '' ? 1 : 0) +
+    (chapterBookmarkFilter !== 'all' ? 1 : 0) +
     genreFilter.length +
     excludedGenre.length;
 
@@ -402,6 +418,7 @@ export function BookmarksPage() {
     setQuery('');
     setTagFilter('');
     setStatusFilter('');
+    setChapterBookmarkFilter('all');
     setGenreFilter([]);
     setExcludedGenre([]);
   }
@@ -791,6 +808,18 @@ export function BookmarksPage() {
                 <option value="completed">Completed</option>
                 <option value="hiatus">Hiatus</option>
                 <option value="cancelled">Cancelled</option>
+              </select>
+              <select
+                className={
+                  'search-filters__select' + (chapterBookmarkFilter !== 'all' ? ' search-filters__select--active' : '')
+                }
+                aria-label="Filter by bookmarked chapters"
+                value={chapterBookmarkFilter}
+                onChange={(e) => setChapterBookmarkFilter(e.target.value as 'all' | 'with' | 'without')}
+              >
+                <option value="all">Any chapters</option>
+                <option value="with">With bookmarked chapters</option>
+                <option value="without">Without bookmarked chapters</option>
               </select>
               <GenreMultiSelect
                 label="Filter by genre"

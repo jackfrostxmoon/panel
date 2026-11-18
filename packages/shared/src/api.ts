@@ -134,6 +134,14 @@ export interface CreateChapterBookmarksInput {
   }>;
 }
 
+/** Per-panel count of bookmarked chapters (powers the bookmarks-page
+    "With/Without bookmarked chapters" filter). */
+export interface ChapterBookmarkPanelSummary {
+  /** Global panel id, e.g. "mk:solo-leveling.21708". */
+  panelId: string;
+  count: number;
+}
+
 /** User rating for a panel, 1–5 stars (T3-3). */
 export interface PanelRating {
   panelId: string;

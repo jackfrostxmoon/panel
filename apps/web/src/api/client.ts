@@ -16,6 +16,7 @@ import type {
   SetPrefetchIntervalResult,
   Chapter,
   ChapterBookmark,
+  ChapterBookmarkPanelSummary,
   ChapterPages,
   EnqueuePrefetchBatchInput,
   EnqueuePrefetchBatchResult,
@@ -530,6 +531,8 @@ export const api = {
     request<{ count: number }>('/api/recently-viewed', { method: 'DELETE' }),
 
   /* Chapter Bookmarks */
+  getChapterBookmarkPanels: () =>
+    request<ChapterBookmarkPanelSummary[]>('/api/chapter-bookmarks/panels'),
   getChapterBookmarks: (panelId: string) =>
     request<ChapterBookmark[]>(`/api/chapter-bookmarks?panelId=${encodeURIComponent(panelId)}`),
   addChapterBookmark: (input: CreateChapterBookmarkInput) =>
