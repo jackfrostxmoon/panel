@@ -30,6 +30,7 @@ import { proxiedPageUrl } from '../utils/format';
 import {
   applyIntent,
   clampPage,
+  deriveAdjacentChapterIds,
   intentForKey,
   isEditableKeyTarget,
   nextSpreadPage,
@@ -581,14 +582,27 @@ export function ReaderPage() {
     [flushProgress, navigate],
   );
 
+  /**
+   * Fallback prev/next ids from the chapter list (ascending by chapter
+   * number). The pages payload's adapter-computed ids win when present;
+   * this only fills the gaps — a previously-read chapter whose pages row
+   * was persisted as "latest chapter" dead-ends otherwise, even though
+   * the revalidating chapter list knows newer chapters exist.
+   */
+  const derivedAdjacent = useMemo(
+    () => deriveAdjacentChapterIds(chapters.data ?? [], chapterId),
+    [chapters.data, chapterId],
+  );
+  const nextChapterId = chapterPages.data?.nextChapterId ?? derivedAdjacent.nextChapterId;
+  const prevChapterId = chapterPages.data?.prevChapterId ?? derivedAdjacent.prevChapterId;
+
   /** Hop to an adjacent chapter. In paged mode the destination lands on a fixed
       page — the next chapter opens at its first page, the previous chapter at
       its last page. In vertical/gallery the exact page the user left off on is
       restored when they return. */
   const navigateToChapter = useCallback(
     (dir: 'next' | 'prev') => {
-      const id =
-        dir === 'next' ? chapterPages.data?.nextChapterId : chapterPages.data?.prevChapterId;
+      const id = dir === 'next' ? nextChapterId : prevChapterId;
       if (!id) {
         toast(
           dir === 'next' ? 'This is the latest chapter.' : 'This is the first chapter.',
@@ -602,7 +616,7 @@ export function ReaderPage() {
         hardHopToChapter(id);
       }
     },
-    [chapterPages.data, hardHopToChapter, toast, settings.mode],
+    [nextChapterId, prevChapterId, hardHopToChapter, toast, settings.mode],
   );
 
   const handleIntent = useCallback(

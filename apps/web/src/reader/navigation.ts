@@ -319,6 +319,36 @@ export function prevSpreadPage(state: NavigationState, direction: ReadingDirecti
   return adjacent >= 0 && adjacent < pageCount ? adjacent : null;
 }
 
+/**
+ * Derive adjacent chapter ids from the chapter list (ascending by
+ * `chapterNumber`, unnumbered chapters keep their source order and sort
+ * last, stable). The reader falls back to this when the chapter-pages
+ * payload carries no prev/next ids: a persisted pages row captures
+ * prev/next at read time, so a chapter that was the latest when read
+ * dead-ends forever even after newer chapters ship — the chapter list
+ * (which keeps revalidating) still knows them.
+ */
+export function deriveAdjacentChapterIds(
+  chapters: readonly { id: string; chapterNumber: number | null }[],
+  currentChapterId: string,
+): { prevChapterId: string | null; nextChapterId: string | null } {
+  const indexed = chapters.map((chapter, index) => ({ chapter, index }));
+  indexed.sort((a, b) => {
+    const aNum = a.chapter.chapterNumber;
+    const bNum = b.chapter.chapterNumber;
+    const aKey = typeof aNum === 'number' && Number.isFinite(aNum) ? aNum : Number.POSITIVE_INFINITY;
+    const bKey = typeof bNum === 'number' && Number.isFinite(bNum) ? bNum : Number.POSITIVE_INFINITY;
+    if (aKey !== bKey) return aKey - bKey;
+    return a.index - b.index;
+  });
+  const currentIndex = indexed.findIndex((entry) => entry.chapter.id === currentChapterId);
+  if (currentIndex < 0) return { prevChapterId: null, nextChapterId: null };
+  return {
+    prevChapterId: currentIndex > 0 ? indexed[currentIndex - 1]!.chapter.id : null,
+    nextChapterId: currentIndex < indexed.length - 1 ? indexed[currentIndex + 1]!.chapter.id : null,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Wheel smooth scroll (T1-3)                                          */
 /* ------------------------------------------------------------------ */
