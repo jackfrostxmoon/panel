@@ -79,7 +79,8 @@ const { app, prefetchWorker, panelService, imageCache } = createApp({ config, db
 
 // Re-apply the persisted performance-mode profile (max proxy concurrency,
 // widened TTL cache + stretched TTLs, in-process image fetches, max
-// prefetch width with no backoff/pacing). The runtime profile does not live
+// prefetch width with no failure/claim backoffs - user-configured
+// inter-chapter pacing is still honoured). The runtime profile does not live
 // in env, so without this a restart would silently drop back to standard
 // limits while the settings file still says ON.
 try {

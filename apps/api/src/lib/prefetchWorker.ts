@@ -109,7 +109,9 @@ export class PrefetchWorker {
   /**
    * Performance-mode profile (toggled via `setPerformanceMode`, wired
    * through the cache-settings route like PanelService/ImageCache): max
-   * intra-chapter width, no failure/claim backoffs, no batch pacing.
+   * intra-chapter width, no failure/claim backoffs. Batch pacing
+   * (inter-chapter wait) is left to the user's explicit setting — the
+   * profile never suppresses a configured interval.
    * Single-flight is kept (one chapter at a time) to avoid 429s — only
    * the pages within the chapter fan out wider. OFF restores exact
    * defaults with no restart.
@@ -550,9 +552,10 @@ export class PrefetchWorker {
     // snapshot) so a mid-run preset change (Off → 30s while chapter 1
     // downloads) takes effect on the very next transition. A deleted row
     // falls back to the snapshot.
-    // Performance mode skips batch pacing entirely for throughput —
-    // chapters chain immediately (client already sends intervalMs 0).
-    if (this.performanceMode) return;
+    // Performance mode no longer suppresses batch pacing: the user set this
+    // wait explicitly and expects it to hold (it throttles upstream requests
+    // the same way the throughput profile does). Performance mode only
+    // leaves pacing alone when no wait is configured (intervalMs = 0).
     if (!controller.signal.aborted && job.batchId) {
       let intervalMs = job.intervalMs;
       try {
