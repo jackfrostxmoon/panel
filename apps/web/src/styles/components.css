@@ -216,6 +216,14 @@ input::placeholder {
   }
 }
 
+/* Phones have a Home nav button — the brand logo is a redundant homepage
+   shortcut, so drop the whole link (icon included) on narrow viewports. */
+@media (max-width: 640px) {
+  .app-header__brand {
+    display: none;
+  }
+}
+
 /* Tight phones (≤480px): shrink header chrome so logo + nav + toggle fit 320px. */
 @media (max-width: 480px) {
   .app-header__inner {
