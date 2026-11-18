@@ -42,6 +42,7 @@ import { readerStylesRoutes } from './routes/reader-styles.js';
 import { latestSettingsRoutes } from './routes/latest-settings.js';
 import { searchSettingsRoutes } from './routes/search-settings.js';
 import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
+import { detailsSettingsRoutes } from './routes/details-settings.js';
 import { cacheSettingsRoutes } from './routes/cache-settings.js';
 import { sourceOrderRoutes } from './routes/source-order.js';
 import { memoryFlushRoutes } from './routes/memory-flush.js';
@@ -210,6 +211,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   app.route('/api/latest-settings', latestSettingsRoutes());
   app.route('/api/search-settings', searchSettingsRoutes());
   app.route('/api/bookmarks-settings', bookmarksSettingsRoutes());
+  app.route('/api/details-settings', detailsSettingsRoutes());
   app.route('/api/cache-settings', cacheSettingsRoutes({ panelService, imageCache, registry, prefetchWorker }));
   app.route('/api/source-order', sourceOrderRoutes());
   app.route('/api/recently-viewed', recentlyViewedRoutes(recentlyViewedService));

@@ -16,6 +16,7 @@ import type {
   CreateChapterBookmarksInput,
   GenreCatalog,
   LatestPageSettings,
+  DetailsPageSettings,
   SearchPageSettings,
   BookmarksPageSettings,
   CachePageSettings,
@@ -131,6 +132,7 @@ export const queryKeys = {
     ] as const,
   /** Latest-page preferences persisted to `data/display/latest.json`. */
   latestSettings: () => ['latest-settings'] as const,
+  detailsSettings: () => ['details-settings'] as const,
   /** Search-page preferences persisted to `data/display/search.json`. */
   searchSettings: () => ['search-settings'] as const,
   /** Bookmarks-page preferences persisted to `data/display/bookmarks.json`. */
@@ -294,6 +296,31 @@ export function useSaveLatestSettings() {
     mutationFn: (settings) => api.saveLatestSettings(settings),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.latestSettings(), data);
+    },
+  });
+}
+
+/**
+ * Details-page preferences (`data/display/details.json` on the server).
+ * Includes the heuristic "Filler" chapter-marker visibility on the
+ * details-page chapter list.
+ */
+export function useDetailsSettings(opts?: QueryOpts<DetailsPageSettings>) {
+  return useQuery<DetailsPageSettings, ApiClientError>({
+    queryKey: queryKeys.detailsSettings(),
+    queryFn: () => api.getDetailsSettings(),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/** Persist the details-page preferences; refreshes the settings query on success. */
+export function useSaveDetailsSettings() {
+  const queryClient = useQueryClient();
+  return useMutation<DetailsPageSettings, ApiClientError, DetailsPageSettings>({
+    mutationFn: (settings) => api.saveDetailsSettings(settings),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.detailsSettings(), data);
     },
   });
 }

@@ -171,6 +171,21 @@ export const DEFAULT_CACHE_PAGE_SETTINGS: CachePageSettings = {
 };
 
 /**
+ * Details page preferences. Persisted server-side as a JSON file
+ * (`data/display/details.json`) via the details-settings endpoints.
+ */
+export interface DetailsPageSettings {
+  /** Show the heuristic "Filler" marker next to chapters on the details-page
+   *  chapter list (fractional numbers / side-content keywords). */
+  showFillerLabels: boolean;
+}
+
+/** Default: filler labels shown. */
+export const DEFAULT_DETAILS_PAGE_SETTINGS: DetailsPageSettings = {
+  showFillerLabels: true,
+};
+
+/**
  * Source display order + visibility. Persisted server-side as a JSON file
  * (`data/display/sources.json`) via the source-order endpoints.
  *

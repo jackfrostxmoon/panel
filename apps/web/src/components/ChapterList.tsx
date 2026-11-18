@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Chapter } from '@panel/shared';
 import { formatDate } from '../utils/format';
 import { chapterMarker } from '../utils/chapterMarkers';
-import { useDisplaySettings } from '../hooks/useDisplaySettings';
+import { useDetailsSettings } from '../api/hooks';
 import { compareChaptersAscending } from '../reader/navigation';
 import { ChapterBookmarkButton } from './ChapterBookmarkButton';
 import { ChapterDownloadButton } from './ChapterDownloadButton';
@@ -72,7 +72,9 @@ export function ChapterList({
   selectedIds?: Set<string>;
   onToggleSelected?: (chapterId: string) => void;
 }) {
-  const { settings } = useDisplaySettings();
+  // Server-persisted details-page settings (data/display/details.json).
+  const detailsSettings = useDetailsSettings();
+  const showFillerLabels = detailsSettings.data?.showFillerLabels ?? true;
 
   // Sort chapters by the global sort order — same key everywhere so the
   // visible order matches reader navigation (partially-numbered panels included).
@@ -236,7 +238,7 @@ export function ChapterList({
                 <div className="chapter-list__content">
                   <div className="chapter-list__title-group">
                     <span className="chapter-list__title">{chapter.title}</span>
-                    {settings.showFillerLabels && marker === 'filler' && (
+                    {showFillerLabels && marker === 'filler' && (
                       <span
                         className="chapter-list__marker chapter-list__marker--filler"
                         title="Side content — safe to skip without missing the main story"

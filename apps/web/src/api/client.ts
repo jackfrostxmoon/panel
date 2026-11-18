@@ -47,6 +47,7 @@ import type {
   ReaderSettings,
   ReaderStylePreset,
   LatestPageSettings,
+  DetailsPageSettings,
   SearchPageSettings,
   BookmarksPageSettings,
   CachePageSettings,
@@ -960,6 +961,17 @@ export const api = {
   getLatestSettings: () => request<LatestPageSettings>('/api/latest-settings'),
   saveLatestSettings: (settings: LatestPageSettings) =>
     request<LatestPageSettings>('/api/latest-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  /**
+   * Details-page preferences, persisted server-side as a JSON file
+   * (`data/display/details.json`) — chapter-list display knobs shared
+   * across browsers/devices like the other page settings.
+   */
+  getDetailsSettings: () => request<DetailsPageSettings>('/api/details-settings'),
+  saveDetailsSettings: (settings: DetailsPageSettings) =>
+    request<DetailsPageSettings>('/api/details-settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),

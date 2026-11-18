@@ -21,7 +21,7 @@ import { ChapterOrderDialog } from '../components/ChapterOrderDialog';
 import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 import { compareChaptersAscending } from '../reader/navigation';
 import { Switch } from '../components/Switch';
-import { useDisplaySettings } from '../hooks/useDisplaySettings';
+import { useDetailsSettings, useSaveDetailsSettings } from '../api/hooks';
 import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -149,7 +149,13 @@ export function PanelDetailsPage() {
   const [coverZoomOpen, setCoverZoomOpen] = useState(false);
   /** Batch chapter-bookmark actions (lives next to the sort control). */
   const [showChapterActions, setShowChapterActions] = useState(false);
-  const displaySettings = useDisplaySettings();
+  /** Details-page preferences (server-persisted; flips instantly via pending variables). */
+  const detailsSettingsQuery = useDetailsSettings();
+  const saveDetailsSettings = useSaveDetailsSettings();
+  const detailsSettings =
+    saveDetailsSettings.isPending && saveDetailsSettings.variables
+      ? saveDetailsSettings.variables
+      : (detailsSettingsQuery.data ?? { showFillerLabels: true });
 
   const chapterBookmarks = useChapterBookmarks(id);
   /** Bookmark state for gating the folder-picker toolbar segment. */
@@ -1724,10 +1730,10 @@ const filteredAndSortedChapters = useMemo(() => {
               </span>
               <Switch
                 size="sm"
-                checked={displaySettings.settings.showFillerLabels}
+                checked={detailsSettings.showFillerLabels}
                 labelledBy="chapter-filler-toggle"
                 onChange={(showFillerLabels) =>
-                  displaySettings.update({ showFillerLabels })
+                  saveDetailsSettings.mutate({ ...detailsSettings, showFillerLabels })
                 }
               />
             </span>

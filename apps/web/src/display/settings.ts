@@ -20,18 +20,11 @@ export interface DisplaySettings {
    * default); `false` = show all badges.
    */
   hideCoverBadges: boolean;
-  /**
-   * Show the heuristic "Filler" marker next to chapters on the details
-   * page chapter list (fractional numbers / side-content keywords).
-   * Default on.
-   */
-  showFillerLabels: boolean;
 }
 
-/** Default: badges hidden for clean covers; filler labels shown. */
+/** Default: badges hidden for clean covers. */
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   hideCoverBadges: true,
-  showFillerLabels: true,
 };
 
 const STORAGE_KEY = 'panel-display:settings:v1';
