@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Chapter } from '@panel/shared';
 import { formatDate } from '../utils/format';
 import { chapterMarker } from '../utils/chapterMarkers';
+import { compareChaptersAscending } from '../reader/navigation';
 import { ChapterBookmarkButton } from './ChapterBookmarkButton';
 import { ChapterDownloadButton } from './ChapterDownloadButton';
 import { ChapterSelectCheckbox } from './ChapterSelectCheckbox';
@@ -70,12 +71,13 @@ export function ChapterList({
   selectedIds?: Set<string>;
   onToggleSelected?: (chapterId: string) => void;
 }) {
-  // Sort chapters by the global sort order
-  const sortedChapters = [...chapters].sort((a, b) => {
-    const numA = a.chapterNumber ?? 0;
-    const numB = b.chapterNumber ?? 0;
-    return sortOrder === 'newest' ? numB - numA : numA - numB;
-  });
+  // Sort chapters by the global sort order — same key everywhere so the
+  // visible order matches reader navigation (partially-numbered panels included).
+  const sortedChapters = [...chapters].sort((a, b) =>
+    sortOrder === 'newest'
+      ? compareChaptersAscending(b, a)
+      : compareChaptersAscending(a, b),
+  );
 
   // Long-press menu state — global so the menu is a single portal above the list.
   const [menu, setMenu] = useState<{ chapter: Chapter } | null>(null);

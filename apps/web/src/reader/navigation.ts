@@ -319,6 +319,14 @@ export function prevSpreadPage(state: NavigationState, direction: ReadingDirecti
   return adjacent >= 0 && adjacent < pageCount ? adjacent : null;
 }
 
+/** Chapter-like object the ordering helpers can sort. */
+export interface ChapterOrderable {
+  id: string;
+  title?: string | null;
+  chapterNumber: number | null;
+  publishedAt?: string | null;
+}
+
 /**
  * Extract a chapter number from free-ish text ("Chapter 2.2",
  * "Chapter 244.1646023630", "ch-3"). Prefers a chapter-ish keyword
@@ -334,29 +342,35 @@ export function matchChapterNumber(value: string): number | null {
 }
 
 /**
- * Best-effort numeric key for a chapter: the explicit `chapterNumber`,
- * else parsed from the title or id token ("Chapter 2.2" → 2.2), else the
- * publish timestamp, else none. Rows persisted via the background prefetch
- * path carry no number, so a naive "null → last" bucket scrambles
- * partially-numbered panels.
+ * Best-effort numeric sort key for a chapter: the explicit
+ * `chapterNumber`, else parsed from the title or id token
+ * ("Chapter 2.2" → 2.2), else the publish timestamp, else a constant
+ * bucket (unnumbered chapters keep source order and sort last).
+ * Rows persisted via the background prefetch path carry no number, so a
+ * naive "null → last/zero" bucket scrambles partially-numbered panels.
  */
-function chapterOrderKey(
-  chapter: {
-    id: string;
-    title?: string | null;
-    chapterNumber: number | null;
-    publishedAt?: string | null;
-  },
-  position: number,
-): [number, number, number] {
+export function chapterOrderKey(chapter: ChapterOrderable): [number, number] {
   const num = chapter.chapterNumber;
-  if (typeof num === 'number' && Number.isFinite(num)) return [0, num, position];
+  if (typeof num === 'number' && Number.isFinite(num)) return [0, num];
   const parsed =
     (chapter.title ? matchChapterNumber(chapter.title) : null) ?? matchChapterNumber(chapter.id);
-  if (parsed !== null) return [0, parsed, position];
+  if (parsed !== null) return [0, parsed];
   const published = chapter.publishedAt ? Date.parse(chapter.publishedAt) : Number.NaN;
-  if (Number.isFinite(published)) return [1, published, position];
-  return [2, 0, position];
+  if (Number.isFinite(published)) return [1, published];
+  return [2, 0];
+}
+
+/**
+ * Ascending chapter order (stable): numbered/parsed chapters by number,
+ * then published-date chapters, then unnumbered in source order. Shared
+ * by the reader hops and every chapter list so the visible order matches
+ * navigation exactly.
+ */
+export function compareChaptersAscending(a: ChapterOrderable, b: ChapterOrderable): number {
+  const aKey = chapterOrderKey(a);
+  const bKey = chapterOrderKey(b);
+  if (aKey[0] !== bKey[0]) return aKey[0] - bKey[0];
+  return aKey[1] - bKey[1];
 }
 
 /**
@@ -369,29 +383,16 @@ function chapterOrderKey(
  * revalidating) still knows them.
  */
 export function deriveAdjacentChapterIds(
-  chapters: readonly {
-    id: string;
-    title?: string | null;
-    chapterNumber: number | null;
-    publishedAt?: string | null;
-  }[],
+  chapters: readonly ChapterOrderable[],
   currentChapterId: string,
 ): { prevChapterId: string | null; nextChapterId: string | null } {
-  const indexed = chapters.map((chapter, index) => ({ chapter, index }));
-  indexed.sort((a, b) => {
-    const aKey = chapterOrderKey(a.chapter, a.index);
-    const bKey = chapterOrderKey(b.chapter, b.index);
-    for (let i = 0; i < aKey.length; i += 1) {
-      const delta = (aKey[i] as number) - (bKey[i] as number);
-      if (delta !== 0) return delta;
-    }
-    return 0;
-  });
-  const currentIndex = indexed.findIndex((entry) => entry.chapter.id === currentChapterId);
+  // Stable sort — unnumbered chapters keep their source order.
+  const sorted = [...chapters].sort(compareChaptersAscending);
+  const currentIndex = sorted.findIndex((chapter) => chapter.id === currentChapterId);
   if (currentIndex < 0) return { prevChapterId: null, nextChapterId: null };
   return {
-    prevChapterId: currentIndex > 0 ? indexed[currentIndex - 1]!.chapter.id : null,
-    nextChapterId: currentIndex < indexed.length - 1 ? indexed[currentIndex + 1]!.chapter.id : null,
+    prevChapterId: currentIndex > 0 ? sorted[currentIndex - 1]!.id : null,
+    nextChapterId: currentIndex < sorted.length - 1 ? sorted[currentIndex + 1]!.id : null,
   };
 }
 

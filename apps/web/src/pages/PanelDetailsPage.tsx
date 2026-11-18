@@ -19,6 +19,7 @@ import { ChapterBookmarkActions } from '../components/ChapterBookmarkActions';
 import { ChapterDownloadActions } from '../components/ChapterDownloadActions';
 import { ChapterOrderDialog } from '../components/ChapterOrderDialog';
 import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
+import { compareChaptersAscending } from '../reader/navigation';
 import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -334,34 +335,21 @@ export function PanelDetailsPage() {
   }, [continueChapter, chapters.data, readChapterIds]);
 
   /**
-   * Oldest / newest chapter by number. Null numbers sort last in both
-   * directions so untagged extras never pose as the first (or latest)
-   * chapter. Titles whose numbering starts above 1 — the source itself
-   * lists Ch. 13 first — resolve to their real first chapter instead of
-   * a hardcoded "Chapter 1". Copied before sorting: the old inline
-   * `.sort()` calls below mutated the cached array in place.
+   * Oldest / newest chapter. Null numbers are resolved from the title
+   * (see `compareChaptersAscending`) rather than sorted into a corner, so
+   * untagged prefetch-persisted chapters take their real position. The
+   * list is copied before sorting: the old inline `.sort()` calls below
+   * mutated the cached array in place.
    */
   const firstChapter = useMemo(() => {
     const list = chapters.data;
     if (!list || list.length === 0) return null;
-    return (
-      [...list].sort(
-        (a, b) =>
-          (a.chapterNumber ?? Number.POSITIVE_INFINITY) -
-          (b.chapterNumber ?? Number.POSITIVE_INFINITY),
-      )[0] ?? null
-    );
+    return [...list].sort(compareChaptersAscending)[0] ?? null;
   }, [chapters.data]);
   const latestChapter = useMemo(() => {
     const list = chapters.data;
     if (!list || list.length === 0) return null;
-    return (
-      [...list].sort(
-        (a, b) =>
-          (b.chapterNumber ?? Number.NEGATIVE_INFINITY) -
-          (a.chapterNumber ?? Number.NEGATIVE_INFINITY),
-      )[0] ?? null
-    );
+    return [...list].sort((a, b) => compareChaptersAscending(b, a))[0] ?? null;
   }, [chapters.data]);
 
 const filteredAndSortedChapters = useMemo(() => {
@@ -373,11 +361,11 @@ const filteredAndSortedChapters = useMemo(() => {
     if (q) {
       list = list.filter((c) => c.title.toLowerCase().includes(q));
     }
-    list = [...list].sort((a, b) => {
-      const numA = a.chapterNumber ?? 0;
-      const numB = b.chapterNumber ?? 0;
-      return sortOrder === 'newest' ? numB - numA : numA - numB;
-    });
+    list = [...list].sort((a, b) =>
+      sortOrder === 'newest'
+        ? compareChaptersAscending(b, a)
+        : compareChaptersAscending(a, b),
+    );
     return list;
   }, [chapters.data, filter, sortOrder, listFilter, bookmarkedChapterIds]);
 

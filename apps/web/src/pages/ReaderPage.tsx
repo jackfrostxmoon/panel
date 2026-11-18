@@ -30,6 +30,7 @@ import { proxiedPageUrl } from '../utils/format';
 import {
   applyIntent,
   clampPage,
+  compareChaptersAscending,
   deriveAdjacentChapterIds,
   intentForKey,
   isEditableKeyTarget,
@@ -179,6 +180,12 @@ export function ReaderPage() {
    * chapter payload's label while the list is still loading.
    */
   const bookmarkChapters = useMemo(() => chapters.data ?? [], [chapters.data]);
+  // The settings dropdown renders this order — keep it identical to the
+  // navigation/hop order (ascending by resolved chapter number).
+  const sortedChapters = useMemo(
+    () => [...(chapters.data ?? [])].sort(compareChaptersAscending),
+    [chapters.data],
+  );
   const { toggleBookmark } = useChapterBookmarkToggle({
     // Falls back to the URL-derived id while the payload is still loading
     // so `V` never silently no-ops on `panelId === ''`.
@@ -1444,7 +1451,7 @@ export function ReaderPage() {
           panelTitle={data.panelTitle}
           chapterTitle={enhancedChapterTitle}
           chapterId={data.chapterId}
-          chapters={chapters.data ?? []}
+          chapters={sortedChapters}
           visible={controlsVisible}
           isFullscreen={isFullscreen}
           settingsOpen={settingsOpen}
@@ -1483,7 +1490,7 @@ export function ReaderPage() {
             page={page}
             pageCount={pageCount}
             onPageSelect={(target) => goToPage(target, 'instant')}
-            chapters={chapters.data ?? []}
+            chapters={sortedChapters}
             currentChapterId={data.chapterId}
             onChapterSelect={goToChapterById}
           />

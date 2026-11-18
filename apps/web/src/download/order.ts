@@ -1,4 +1,5 @@
 import type { Chapter } from '@panel/shared';
+import { chapterOrderKey } from '../reader/navigation';
 
 /**
  * Chapter ordering for bulk download batches.
@@ -22,33 +23,25 @@ export type ChapterOrder = 'oldest-first' | 'newest-first';
  * Stable sort key for a chapter.
  *
  * `chapterNumber` is the natural key, but some sources publish raw tokens as
- * titles (`#206`, `Ch. 206`) and leave the number null — every chapter then
- * ties at 0 and the order collapses to "whatever the list looked like", which
- * is the bug this module exists to remove. So fall back to `publishedAt` and
- * finally to the chapter's own position in the incoming array, which preserves
- * the source's own ordering for the remainder.
- *
- * A chapter with a real number always sorts ahead of one without, in both
- * directions: the numbered run reads chronologically and the unnumbered tail
- * keeps source order.
+ * titles (`#206`, `Ch. 206`) and leave the number null — so the key also
+ * accepts a number parsed from the title/id token and, failing that, falls
+ * back to `publishedAt` and finally to the chapter's own position in the
+ * incoming array, which preserves the source's own ordering for the
+ * remainder. Rows persisted via the background prefetch path carry neither
+ * number nor publish date, so position is the last resort.
  */
 function chapterSortKey(chapter: Chapter, position: number): [number, number, number] {
-  const hasNumber = typeof chapter.chapterNumber === 'number' && Number.isFinite(chapter.chapterNumber);
-  if (hasNumber) return [0, chapter.chapterNumber as number, position];
-
-  const published = chapter.publishedAt ? Date.parse(chapter.publishedAt) : Number.NaN;
-  if (Number.isFinite(published)) return [1, published, position];
-
-  return [2, 0, position];
+  const [bucket, key] = chapterOrderKey(chapter);
+  return [bucket, key, position];
 }
 
 /**
  * Sort a batch into download order. Pure, and does not mutate the input.
  *
  * `oldest-first` reads chapter 1 upward; `newest-first` starts at the latest
- * chapter. Unnumbered chapters sit after numbered ones when ascending and
- * before them when descending, so a mixed batch still yields a coherent
- * sequence rather than interleaving arbitrarily.
+ * chapter. Numbered chapters — explicit or parsed from the title — always
+ * sort chronologically; anything still unnumbered falls back to its publish
+ * date, then to source order.
  */
 export function sortChaptersForDownload(
   chapters: readonly Chapter[],
