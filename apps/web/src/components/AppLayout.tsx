@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { applyTheme, loadTheme, saveTheme, type Theme } from '../theme';
 import { hideCoverPreview } from './coverPreview';
+import { IconLock } from './icons';
 import { useIncognito } from '../hooks/useIncognito';
 
 /** Scroll past this distance before the header is allowed to hide. */
@@ -241,7 +242,18 @@ export function AppLayout() {
               <NavLink to="/latest" className={navClass}>
                 Latest
               </NavLink>
-              {!incognito && (
+              {incognito ? (
+                /* Locked in incognito: stays visible but inert — nothing to
+                   bookmark to, so the entry point is disabled with a hint. */
+                <span
+                  className="app-nav__link app-nav__link--locked"
+                  aria-disabled="true"
+                  title="Incognito mode is on — bookmarks are hidden"
+                >
+                  Bookmarks
+                  <IconLock size={13} />
+                </span>
+              ) : (
                 <NavLink to="/bookmarks" className={navClass}>
                   Bookmarks
                 </NavLink>
