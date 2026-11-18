@@ -20,6 +20,8 @@ import { ChapterDownloadActions } from '../components/ChapterDownloadActions';
 import { ChapterOrderDialog } from '../components/ChapterOrderDialog';
 import { sortChaptersForDownload, type ChapterOrder } from '../download/order';
 import { compareChaptersAscending } from '../reader/navigation';
+import { Switch } from '../components/Switch';
+import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { StarRating } from '../components/StarRating';
 import { TagEditor, TagChipItems } from '../components/TagEditor';
 import { EmptyState, ErrorState } from '../components/StateView';
@@ -147,6 +149,7 @@ export function PanelDetailsPage() {
   const [coverZoomOpen, setCoverZoomOpen] = useState(false);
   /** Batch chapter-bookmark actions (lives next to the sort control). */
   const [showChapterActions, setShowChapterActions] = useState(false);
+  const displaySettings = useDisplaySettings();
 
   const chapterBookmarks = useChapterBookmarks(id);
   /** Bookmark state for gating the folder-picker toolbar segment. */
@@ -1715,6 +1718,19 @@ const filteredAndSortedChapters = useMemo(() => {
                 </button>
               )}
             </div>
+            <span className="chapter-controls__filler">
+              <span id="chapter-filler-toggle" className="chapter-controls__filler-label">
+                Filler
+              </span>
+              <Switch
+                size="sm"
+                checked={displaySettings.settings.showFillerLabels}
+                labelledBy="chapter-filler-toggle"
+                onChange={(showFillerLabels) =>
+                  displaySettings.update({ showFillerLabels })
+                }
+              />
+            </span>
             <div className="chapter-filter-wrapper">
               <div className="search-input-wrapper">
                 <svg

@@ -286,6 +286,22 @@ input::placeholder {
   border-bottom: 1px solid var(--border);
 }
 
+/* Filler-marker show/hide switch in the chapter-list controls row. */
+.chapter-controls__filler {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
+  white-space: nowrap;
+  padding: 0 var(--space-1);
+}
+
+.chapter-controls__filler-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-soft);
+}
+
 /* --- Hamburger menu (unused — kept for reference) -------------------------- */
 
 .app-nav__link {
