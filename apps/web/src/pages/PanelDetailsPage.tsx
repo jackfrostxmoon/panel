@@ -1724,19 +1724,6 @@ const filteredAndSortedChapters = useMemo(() => {
                 </button>
               )}
             </div>
-            <span className="chapter-controls__filler">
-              <span id="chapter-filler-toggle" className="chapter-controls__filler-label">
-                Filler
-              </span>
-              <Switch
-                size="sm"
-                checked={detailsSettings.showFillerLabels}
-                labelledBy="chapter-filler-toggle"
-                onChange={(showFillerLabels) =>
-                  saveDetailsSettings.mutate({ ...detailsSettings, showFillerLabels })
-                }
-              />
-            </span>
             <div className="chapter-filter-wrapper">
               <div className="search-input-wrapper">
                 <svg
@@ -1827,6 +1814,21 @@ const filteredAndSortedChapters = useMemo(() => {
               effectivePageConcurrency={effectivePageConcurrency}
               performanceMode={performanceMode}
             />
+            <div className="chapter-list__actions-display">
+              <span className="chapter-controls__filler">
+                <span id="chapter-filler-toggle" className="chapter-controls__filler-label">
+                  Show filler labels
+                </span>
+                <Switch
+                  size="sm"
+                  checked={detailsSettings.showFillerLabels}
+                  labelledBy="chapter-filler-toggle"
+                  onChange={(showFillerLabels) =>
+                    saveDetailsSettings.mutate({ ...detailsSettings, showFillerLabels })
+                  }
+                />
+              </span>
+            </div>
             {/* Once selection mode is on, the multi-select toolbar
                 (Select all / Bookmark N / Download N / Cancel) swaps in
                 below the main action row. */}
