@@ -217,10 +217,11 @@ input::placeholder {
 }
 
 /* Phones have a Home nav button — the brand logo is a redundant homepage
-   shortcut, so drop the whole link (icon included) on narrow viewports. */
+   shortcut, so drop it on narrow viewports. Keep its slot in the flow
+   (visibility, not display) so the nav stays exactly where it was. */
 @media (max-width: 640px) {
   .app-header__brand {
-    display: none;
+    visibility: hidden;
   }
 }
 
