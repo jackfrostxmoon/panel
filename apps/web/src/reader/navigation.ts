@@ -320,26 +320,72 @@ export function prevSpreadPage(state: NavigationState, direction: ReadingDirecti
 }
 
 /**
- * Derive adjacent chapter ids from the chapter list (ascending by
- * `chapterNumber`, unnumbered chapters keep their source order and sort
- * last, stable). The reader falls back to this when the chapter-pages
- * payload carries no prev/next ids: a persisted pages row captures
- * prev/next at read time, so a chapter that was the latest when read
- * dead-ends forever even after newer chapters ship — the chapter list
- * (which keeps revalidating) still knows them.
+ * Extract a chapter number from free-ish text ("Chapter 2.2",
+ * "Chapter 244.1646023630", "ch-3"). Prefers a chapter-ish keyword
+ * anchor; falls back to the trailing number group. Cache-busting
+ * suffixes ("chapter-244.1646023630") stay larger than the base chapter,
+ * which is all the ordering needs.
+ */
+export function matchChapterNumber(value: string): number | null {
+  const anchored = /(?:chapter|chap|ch|ep|episode)\s*[._\-–—]*\s*0*(\d+(?:\.\d+)?)/i.exec(value);
+  if (anchored?.[1]) return Number(anchored[1]);
+  const trailing = /(\d+(?:\.\d+)?)\s*$/.exec(value);
+  return trailing?.[1] ? Number(trailing[1]) : null;
+}
+
+/**
+ * Best-effort numeric key for a chapter: the explicit `chapterNumber`,
+ * else parsed from the title or id token ("Chapter 2.2" → 2.2), else the
+ * publish timestamp, else none. Rows persisted via the background prefetch
+ * path carry no number, so a naive "null → last" bucket scrambles
+ * partially-numbered panels.
+ */
+function chapterOrderKey(
+  chapter: {
+    id: string;
+    title?: string | null;
+    chapterNumber: number | null;
+    publishedAt?: string | null;
+  },
+  position: number,
+): [number, number, number] {
+  const num = chapter.chapterNumber;
+  if (typeof num === 'number' && Number.isFinite(num)) return [0, num, position];
+  const parsed =
+    (chapter.title ? matchChapterNumber(chapter.title) : null) ?? matchChapterNumber(chapter.id);
+  if (parsed !== null) return [0, parsed, position];
+  const published = chapter.publishedAt ? Date.parse(chapter.publishedAt) : Number.NaN;
+  if (Number.isFinite(published)) return [1, published, position];
+  return [2, 0, position];
+}
+
+/**
+ * Derive adjacent chapter ids from the chapter list (ascending by chapter
+ * number, unnumbered chapters keep their source order and sort last,
+ * stable). The reader falls back to this when the chapter-pages payload
+ * carries no prev/next ids: a persisted pages row captures prev/next at
+ * read time, so a chapter that was the latest when read dead-ends forever
+ * even after newer chapters ship — the chapter list (which keeps
+ * revalidating) still knows them.
  */
 export function deriveAdjacentChapterIds(
-  chapters: readonly { id: string; chapterNumber: number | null }[],
+  chapters: readonly {
+    id: string;
+    title?: string | null;
+    chapterNumber: number | null;
+    publishedAt?: string | null;
+  }[],
   currentChapterId: string,
 ): { prevChapterId: string | null; nextChapterId: string | null } {
   const indexed = chapters.map((chapter, index) => ({ chapter, index }));
   indexed.sort((a, b) => {
-    const aNum = a.chapter.chapterNumber;
-    const bNum = b.chapter.chapterNumber;
-    const aKey = typeof aNum === 'number' && Number.isFinite(aNum) ? aNum : Number.POSITIVE_INFINITY;
-    const bKey = typeof bNum === 'number' && Number.isFinite(bNum) ? bNum : Number.POSITIVE_INFINITY;
-    if (aKey !== bKey) return aKey - bKey;
-    return a.index - b.index;
+    const aKey = chapterOrderKey(a.chapter, a.index);
+    const bKey = chapterOrderKey(b.chapter, b.index);
+    for (let i = 0; i < aKey.length; i += 1) {
+      const delta = (aKey[i] as number) - (bKey[i] as number);
+      if (delta !== 0) return delta;
+    }
+    return 0;
   });
   const currentIndex = indexed.findIndex((entry) => entry.chapter.id === currentChapterId);
   if (currentIndex < 0) return { prevChapterId: null, nextChapterId: null };
