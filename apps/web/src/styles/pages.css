@@ -2897,32 +2897,6 @@ a.genre-chip {
   background: transparent;
 }
 
-/* Locked (bookmarked, default list) rows — readable only in the Bookmarked
-   view. Dimmed title + lock glyph; interactive clusters keep pointer. */
-.chapter-list__item--locked {
-  cursor: not-allowed;
-}
-
-.chapter-list__item--locked:hover {
-  background: transparent;
-}
-
-.chapter-list__item--locked .chapter-list__title,
-.chapter-list__item--locked .chapter-list__date {
-  opacity: 0.55;
-}
-
-.chapter-list__item--locked button {
-  cursor: pointer;
-}
-
-.chapter-list__lock {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--text-faint);
-}
-
 /* --- Responsive ----------------------------------------------------------- */
 @media (max-width: 768px) {
   .panel-details__hero {

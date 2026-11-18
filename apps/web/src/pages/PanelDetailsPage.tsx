@@ -121,8 +121,7 @@ export function PanelDetailsPage() {
    * Single cycling list control, persisted per browser (localStorage) so the
    * chosen view survives reloads and applies to every panel's details page.
    * Cycles: Newest → Oldest → Bookmarked Newest → Bookmarked Oldest.
-   * `sortOrder` / `listFilter` derive from it for the list pipeline and the
-   * locked-row restriction.
+   * `sortOrder` / `listFilter` derive from it for the list pipeline.
    */
   const [listMode, setListMode] = useState<ChapterListMode>(readListMode);
   // Persist on every change (and once on mount, normalizing invalid storage).
@@ -276,25 +275,6 @@ export function PanelDetailsPage() {
     }
     return ids;
   }, [chapterBookmarks.data]);
-
-  /**
-   * Hard restriction: in the default "All" list, bookmarked rows can't be
-   * opened — they only become readable once the list is showing the
-   * bookmarked chapters. Empty set while the bookmarked view is active
-   * (nothing is locked there).
-   */
-  const lockedChapterIds = useMemo(
-    () => (listFilter === 'all' ? bookmarkedChapterIds : new Set<string>()),
-    [listFilter, bookmarkedChapterIds],
-  );
-  const handleLockedChapterAttempt = useCallback(
-    () =>
-      toast(
-        'This chapter is bookmarked — switch the list to Bookmarked to read it.',
-        'info',
-      ),
-    [toast],
-  );
 
   // Per-panel latest progress — the Continue button's primary source. The
   // global recent list is capped (top 10), so a panel read days ago falls
@@ -1673,8 +1653,8 @@ const filteredAndSortedChapters = useMemo(() => {
             <div className="sort-toggle" role="group" aria-label="Chapter list controls">
               {/* Single cycling list control: Newest → Oldest →
                   Bookmarked Newest → Bookmarked Oldest → back around.
-                  Bookmarked modes also gate which rows may open the reader
-                  (see `lockedChapterIds`). */}
+                  Bookmarked modes only filter the list; every row stays
+                  readable in every mode. */}
               <button
                 type="button"
                 className={`sort-toggle__option${listMode.startsWith('bookmark') ? ' sort-toggle__option--accent-active' : ' sort-toggle__option--active'}`}
@@ -1891,7 +1871,7 @@ const filteredAndSortedChapters = useMemo(() => {
               listFilter === 'bookmarked'
                 ? filter
                   ? undefined
-                  : 'Bookmark chapters with the bookmark button on each row — they will show up here, and this is the only view where they can be opened.'
+                  : 'Bookmark chapters with the bookmark button on each row — they will show up here.'
                 : filter
                   ? undefined
                   : "This source doesn't have any chapters yet."
@@ -1905,8 +1885,6 @@ const filteredAndSortedChapters = useMemo(() => {
               bookmarkedChapterIds={bookmarkedChapterIds}
               panelId={id}
               sortOrder={sortOrder}
-              lockedChapterIds={lockedChapterIds}
-              onLockedChapterAttempt={handleLockedChapterAttempt}
               onChapterClick={navigateToChapter}
               onKeyDown={handleKeyDown}
               onChapterAction={handleChapterAction}
