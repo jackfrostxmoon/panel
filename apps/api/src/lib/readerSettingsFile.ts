@@ -12,6 +12,7 @@ export function loadReaderSettings(): ReaderSettings {
       imageWidth: 60,
       imageWidthPx: null,
       imageHeightPx: null,
+      pixelSizeEnabled: false,
       showProgressBar: true,
       imageGap: false,
       clearToolbarSpace: true,
@@ -42,6 +43,11 @@ export function loadReaderSettings(): ReaderSettings {
   }
   const raw = readFileSync(FILE_PATH, 'utf-8');
   const parsed = JSON.parse(raw) as Partial<ReaderSettings>;
+  // Legacy files without the flag infer it from stored pixel sizes so
+  // existing setups keep their fixed layout; fresh setups default to off.
+  if (parsed.pixelSizeEnabled === undefined) {
+    parsed.pixelSizeEnabled = parsed.imageWidthPx != null || parsed.imageHeightPx != null;
+  }
   return { ...defaults, ...parsed };
 }
 

@@ -14,6 +14,12 @@ export interface ReaderSettings {
   imageWidth: number;
   imageWidthPx: number | null;
   imageHeightPx: number | null;
+  /**
+   * When true, the fixed pixel width/height apply. When false, the stored
+   * width/height values are kept but ignored (readers fall back to the
+   * automatic layout). Defaults to off for fresh setups.
+   */
+  pixelSizeEnabled: boolean;
   showProgressBar: boolean;
   imageGap: boolean;
   clearToolbarSpace: boolean;

@@ -85,6 +85,8 @@ export interface ReaderSettings {
   imageWidthPx: number | null;
   /** Fixed image height in px (user-entered). `null` = use the auto layout preset. */
   imageHeightPx: number | null;
+  /** When true, the fixed pixel width/height apply; when false they are kept but ignored. Off by default. */
+  pixelSizeEnabled: boolean;
   /** Show the bottom progress bar (footer) while reading. */
   showProgressBar: boolean;
   /** Add vertical breathing room between pages in the reader. */
@@ -206,6 +208,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   imageWidth: DEFAULT_IMAGE_WIDTH_PERCENT,
   imageWidthPx: null,
   imageHeightPx: null,
+  pixelSizeEnabled: false,
   showProgressBar: true,
   imageGap: false,
   clearToolbarSpace: true,

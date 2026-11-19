@@ -698,7 +698,8 @@ catalogue (resolved for the active reading direction). Preferences persist to
 adapts its surface to the chosen dark/light reading background.
 
 Other reader polish: vertical, page-by-page or gallery-grid mode, right-to-left or
-left-to-right, dark/light background, image width presets plus custom pixel sizes,
+left-to-right, dark/light background, image width presets plus custom pixel sizes
+(with a "use pixel size" toggle that ignores the stored values without clearing them),
 an adjustable **image brightness** filter, an optional **image gap** between pages
 (off by default), **auto-hiding controls** (the toolbar slides away on scroll-down
 and reappears on scroll-up), fullscreen, lazy-loaded images with reserved aspect

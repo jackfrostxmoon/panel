@@ -87,6 +87,12 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
     imageWidth: finiteNumber(raw['imageWidth'], d.imageWidth, 20, 100),
     imageWidthPx: nullablePx(raw['imageWidthPx']),
     imageHeightPx: nullablePx(raw['imageHeightPx']),
+    // Legacy payloads without the flag infer it from stored pixel sizes so
+    // existing setups keep their fixed layout; fresh setups default to off.
+    pixelSizeEnabled: bool(
+      raw['pixelSizeEnabled'],
+      nullablePx(raw['imageWidthPx']) !== null || nullablePx(raw['imageHeightPx']) !== null,
+    ),
     showProgressBar: bool(raw['showProgressBar'], d.showProgressBar),
     imageGap: bool(raw['imageGap'], d.imageGap),
     clearToolbarSpace: bool(raw['clearToolbarSpace'], d.clearToolbarSpace),

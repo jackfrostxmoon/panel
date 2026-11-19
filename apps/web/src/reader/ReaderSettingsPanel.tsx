@@ -859,6 +859,21 @@ export function ReaderSettingsPanel({
             title="Pixel size"
             hint="Fix the width and/or height in pixels. Set one to scale proportionally; set both to fit the box. Leave blank to use the preset above."
           >
+            <div className="reader-settings__row">
+              <span className="reader-settings__row-copy">
+                <span id="rs-pixelSizeEnabled" className="reader-settings__row-title">
+                  Use pixel size
+                </span>
+                <span className="reader-settings__row-hint">
+                  Off ignores the values below (they’re kept, not cleared) and uses the automatic layout.
+                </span>
+              </span>
+              <Switch
+                checked={settings.pixelSizeEnabled}
+                labelledBy="rs-pixelSizeEnabled"
+                onChange={(pixelSizeEnabled) => onUpdate({ pixelSizeEnabled })}
+              />
+            </div>
             <div className="reader-settings__size-row">
               <NumberField
                 label="Width"
@@ -866,6 +881,7 @@ export function ReaderSettingsPanel({
                 min={1}
                 max={4096}
                 step={50}
+                disabled={!settings.pixelSizeEnabled}
                 onChange={(imageWidthPx) => onUpdate({ imageWidthPx })}
               />
               <NumberField
@@ -874,6 +890,7 @@ export function ReaderSettingsPanel({
                 min={1}
                 max={4096}
                 step={50}
+                disabled={!settings.pixelSizeEnabled}
                 onChange={(imageHeightPx) => onUpdate({ imageHeightPx })}
               />
             </div>
@@ -881,7 +898,7 @@ export function ReaderSettingsPanel({
               type="button"
               className="reader-settings__clear"
               onClick={() => onUpdate({ imageWidthPx: null, imageHeightPx: null })}
-              disabled={settings.imageWidthPx === null && settings.imageHeightPx === null}
+              disabled={!settings.pixelSizeEnabled || (settings.imageWidthPx === null && settings.imageHeightPx === null)}
             >
               Clear pixel size
             </button>

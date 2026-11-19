@@ -223,6 +223,9 @@ export function ReaderPage() {
     () => resolveEffectiveReaderSettings(storedSettings, { performanceMode }),
     [storedSettings, performanceMode],
   );
+  /** Pixel sizes apply only while the toggle is on — off keeps the stored numbers but ignores them. */
+  const imageWidthPx = settings.pixelSizeEnabled ? settings.imageWidthPx : null;
+  const imageHeightPx = settings.pixelSizeEnabled ? settings.imageHeightPx : null;
 
   /** Reload settings from the server file (cross-tab sync target). */
   const reloadSettings = useCallback(() => {
@@ -1509,8 +1512,8 @@ export function ReaderPage() {
               ref={verticalRef}
               pages={pages}
               imageWidth={settings.imageWidth}
-              imageWidthPx={settings.imageWidthPx}
-              imageHeightPx={settings.imageHeightPx}
+              imageWidthPx={imageWidthPx}
+              imageHeightPx={imageHeightPx}
               imageGap={settings.imageGap}
               fitToWidth={settings.fitToWidth}
               direction={settings.direction}
@@ -1539,8 +1542,8 @@ export function ReaderPage() {
               ref={galleryRef}
               pages={pages}
               imageWidth={settings.imageWidth}
-              imageWidthPx={settings.imageWidthPx}
-              imageHeightPx={settings.imageHeightPx}
+              imageWidthPx={imageWidthPx}
+              imageHeightPx={imageHeightPx}
               imageGap={settings.imageGap}
               direction={settings.direction}
               onPageChange={setPage}
