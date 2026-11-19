@@ -41,6 +41,7 @@ import {
 } from '../components/PanelList';
 import { hideCoverPreview, showCoverPreview } from '../components/coverPreview';
 import { SourceFilter } from '../components/SourceFilter';
+import { Switch } from '../components/Switch';
 import { EmptyState, ErrorState } from '../components/StateView';
 import { useToast } from '../components/Toast';
 import { useActiveFolderContents } from '../hooks/useActiveFolderContents';
@@ -327,9 +328,11 @@ export function BookmarksPage() {
           ((chapterBookmarkCountByPanel.get(bookmark.panelId) ?? 0) > 0) ===
             (chapterBookmarkFilter === 'with')) &&
         (includeSet.size === 0 ||
-          [...includeSet].every((g) =>
-            (bookmark.genres ?? []).some((bg) => bg.toLowerCase() === g),
-          )) &&
+          (matchAllGenres
+            ? [...includeSet].every((g) =>
+                (bookmark.genres ?? []).some((bg) => bg.toLowerCase() === g),
+              )
+            : (bookmark.genres ?? []).some((g) => includeSet.has(g.toLowerCase())))) &&
         (excludeSet.size === 0 ||
           !(bookmark.genres ?? []).some((g) => excludeSet.has(g.toLowerCase()))),
     );
@@ -598,19 +601,39 @@ export function BookmarksPage() {
     saveBookmarksSettings.isPending && saveBookmarksSettings.variables
       ? (saveBookmarksSettings.variables.searchOpen ?? false)
       : (bookmarksSettingsQuery.data?.searchOpen ?? false);
+  /**
+   * Include-genre mode: when on, a bookmark must carry every selected genre
+   * (AND); when off, any selected genre matches (OR). Pending-wins so the
+   * switch flips instantly instead of waiting for the round-trip.
+   */
+  const matchAllGenres: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.matchAllGenres ?? false)
+      : (bookmarksSettingsQuery.data?.matchAllGenres ?? false);
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
+    saveBookmarksSettings.mutate({ cardLayout: next, filtersCollapsed, searchOpen, sortByLatestUpdate, autoOpenFolderPicker, matchAllGenres });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed: next, searchOpen, sortByLatestUpdate, autoOpenFolderPicker, matchAllGenres });
   }
 
   function handleSearchToggle() {
-    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen, sortByLatestUpdate, autoOpenFolderPicker });
+    saveBookmarksSettings.mutate({ cardLayout, filtersCollapsed, searchOpen: !searchOpen, sortByLatestUpdate, autoOpenFolderPicker, matchAllGenres });
+  }
+
+  function handleMatchAllGenresToggle(next: boolean) {
+    saveBookmarksSettings.mutate({
+      cardLayout,
+      filtersCollapsed,
+      searchOpen,
+      sortByLatestUpdate,
+      autoOpenFolderPicker,
+      matchAllGenres: next,
+    });
   }
 
   // --- Export / Import (.sql dump) --------------------------------------------
@@ -823,6 +846,17 @@ export function BookmarksPage() {
                 <option value="with">With bookmarked chapters</option>
                 <option value="without">Without bookmarked chapters</option>
               </select>
+              <span className="search-filters__switch">
+                <span className="search-filters__label" id="bookmarks-match-all-genres-label">
+                  Match all genres
+                </span>
+                <Switch
+                  checked={matchAllGenres}
+                  onChange={handleMatchAllGenresToggle}
+                  labelledBy="bookmarks-match-all-genres-label"
+                  size="sm"
+                />
+              </span>
               <GenreMultiSelect
                 label="Filter by genre"
                 options={availableGenres}

@@ -77,6 +77,11 @@ export interface LatestPageSettings {
   filtersCollapsed: boolean;
   /** Show the toolbar search bar (dedicated toggle, independent of filters). */
   searchOpen: boolean;
+  /**
+   * When the include-genre filter has more than one pick, require a panel to
+   * carry every selected genre (AND). Off = any selected genre matches (OR).
+   */
+  matchAllGenres: boolean;
 }
 
 /** Default: classic Previous/Next pagination, cover cards, filters collapsed. */
@@ -85,6 +90,7 @@ export const DEFAULT_LATEST_PAGE_SETTINGS: LatestPageSettings = {
   cardLayout: DEFAULT_CARD_LAYOUT,
   filtersCollapsed: true,
   searchOpen: false,
+  matchAllGenres: false,
 };
 
 /**
@@ -132,6 +138,11 @@ export interface BookmarksPageSettings {
    * `false` keeps the bookmark in All bookmarks without interrupting.
    */
   autoOpenFolderPicker: boolean;
+  /**
+   * When the include-genre filter has more than one pick, require a bookmark
+   * to carry every selected genre (AND). Off = any selected genre matches (OR).
+   */
+  matchAllGenres: boolean;
 }
 
 /** Default: cover cards, filters collapsed, sorted by latest update, folder picker on. */
@@ -141,6 +152,7 @@ export const DEFAULT_BOOKMARKS_PAGE_SETTINGS: BookmarksPageSettings = {
   searchOpen: false,
   sortByLatestUpdate: true,
   autoOpenFolderPicker: true,
+  matchAllGenres: false,
 };
 
 /**

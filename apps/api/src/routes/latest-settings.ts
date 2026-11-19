@@ -18,14 +18,21 @@ export function latestSettingsRoutes(): Hono {
       typeof (body as { infiniteScroll?: unknown }).infiniteScroll !== 'boolean' ||
       !isCardLayout((body as { cardLayout?: unknown }).cardLayout) ||
       typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
-      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean'
+      typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean' ||
+      typeof (body as { matchAllGenres?: unknown }).matchAllGenres !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean }.',
+        'Request body must be { infiniteScroll: boolean, cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, matchAllGenres: boolean }.',
       );
     }
-    const typed = body as { infiniteScroll: boolean; cardLayout: CardLayout; filtersCollapsed: boolean; searchOpen: boolean };
+    const typed = body as {
+      infiniteScroll: boolean;
+      cardLayout: CardLayout;
+      filtersCollapsed: boolean;
+      searchOpen: boolean;
+      matchAllGenres: boolean;
+    };
     return c.json(
       ok(
         saveLatestSettings({
@@ -33,6 +40,7 @@ export function latestSettingsRoutes(): Hono {
           cardLayout: typed.cardLayout,
           filtersCollapsed: typed.filtersCollapsed,
           searchOpen: typed.searchOpen,
+          matchAllGenres: typed.matchAllGenres,
         }),
       ),
     );

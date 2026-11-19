@@ -32,6 +32,10 @@ export function loadBookmarksSettings(): BookmarksPageSettings {
         typeof parsed.autoOpenFolderPicker === 'boolean'
           ? parsed.autoOpenFolderPicker
           : DEFAULT_BOOKMARKS_PAGE_SETTINGS.autoOpenFolderPicker,
+      matchAllGenres:
+        typeof parsed.matchAllGenres === 'boolean'
+          ? parsed.matchAllGenres
+          : DEFAULT_BOOKMARKS_PAGE_SETTINGS.matchAllGenres,
     };
   } catch {
     return { ...DEFAULT_BOOKMARKS_PAGE_SETTINGS };
@@ -46,6 +50,7 @@ export function saveBookmarksSettings(settings: BookmarksPageSettings): Bookmark
     searchOpen: settings.searchOpen === true,
     sortByLatestUpdate: settings.sortByLatestUpdate !== false,
     autoOpenFolderPicker: settings.autoOpenFolderPicker !== false,
+    matchAllGenres: settings.matchAllGenres === true,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

@@ -28,6 +28,10 @@ export function loadLatestSettings(): LatestPageSettings {
         typeof parsed.searchOpen === 'boolean'
           ? parsed.searchOpen
           : DEFAULT_LATEST_PAGE_SETTINGS.searchOpen,
+      matchAllGenres:
+        typeof parsed.matchAllGenres === 'boolean'
+          ? parsed.matchAllGenres
+          : DEFAULT_LATEST_PAGE_SETTINGS.matchAllGenres,
     };
   } catch {
     return { ...DEFAULT_LATEST_PAGE_SETTINGS };
@@ -41,6 +45,7 @@ export function saveLatestSettings(settings: LatestPageSettings): LatestPageSett
     cardLayout: coerceCardLayout(settings.cardLayout),
     filtersCollapsed: settings.filtersCollapsed !== false,
     searchOpen: settings.searchOpen === true,
+    matchAllGenres: settings.matchAllGenres === true,
   };
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });

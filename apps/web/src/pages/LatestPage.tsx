@@ -115,6 +115,15 @@ export function LatestPage() {
     saveLatestSettings.isPending && saveLatestSettings.variables
       ? (saveLatestSettings.variables.searchOpen ?? false)
       : (latestSettingsQuery.data?.searchOpen ?? false);
+  /**
+   * Include-genre mode: when on, a panel must carry every selected genre
+   * (AND); when off, any selected genre matches (OR). Pending-wins so the
+   * switch flips instantly instead of waiting for the round-trip.
+   */
+  const matchAllGenres: boolean =
+    saveLatestSettings.isPending && saveLatestSettings.variables
+      ? (saveLatestSettings.variables.matchAllGenres ?? false)
+      : (latestSettingsQuery.data?.matchAllGenres ?? false);
 
   // In infinite mode the base query is pinned to page 1 and extra pages
   // are appended below (fetched imperatively so the hook count stays
@@ -292,7 +301,11 @@ export function LatestPage() {
         // not "doesn't match". Dropping them would hide genuine matches.
         (includeSet.size === 0 ||
           m.genres.length === 0 ||
-          [...includeSet].every((g) => m.genres.some((mg) => mg.toLowerCase() === g))) &&
+          (matchAllGenres
+            ? [...includeSet].every((g) =>
+                m.genres.some((mg) => mg.toLowerCase() === g),
+              )
+            : m.genres.some((g) => includeSet.has(g.toLowerCase())))) &&
         (excludeSet.size === 0 ||
           !m.genres.some((g) => excludeSet.has(g.toLowerCase()))),
     );
@@ -448,21 +461,31 @@ export function LatestPage() {
       else nextParams.delete('page');
       setParams(nextParams, { replace: true });
     }
-    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed, searchOpen });
+    saveLatestSettings.mutate({ infiniteScroll: next, cardLayout, filtersCollapsed, searchOpen, matchAllGenres });
   }
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed, searchOpen });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout: next, filtersCollapsed, searchOpen, matchAllGenres });
   }
 
   function handleFiltersToggle(next: boolean) {
     if (next === filtersCollapsed) return;
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next, searchOpen });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed: next, searchOpen, matchAllGenres });
   }
 
   function handleSearchToggle() {
-    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed, searchOpen: !searchOpen });
+    saveLatestSettings.mutate({ infiniteScroll, cardLayout, filtersCollapsed, searchOpen: !searchOpen, matchAllGenres });
+  }
+
+  function handleMatchAllGenresToggle(next: boolean) {
+    saveLatestSettings.mutate({
+      infiniteScroll,
+      cardLayout,
+      filtersCollapsed,
+      searchOpen,
+      matchAllGenres: next,
+    });
   }
 
   function changeSource(next: string) {
@@ -594,6 +617,17 @@ export function LatestPage() {
               <option value="hiatus">Hiatus</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <span className="search-filters__switch">
+              <span className="search-filters__label" id="latest-match-all-genres-label">
+                Match all genres
+              </span>
+              <Switch
+                checked={matchAllGenres}
+                onChange={handleMatchAllGenresToggle}
+                labelledBy="latest-match-all-genres-label"
+                size="sm"
+              />
+            </span>
             <GenreMultiSelect
               label="Filter by genre"
               options={genreOptions}

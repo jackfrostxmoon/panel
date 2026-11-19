@@ -19,11 +19,12 @@ export function bookmarksSettingsRoutes(): Hono {
       typeof (body as { filtersCollapsed?: unknown }).filtersCollapsed !== 'boolean' ||
       typeof (body as { searchOpen?: unknown }).searchOpen !== 'boolean' ||
       typeof (body as { sortByLatestUpdate?: unknown }).sortByLatestUpdate !== 'boolean' ||
-      typeof (body as { autoOpenFolderPicker?: unknown }).autoOpenFolderPicker !== 'boolean'
+      typeof (body as { autoOpenFolderPicker?: unknown }).autoOpenFolderPicker !== 'boolean' ||
+      typeof (body as { matchAllGenres?: unknown }).matchAllGenres !== 'boolean'
     ) {
       throw new AppError(
         ErrorCodes.VALIDATION_ERROR,
-        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, sortByLatestUpdate: boolean, autoOpenFolderPicker: boolean }.',
+        'Request body must be { cardLayout: "cards" | "list", filtersCollapsed: boolean, searchOpen: boolean, sortByLatestUpdate: boolean, autoOpenFolderPicker: boolean, matchAllGenres: boolean }.',
       );
     }
     const typed = body as {
@@ -32,6 +33,7 @@ export function bookmarksSettingsRoutes(): Hono {
       searchOpen: boolean;
       sortByLatestUpdate: boolean;
       autoOpenFolderPicker: boolean;
+      matchAllGenres: boolean;
     };
     return c.json(
       ok(
@@ -41,6 +43,7 @@ export function bookmarksSettingsRoutes(): Hono {
           searchOpen: typed.searchOpen,
           sortByLatestUpdate: typed.sortByLatestUpdate,
           autoOpenFolderPicker: typed.autoOpenFolderPicker,
+          matchAllGenres: typed.matchAllGenres,
         }),
       ),
     );
