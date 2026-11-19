@@ -289,7 +289,7 @@ export function BookmarksPage() {
     return genres.sort((a, b) => a.localeCompare(b));
   }, [sourceData]);
 
-  /** Case-insensitive set of the selected include genres (OR semantics). */
+  /** Case-insensitive set of the selected include genres (AND semantics). */
   const includeSet = useMemo(
     () => new Set(genreFilter.map((g) => g.toLowerCase())),
     [genreFilter],
@@ -327,7 +327,9 @@ export function BookmarksPage() {
           ((chapterBookmarkCountByPanel.get(bookmark.panelId) ?? 0) > 0) ===
             (chapterBookmarkFilter === 'with')) &&
         (includeSet.size === 0 ||
-          (bookmark.genres ?? []).some((g) => includeSet.has(g.toLowerCase()))) &&
+          [...includeSet].every((g) =>
+            (bookmark.genres ?? []).some((bg) => bg.toLowerCase() === g),
+          )) &&
         (excludeSet.size === 0 ||
           !(bookmark.genres ?? []).some((g) => excludeSet.has(g.toLowerCase()))),
     );

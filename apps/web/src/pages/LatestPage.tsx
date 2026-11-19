@@ -272,7 +272,7 @@ export function LatestPage() {
       ? genreCatalog.data.genres
       : availableGenres;
 
-  /** Case-insensitive set of the selected include genres (OR semantics). */
+  /** Case-insensitive set of the selected include genres (AND semantics). */
   const includeSet = useMemo(
     () => new Set(genreFilter.map((g) => g.toLowerCase())),
     [genreFilter],
@@ -292,7 +292,7 @@ export function LatestPage() {
         // not "doesn't match". Dropping them would hide genuine matches.
         (includeSet.size === 0 ||
           m.genres.length === 0 ||
-          m.genres.some((g) => includeSet.has(g.toLowerCase()))) &&
+          [...includeSet].every((g) => m.genres.some((mg) => mg.toLowerCase() === g))) &&
         (excludeSet.size === 0 ||
           !m.genres.some((g) => excludeSet.has(g.toLowerCase()))),
     );

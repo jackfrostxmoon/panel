@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * Multi-select genre picker: a pill button (matching the filter-select
  * look) that opens a checkbox popup. Used for the include-genre and
- * exclude-genre filters on the Latest and Search pages, which accept
- * any number of labels (include semantics are OR).
+ * exclude-genre filters on the Latest, Search and Bookmarks pages. The
+ * component just reports the checked labels; the consumer decides whether
+ * include means "any match" (OR) or "all match" (AND).
  *
  * Closes on outside click / Escape; fully keyboard-operable through the
  * native button + checkbox inputs.
