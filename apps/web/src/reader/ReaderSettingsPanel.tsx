@@ -914,7 +914,7 @@ export function ReaderSettingsPanel({
                 Smooth-scroll keys
               </span>
               <span className="reader-settings__row-hint">
-                Hold W/S or ↑/↓ to smooth-scroll at the speed above, without holding Shift. Vertical mode only.
+                Hold W/S or ↑/↓ to smooth-scroll at the speed above, without holding Shift. Vertical and gallery modes.
               </span>
             </span>
             <Switch

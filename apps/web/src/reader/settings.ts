@@ -94,8 +94,9 @@ export interface ReaderSettings {
   /** How fast the reader auto-scrolls while holding Shift+W / Shift+S. */
   scrollSpeed: ScrollSpeed;
   /**
-   * When true, plain W/S / ArrowUp/ArrowDown hold-to-smooth-scroll in vertical
-   * mode at `scrollSpeed` (no Shift needed), replacing the step keys.
+   * When true, plain W/S / ArrowUp/ArrowDown hold-to-smooth-scroll in
+   * vertical and gallery modes at `scrollSpeed` (no Shift needed),
+   * replacing the step keys.
    */
   smoothScrollKeys: boolean;
   /** Image loading strategy; defaults to loading pages as you scroll. */

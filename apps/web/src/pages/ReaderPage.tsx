@@ -808,8 +808,8 @@ export function ReaderPage() {
         return;
       }
       if (intent === 'scrollUp' || intent === 'scrollDown') {
-        // Smooth continuous scroll — vertical mode only.
-        if (settings.mode !== 'vertical') return;
+        // Smooth continuous scroll — vertical and gallery modes.
+        if (settings.mode !== 'vertical' && settings.mode !== 'gallery') return;
         event.preventDefault();
         if (intent === 'scrollUp') markNavScroll(50);
         else clearNavScroll();
@@ -1131,7 +1131,7 @@ export function ReaderPage() {
   }, []);
 
   /**
-   * Smooth continuous scroll (Shift+W / Shift+S, or plain W/S with smooth-scroll keys) — vertical mode only.
+   * Smooth continuous scroll (Shift+W / Shift+S, or plain W/S with smooth-scroll keys) — vertical and gallery modes.
    *
    * A requestAnimationFrame loop nudges `.reader-content`'s scrollTop by
    * `scrollSpeedPx × elapsedSeconds` each frame, so it stays smooth and

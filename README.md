@@ -650,8 +650,10 @@ reading settings ("Keyboard scroll"; the default `Native` smooth-scrolls by
 80% of the viewport with easing, or pick 1–3 quantised pages per keypress,
 which behave exactly like mouse-wheel notches) — while gallery mode keeps an
 eased step-scroll of 80% of the viewport.
-In vertical mode only, `Shift+W` / `Shift+S` (or
+In vertical and gallery modes, `Shift+W` / `Shift+S` (or
 `Shift+↑` / `Shift+↓`) scroll continuously while held — release to stop.
+When the "Smooth-scroll keys" reading setting is on, plain `W`/`S` (or `↑`/`↓`)
+are hold-to-glide instead of step keys in those modes.
 
 ### Latest page pagination
 

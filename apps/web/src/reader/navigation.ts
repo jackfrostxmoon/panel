@@ -81,6 +81,8 @@ export function isEditableKeyTarget(
  *   W / ↑   → "stepUp"       (vertical: previous page, like one wheel notch;
  *                             gallery: smooth step scroll up)
  *   S / ↓   → "stepDown"     (vertical: next page; gallery: step scroll down)
+ *                             (with smoothScrollKeys on, plain W/S glide instead —
+ *                             see below; both vertical and gallery modes)
  *   G      → "toggleGap"     (bare press only — toggle breathing room between images)
  *   V      → "toggleBookmark" (bare press only — bookmark / unbookmark the current chapter)
   *   C      → "toggleFitHeight" in paged mode (fit the page to the viewport height)
@@ -91,10 +93,11 @@ export function isEditableKeyTarget(
  * and Ctrl/Meta/Alt guard browser shortcuts (copy/paste/find) from being
  * hijacked — e.g. Ctrl+C must keep copying, Shift+V must not bookmark.
  *
- * When `smoothScrollKeys` is on, plain W / ↑ and S / ↓ in vertical mode act
+ * When `smoothScrollKeys` is on, plain W / ↑ and S / ↓ in vertical and
+ * gallery modes act
  * like their Shift-held variants ("scrollUp"/"scrollDown" — hold to glide at
  * scroll speed, release to stop) and the step intents are not emitted there.
- * Gallery and paged modes are unaffected.
+ * Paged mode is unaffected.
  *
  * In RTL reading direction the left/right (and A/D) keys swap their chapter
  * meaning: "forward" is the LEFT arrow / A.
@@ -149,8 +152,9 @@ export function intentForKey(
   if (shiftKey && (key === 'ArrowUp' || key === 'w' || key === 'W')) return 'scrollUp';
   if (shiftKey && (key === 'ArrowDown' || key === 's' || key === 'S')) return 'scrollDown';
 
-  // Smooth-scroll keys toggle: plain W/S / arrows glide in vertical mode.
-  if (smoothScrollKeys && !shiftKey && mode === 'vertical') {
+  // Smooth-scroll keys toggle: plain W/S / arrows glide in vertical and
+  // gallery modes.
+  if (smoothScrollKeys && !shiftKey && (mode === 'vertical' || mode === 'gallery')) {
     if (key === 'ArrowUp' || key === 'w' || key === 'W') return 'scrollUp';
     if (key === 'ArrowDown' || key === 's' || key === 'S') return 'scrollDown';
   }

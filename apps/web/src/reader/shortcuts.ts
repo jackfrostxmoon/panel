@@ -123,7 +123,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: 'scrollUp',
     label: 'Scroll up (smooth)',
-    modes: ['vertical'],
+    modes: ['vertical', 'gallery'],
     keys: [
       { code: 'ArrowUp', label: '↑', reversible: false, modifier: 'Shift' },
       { code: 'w', label: 'W', reversible: false, modifier: 'Shift' },
@@ -133,7 +133,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: 'scrollDown',
     label: 'Scroll down (smooth)',
-    modes: ['vertical'],
+    modes: ['vertical', 'gallery'],
     keys: [
       { code: 'ArrowDown', label: '↓', reversible: false, modifier: 'Shift' },
       { code: 's', label: 'S', reversible: false, modifier: 'Shift' },
