@@ -491,9 +491,9 @@ export function LatestPage() {
       searchOpen,
       matchAllGenres: next,
     });
-    // A different match mode is a different result set — rewind the
-    // infinite-scroll depth so stale appended pages never mix in.
-    if (infiniteScroll) rewindPageParam();
+    // A different match mode is a different result set — rewind the depth
+    // so stale appended pages never mix in (and paged mode restarts at 1).
+    rewindPageParam();
   }
 
   function changeSource(next: string) {
@@ -524,13 +524,24 @@ export function LatestPage() {
   /** Genre refinements reset the result identity AND the URL depth. */
   function updateGenreFilter(next: string[]) {
     setGenreFilter(next);
-    if (infiniteScroll) rewindPageParam();
+    // A different genre set is a different result set, so restart at page 1
+    // in paged mode too: an empty deep page must not strand the user on a
+    // URL they would have to edit by hand.
+    rewindPageParam();
   }
 
   /** Genre-exclusion refinements reset the result identity AND the URL depth. */
   function updateExcludedGenre(next: string[]) {
     setExcludedGenre(next);
-    if (infiniteScroll) rewindPageParam();
+    rewindPageParam();
+  }
+
+  /** Reset every refinement and return to page 1. */
+  function clearFilters() {
+    setStatusFilter('');
+    setGenreFilter([]);
+    setExcludedGenre([]);
+    rewindPageParam();
   }
 
   return (
@@ -549,7 +560,10 @@ export function LatestPage() {
             <SearchBar showPasteButton />
           </div>
         )}
-        {layoutReady && latest.isSuccess && latest.data.results.length > 0 && (
+        {/* Filters stay mounted even when the current genre combination
+            yields nothing — hiding them would remove the only way to undo
+            the combination that produced the empty page. */}
+        {layoutReady && latest.isSuccess && (
           <>
           <div className="search-filters search-filters--toggles" role="group" aria-label="Latest view options">
             {/* Infinite-scroll toggle first — left of the status dropdown.
@@ -659,11 +673,7 @@ export function LatestPage() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm"
-                onClick={() => {
-                  setStatusFilter('');
-                  setGenreFilter([]);
-                  setExcludedGenre([]);
-                }}
+                onClick={clearFilters}
               >
                 Clear filters
               </button>
@@ -685,7 +695,21 @@ export function LatestPage() {
       )}
 
       {latest.isSuccess && allResults.length === 0 && (
-        <EmptyState title="No updates found" message="Try refreshing in a little while." />
+        <EmptyState
+          title={filtersActive ? 'No matches' : 'No updates found'}
+          message={
+            filtersActive
+              ? 'No updates match the selected filters.'
+              : 'Try refreshing in a little while.'
+          }
+          action={
+            filtersActive ? (
+              <button type="button" className="btn btn--primary" onClick={clearFilters}>
+                Clear filters
+              </button>
+            ) : undefined
+          }
+        />
       )}
 
       {latest.data && allResults.length > 0 && (

@@ -60,6 +60,16 @@ export function GenreMultiSelect({
   }
 
   const active = selected.length > 0;
+  /**
+   * Selected labels are always listed, even when `options` no longer
+   * contains them: a filter combination that returns nothing can leave the
+   * option source empty, and a checkbox you cannot see is a checkbox you
+   * cannot uncheck (the bulk Clear would be the only escape).
+   */
+  const listed = [...options];
+  for (const option of selected) {
+    if (!listed.includes(option)) listed.push(option);
+  }
   return (
     <span className="genre-multi" ref={rootRef}>
       <button
@@ -96,10 +106,10 @@ export function GenreMultiSelect({
           role="group"
           aria-label={label}
         >
-          {options.length === 0 && (
+          {listed.length === 0 && (
             <span className="genre-multi__empty">No genres to choose from.</span>
           )}
-          {options.map((option) => (
+          {listed.map((option) => (
             <label key={option} className="genre-multi__option">
               <input
                 type="checkbox"

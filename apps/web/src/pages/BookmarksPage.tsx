@@ -771,7 +771,9 @@ export function BookmarksPage() {
             </>
           )}
         />
-        {layoutReady && bookmarks.isSuccess && bookmarks.data.length > 0 && (
+        {/* Keep the toolbar mounted when filters narrow the view to nothing:
+            hiding it would remove the only way to unselect a genre. */}
+        {layoutReady && bookmarks.isSuccess && (bookmarks.data.length > 0 || filtersActive) && (
           <>
             <SourceFilter value={sourceFilter} onChange={setSourceFilter} allowAll />
             <div className="search-filters search-filters--toggles" role="group" aria-label="Bookmarks view options">
