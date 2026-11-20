@@ -847,17 +847,20 @@ export function BookmarksPage() {
                 <option value="with">With bookmarked chapters</option>
                 <option value="without">Without bookmarked chapters</option>
               </select>
-              <span className="search-filters__switch">
-                <span className="search-filters__label" id="bookmarks-match-all-genres-label">
-                  Match all genres
+              {/* AND vs OR only differs with two or more includes. */}
+              {genreFilter.length > 1 && (
+                <span className="search-filters__switch">
+                  <span className="search-filters__label" id="bookmarks-match-all-genres-label">
+                    Match all genres
+                  </span>
+                  <Switch
+                    checked={matchAllGenres}
+                    onChange={handleMatchAllGenresToggle}
+                    labelledBy="bookmarks-match-all-genres-label"
+                    size="sm"
+                  />
                 </span>
-                <Switch
-                  checked={matchAllGenres}
-                  onChange={handleMatchAllGenresToggle}
-                  labelledBy="bookmarks-match-all-genres-label"
-                  size="sm"
-                />
-              </span>
+              )}
               <GenreMultiSelect
                 label="Filter by genre"
                 options={availableGenres}

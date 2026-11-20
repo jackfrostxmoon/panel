@@ -625,17 +625,20 @@ export function LatestPage() {
               <option value="hiatus">Hiatus</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <span className="search-filters__switch">
-              <span className="search-filters__label" id="latest-match-all-genres-label">
-                Match all genres
+            {/* AND vs OR only differs with two or more includes. */}
+            {genreFilter.length > 1 && (
+              <span className="search-filters__switch">
+                <span className="search-filters__label" id="latest-match-all-genres-label">
+                  Match all genres
+                </span>
+                <Switch
+                  checked={matchAllGenres}
+                  onChange={handleMatchAllGenresToggle}
+                  labelledBy="latest-match-all-genres-label"
+                  size="sm"
+                />
               </span>
-              <Switch
-                checked={matchAllGenres}
-                onChange={handleMatchAllGenresToggle}
-                labelledBy="latest-match-all-genres-label"
-                size="sm"
-              />
-            </span>
+            )}
             <GenreMultiSelect
               label="Filter by genre"
               options={genreOptions}
