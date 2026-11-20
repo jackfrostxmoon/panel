@@ -477,7 +477,13 @@ export function SearchPage() {
       <div className="search-toolbar">
         {query.length > 0 && <SourceFilter value={source} onChange={changeSource} />}
         <div className="search-toolbar__search">
-          <SearchBar initialValue={query} autoFocus={query.length === 0} showPasteButton />
+          <SearchBar
+            initialValue={query}
+            autoFocus={query.length === 0}
+            showPasteButton
+            source={source}
+            mode={mode}
+          />
         </div>
         {query.length > 0 && <SearchModeToggle mode={mode} onChange={changeMode} labelId="search-mode-label" />}
           {layoutReady && search.isSuccess && search.data.results.length > 0 && (

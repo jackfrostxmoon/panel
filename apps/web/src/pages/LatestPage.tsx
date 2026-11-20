@@ -557,7 +557,7 @@ export function LatestPage() {
           <div className="latest-toolbar__search">
             {/* Regular size to match the pill-strip height; submits navigate
                 to the search page. Toggled by the dedicated search button. */}
-            <SearchBar showPasteButton />
+            <SearchBar showPasteButton source={source} />
           </div>
         )}
         {/* Filters stay mounted even when the current genre combination

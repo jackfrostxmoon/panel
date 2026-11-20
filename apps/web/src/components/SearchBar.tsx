@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { SearchMode } from '@panel/shared';
 import { useResolvePanelUrl } from '../api/hooks';
 import { useToast } from './Toast';
 import {
@@ -15,6 +16,18 @@ import {
 function asPanelUrl(value: string): string | null {
   const trimmed = value.trim();
   return /^https?:\/\/\S+$/i.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * `/search` query string for a submit: the term, plus the toolbar's source
+ * and credit mode when known. Omitting `mode` for title searches keeps the
+ * URL clean (the search page defaults to title mode).
+ */
+function searchQueryString(query: string, source?: string, mode: SearchMode = 'title'): string {
+  const params = new URLSearchParams({ q: query });
+  if (source) params.set('source', source);
+  if (mode !== 'title') params.set('mode', mode);
+  return params.toString();
 }
 
 const PLACEHOLDER_PHRASES = [
@@ -96,18 +109,29 @@ function useTypewriterPlaceholder(active: boolean, onCycle?: () => void): string
  * Pasting a source url (e.g. https://hiperdex.com/manga/<slug>) opens that
  * series directly instead of searching.
  * Pressing "/" anywhere focuses the field; the hint chip hides while typing.
+ *
+ * `source` / `mode` carry the toolbar's current adapter and search mode into
+ * the /search navigation so resubmitting from the search or latest page
+ * stays on that source (and credit mode) instead of snapping back to the
+ * default source.
  */
 export function SearchBar({
   initialValue = '',
   autoFocus = false,
   large = false,
   showPasteButton = false,
+  source,
+  mode = 'title',
 }: {
   initialValue?: string;
   autoFocus?: boolean;
   large?: boolean;
   /** Show a one-tap clipboard-paste button (used by the home hero). */
   showPasteButton?: boolean;
+  /** Active listing source to keep when the form submits. */
+  source?: string;
+  /** Active search mode to keep (author/artist stay selected on resubmit). */
+  mode?: SearchMode;
 }) {
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -207,10 +231,10 @@ export function SearchBar({
         }
       }
 
-      navigate(`/search?q=${encodeURIComponent(query)}`);
+      navigate(`/search?${searchQueryString(query, source, mode)}`);
       setHistoryOpen(false);
     },
-    [history, navigate, resolveUrl, toast],
+    [history, navigate, resolveUrl, toast, source, mode],
   );
 
   const submit = (event: FormEvent) => {
