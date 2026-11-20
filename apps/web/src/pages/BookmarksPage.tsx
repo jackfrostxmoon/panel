@@ -159,6 +159,16 @@ export function BookmarksPage() {
       ? (saveBookmarksSettings.variables.autoOpenFolderPicker ?? true)
       : (bookmarksSettingsQuery.data?.autoOpenFolderPicker ?? true);
   /**
+   * Include-genre mode: when on, a bookmark must carry every selected genre
+   * (AND); when off, any selected genre matches (OR). Pending-wins so the
+   * switch flips instantly instead of waiting for the round-trip. Declared
+   * before the sort memo because the memo reads it.
+   */
+  const matchAllGenres: boolean =
+    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
+      ? (saveBookmarksSettings.variables.matchAllGenres ?? false)
+      : (bookmarksSettingsQuery.data?.matchAllGenres ?? false);
+  /**
    * Latest-updates feed for the single selected source (pages 1–3). Used to
    * re-order the shelf the way the source site itself lists recently
    * updated titles, instead of the local chapter-cache recency sort.
@@ -344,7 +354,7 @@ export function BookmarksPage() {
     // keep the default recency sort behind them).
     if (sourceFilter && latestFeedReady) return rankByLatestFeed(filtered, latestFeedPages);
     return sortBookmarks(filtered);
-  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, chapterBookmarkFilter, chapterBookmarkCountByPanel, includeSet, excludeSet, allTags.data, latestFeedReady, latestFeedPages, sortByLatestUpdate]);
+  }, [sourceData, sourceFilter, hiddenSources, query, tagFilter, statusFilter, chapterBookmarkFilter, chapterBookmarkCountByPanel, includeSet, excludeSet, matchAllGenres, allTags.data, latestFeedReady, latestFeedPages, sortByLatestUpdate]);
 
   /** Render window into `sorted` (see PAGE_SIZE): only these cards are
    *  mounted, so a 200-title shelf issues ~30 cover fetches up front and
@@ -601,15 +611,6 @@ export function BookmarksPage() {
     saveBookmarksSettings.isPending && saveBookmarksSettings.variables
       ? (saveBookmarksSettings.variables.searchOpen ?? false)
       : (bookmarksSettingsQuery.data?.searchOpen ?? false);
-  /**
-   * Include-genre mode: when on, a bookmark must carry every selected genre
-   * (AND); when off, any selected genre matches (OR). Pending-wins so the
-   * switch flips instantly instead of waiting for the round-trip.
-   */
-  const matchAllGenres: boolean =
-    saveBookmarksSettings.isPending && saveBookmarksSettings.variables
-      ? (saveBookmarksSettings.variables.matchAllGenres ?? false)
-      : (bookmarksSettingsQuery.data?.matchAllGenres ?? false);
 
   function handleLayoutChange(next: CardLayout) {
     if (next === cardLayout) return;

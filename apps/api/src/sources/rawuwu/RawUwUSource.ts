@@ -20,7 +20,7 @@ import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
-import { unionSearchResults } from '../../lib/searchUnion.js';
+import { intersectSearchResults, unionSearchResults } from '../../lib/searchUnion.js';
 import {
   chapterNumberFromToken,
   hasNextPage,
@@ -255,14 +255,16 @@ export class RawUwUSource implements PanelSource {
    * fetch one archive each and union (approximate paging). The dropdown
    * label resolves to the exact archive URL through the nav genre index
    * (the numeric id is opaque, so URLs can't be guessed); an unresolvable
-   * label falls back to the unfiltered listing (the UI still narrows
-   * client-side). Exclusion is applied centrally by the service (cards
-   * are enriched to full genres first).
+   * label fails closed (empty page) — this site publishes no genre index,
+   * so an unfiltered fallback would leak non-matching titles. Exclusion is
+   * applied centrally by the service (cards are enriched to full genres
+   * first).
    */
   async latestByGenre(
     genres: string[] | null,
     _excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
@@ -275,7 +277,11 @@ export class RawUwUSource implements PanelSource {
       const href = links.find(
         (entry) => entry.label.toLowerCase() === label.toLowerCase(),
       )?.href;
-      if (!href) return this.latest(p);
+      // Fail closed: this site publishes no genre index, so an unresolved
+      // label means membership cannot be verified. Serving the unfiltered
+      // feed would leak titles that do not carry the requested genres
+      // (cards carry no genre markup for the UI to narrow either).
+      if (!href) return { results: [], page: p, hasMore: false };
       hrefs.push(href);
     }
     const fetchArchive = async (href: string): Promise<SourceSearchResult> => {
@@ -291,7 +297,7 @@ export class RawUwUSource implements PanelSource {
     };
     if (hrefs.length === 1) return fetchArchive(hrefs[0] as string);
     const settled = await Promise.allSettled(hrefs.map((href) => fetchArchive(href)));
-    return unionSearchResults(settled, p);
+    return matchAllGenres ? intersectSearchResults(settled, p) : unionSearchResults(settled, p);
   }
 
   async getPanel(nativePanelId: string): Promise<Panel> {

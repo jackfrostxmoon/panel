@@ -58,6 +58,31 @@ function applyExcludedGenres<T extends { genres: string[] }>(
 }
 
 /**
+ * AND include enforcement for listings whose cards carry genre labels.
+ * Positive-evidence only, mirroring the exclude filter: an item is dropped
+ * only when its (cleaned) genres are known and do NOT contain every
+ * requested label. Genre-less items are kept — "unknown" is not "doesn't
+ * match" — so adapters that already verified membership server-side
+ * (native AND or archive intersection) keep their results even when the
+ * metadata cache has no enrichment entry.
+ */
+function applyIncludedGenres<T extends { genres: string[] }>(
+  results: T[],
+  includedGenres: readonly string[] | null,
+  matchAll: boolean,
+): T[] {
+  const lowered = (includedGenres ?? [])
+    .map((genre) => genre.trim().toLowerCase())
+    .filter(Boolean);
+  if (lowered.length === 0 || !matchAll) return results;
+  return results.filter((item) => {
+    if (item.genres.length === 0) return true;
+    const have = new Set(item.genres.map((genre) => genre.toLowerCase()));
+    return lowered.every((genre) => have.has(genre));
+  });
+}
+
+/**
  * Normalize a genre label list from the HTTP layer: trim, drop empties,
  * dedupe case-insensitively (first display form wins). Null when nothing
  * remains so callers can branch on "no constraint".
@@ -437,29 +462,38 @@ export class PanelService {
     sources?: string[],
     genres?: string[] | null,
     excludedGenres?: string[] | null,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     const toQuery = this.resolveSources(sources);
     const filter = sources && sources.length > 0 ? sources.join(',') : '*';
     // Genre constraints get their own cache + persistence keys so a
     // filtered list can never be served as (or overwrite) the unfiltered
-    // one. Unfiltered calls keep the historic key (existing caches stay).
+    // one. The include match mode (AND vs OR) is part of the identity too —
+    // the same labels produce different result sets. Unfiltered calls keep
+    // the historic key (existing caches stay).
     const g = normalizeGenreLabels(genres);
     const x = normalizeGenreLabels(excludedGenres);
-    const key = g || x ? `page:${page}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}` : `page:${page}`;
+    const modeFragment = g ? `:mode:${matchAllGenres ? 'all' : 'any'}` : '';
+    const key = g || x
+      ? `page:${page}:genre:${genreKeyFragment(g)}:excluded:${genreKeyFragment(x)}${modeFragment}`
+      : `page:${page}`;
     return this.cached(
-      `latest:${page}:${filter}:${genreKeyFragment(g)}:${genreKeyFragment(x)}`,
+      `latest:${page}:${filter}:${genreKeyFragment(g)}:${genreKeyFragment(x)}${modeFragment}`,
       this.cacheConfig.searchMs,
       async () => {
         const live = async () => {
-          // Single source with a genre-capable adapter → filter at the
-          // source (whole catalog, not just the loaded page). Anything
-          // else falls through to the plain listing; the UI still narrows
-          // client-side.
-          const only = toQuery.length === 1 ? toQuery[0] : undefined;
-          if ((g || x) && only && typeof only.latestByGenre === 'function') {
-            return only.latestByGenre(g, x, page);
-          }
-          const settled = await Promise.allSettled(toQuery.map((s) => s.latest(page)));
+          // Genre-capable adapters filter at the source (whole catalog,
+          // not just the loaded page); the rest fall back to their plain
+          // listing and the UI narrows what it can client-side. Works for
+          // one source or many — each source filters its own feed and the
+          // pages merge exactly like the unfiltered path.
+          const settled = await Promise.allSettled(
+            toQuery.map((s) =>
+              (g || x) && typeof s.latestByGenre === 'function'
+                ? s.latestByGenre(g, x, page, matchAllGenres)
+                : s.latest(page),
+            ),
+          );
           return this.mergeSourceResults(settled, page);
         };
         const result = await this.withOfflineFallback(
@@ -477,13 +511,17 @@ export class PanelService {
         );
         const cleanedResult: SourceSearchResult = {
           ...result,
-          results: applyExcludedGenres(
-            result.results.map((r) => ({
-              ...r,
-              coverUrl: safeCoverUrl(r.coverUrl),
-              genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
-            })),
-            x,
+          results: applyIncludedGenres(
+            applyExcludedGenres(
+              result.results.map((r) => ({
+                ...r,
+                coverUrl: safeCoverUrl(r.coverUrl),
+                genres: (r.genres ?? []).map((g) => cleanGenreLabel(g)).filter(Boolean),
+              })),
+              x,
+            ),
+            g,
+            matchAllGenres,
           ),
           // Same empty-page guard as search: no source may claim more
           // pages from zero results.

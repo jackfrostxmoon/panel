@@ -17,6 +17,7 @@ import {
 } from '@panel/shared';
 import { SourceError } from '../../lib/errors.js';
 import { SourceHttpClient } from '../../lib/httpClient.js';
+import { intersectSearchResults } from '../../lib/searchUnion.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
@@ -320,14 +321,17 @@ export class RawkumaSource implements PanelSource {
    * Server-side genre filtering through the library search endpoint
    * (`advanced_search` with `genre` / `genre_exclude` slug lists — include
    * AND exclude both work server-side; multi-include is OR, verified
-   * live). Dropdown labels resolve to slugs through the library page's
-   * genre index; unresolvable labels fall back to the unfiltered listing
-   * (the UI still narrows client-side).
+   * live). With `matchAllGenres` and several includes, each genre is
+   * fetched on its own and the pages are intersected — the endpoint has no
+   * AND mode, and the cards carry no genre markup to narrow client-side.
+   * Dropdown labels resolve to slugs through the library page's genre
+   * index; unresolvable labels fall back to the unfiltered listing.
    */
   async latestByGenre(
     genres: string[] | null,
     excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
@@ -335,25 +339,36 @@ export class RawkumaSource implements PanelSource {
     const excludes = excludedGenres ?? [];
     if (includes.length === 0 && excludes.length === 0) return this.latest(p);
     const slugs = await this.resolveGenreSlugs(includes, excludes);
-    if (!slugs) return this.latest(p);
+    if (!slugs) {
+      return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
+    }
     const nonce = await this.fetchSearchNonce();
-    const { body } = await this.http.postForm(`${this.baseUrl}/wp-admin/admin-ajax.php`, {
-      action: 'advanced_search',
-      nonce,
-      query: '',
-      page: String(p),
-      genre: JSON.stringify(slugs.includes),
-      genre_exclude: JSON.stringify(slugs.excludes),
-    });
-    const items = parseSearchPage(body, this.baseUrl);
-    await this.enrichListGenres(items);
-    // The endpoint returns a bare HTML fragment with no pagination
-    // markup — a full page implies there may be more.
-    return {
-      results: items.map((item) => this.toPanelSummary(item)),
-      page: p,
-      hasMore: items.length >= 24,
+    const fetchFiltered = async (includeSlugs: string[]): Promise<SourceSearchResult> => {
+      const { body } = await this.http.postForm(`${this.baseUrl}/wp-admin/admin-ajax.php`, {
+        action: 'advanced_search',
+        nonce,
+        query: '',
+        page: String(p),
+        genre: JSON.stringify(includeSlugs),
+        genre_exclude: JSON.stringify(slugs.excludes),
+      });
+      const items = parseSearchPage(body, this.baseUrl);
+      await this.enrichListGenres(items);
+      // The endpoint returns a bare HTML fragment with no pagination
+      // markup — a full page implies there may be more.
+      return {
+        results: items.map((item) => this.toPanelSummary(item)),
+        page: p,
+        hasMore: items.length >= 24,
+      };
     };
+    if (matchAllGenres && slugs.includes.length > 1) {
+      const settled = await Promise.allSettled(
+        slugs.includes.map((slug) => fetchFiltered([slug])),
+      );
+      return intersectSearchResults(settled, p);
+    }
+    return fetchFiltered(slugs.includes);
   }
 
   /**

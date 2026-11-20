@@ -313,11 +313,20 @@ export const api = {
     if (mode && mode !== 'title') params.set('mode', mode);
     return request<SourceSearchResult>(`/api/panel/search?${params.toString()}`);
   },
-  latest: (page = 1, source?: string, genres?: readonly string[], excludes?: readonly string[]) => {
+  latest: (
+    page = 1,
+    source?: string,
+    genres?: readonly string[],
+    excludes?: readonly string[],
+    matchAll = false,
+  ) => {
     const params = new URLSearchParams({ page: String(page) });
     if (source) params.set('source', source);
     for (const genre of genres ?? []) params.append('genre', genre);
     for (const exclude of excludes ?? []) params.append('exclude', exclude);
+    // `match=all` asks genre-capable sources for AND inclusion; omitted
+    // means the default OR semantics.
+    if (matchAll) params.set('match', 'all');
     return request<SourceSearchResult>(`/api/panel/latest?${params.toString()}`);
   },
   resolvePanelUrl: (url: string) =>

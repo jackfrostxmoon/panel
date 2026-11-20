@@ -20,7 +20,7 @@ import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
-import { unionSearchResults } from '../../lib/searchUnion.js';
+import { intersectSearchResults, unionSearchResults } from '../../lib/searchUnion.js';
 import {
   PageNotRecognizedError,
   hasNextNumberedPage,
@@ -260,6 +260,7 @@ export class ToonilySource implements PanelSource {
     genres: string[] | null,
     _excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
@@ -272,7 +273,9 @@ export class ToonilySource implements PanelSource {
       const href = links.find(
         (entry) => entry.label.toLowerCase() === label.toLowerCase(),
       )?.href;
-      if (!href) return this.latest(p);
+      if (!href) {
+        return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
+      }
       hrefs.push(href);
     }
     const fetchArchive = async (href: string): Promise<SourceSearchResult> => {
@@ -288,7 +291,7 @@ export class ToonilySource implements PanelSource {
     };
     if (hrefs.length === 1) return fetchArchive(hrefs[0] as string);
     const settled = await Promise.allSettled(hrefs.map((href) => fetchArchive(href)));
-    return unionSearchResults(settled, p);
+    return matchAllGenres ? intersectSearchResults(settled, p) : unionSearchResults(settled, p);
   }
 
   async getPanel(nativePanelId: string): Promise<Panel> {

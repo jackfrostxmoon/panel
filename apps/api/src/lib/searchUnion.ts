@@ -29,3 +29,44 @@ export function unionSearchResults(
   }
   return { results, page, hasMore };
 }
+
+/**
+ * AND-intersection of per-genre listing fetches, for sites whose archives
+ * filter a single genre: one fetch per include genre, then only titles
+ * present in EVERY fetched page are kept (dedupe by id, first-seen order).
+ *
+ * This is the only accurate server-side AND for sites whose cards carry no
+ * genre markup — the union's superset would leak titles that matched just
+ * one of the requested genres. A failed fetch makes membership
+ * unverifiable: such runs return nothing rather than leak one-sided
+ * matches (the service's offline fallback may serve its last good row).
+ *
+ * Federated paging is approximate like the union: page N of the
+ * intersection is built from page N of each archive, so later pages can
+ * repeat or miss items, but every returned title matched every requested
+ * genre on the source.
+ */
+export function intersectSearchResults(
+  settled: PromiseSettledResult<SourceSearchResult>[],
+  page: number,
+): SourceSearchResult {
+  if (settled.length === 0 || settled.some((result) => result.status !== 'fulfilled')) {
+    return { results: [], page, hasMore: false };
+  }
+  const lists = settled.map(
+    (result) => (result as PromiseFulfilledResult<SourceSearchResult>).value,
+  );
+  const [first, ...rest] = lists as [SourceSearchResult, ...SourceSearchResult[]];
+  const common = new Set(first.results.map((item) => item.id));
+  for (const list of rest) {
+    const ids = new Set(list.results.map((item) => item.id));
+    for (const id of [...common]) {
+      if (!ids.has(id)) common.delete(id);
+    }
+  }
+  return {
+    results: first.results.filter((item) => common.has(item.id)),
+    page,
+    hasMore: lists.some((list) => list.hasMore),
+  };
+}

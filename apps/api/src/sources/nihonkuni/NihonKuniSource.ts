@@ -20,7 +20,7 @@ import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
-import { unionSearchResults } from '../../lib/searchUnion.js';
+import { intersectSearchResults, unionSearchResults } from '../../lib/searchUnion.js';
 import {
   chapterNumberFromToken,
   panelNativeIdFromUrl,
@@ -322,6 +322,7 @@ export class NihonKuniSource implements PanelSource {
     genres: string[] | null,
     _excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
@@ -330,7 +331,9 @@ export class NihonKuniSource implements PanelSource {
     const slugs: string[] = [];
     for (const label of includes) {
       const slug = await this.genreSlug(label);
-      if (!slug) return this.latest(p);
+      if (!slug) {
+        return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
+      }
       slugs.push(slug);
     }
     const fetchArchive = async (slug: string): Promise<SourceSearchResult> => {
@@ -358,7 +361,7 @@ export class NihonKuniSource implements PanelSource {
         settled.push({ status: 'rejected', reason });
       }
     }
-    return unionSearchResults(settled, p);
+    return matchAllGenres ? intersectSearchResults(settled, p) : unionSearchResults(settled, p);
   }
 
   /**

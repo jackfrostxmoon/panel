@@ -20,7 +20,7 @@ import { SourceHttpClient } from '../../lib/httpClient.js';
 import { logger } from '../../lib/logger.js';
 import { isSameHost } from '../../lib/url.js';
 import { fillGenresFromCache } from '../../lib/cachedGenres.js';
-import { unionSearchResults } from '../../lib/searchUnion.js';
+import { intersectSearchResults, unionSearchResults } from '../../lib/searchUnion.js';
 import {
   hasNextPage,
   panelNativeIdFromUrl,
@@ -221,6 +221,7 @@ export class RawdexSource implements PanelSource {
     genres: string[] | null,
     _excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     const p = page >= 1 ? page : 1;
@@ -229,7 +230,9 @@ export class RawdexSource implements PanelSource {
     const slugs: string[] = [];
     for (const label of includes) {
       const slug = slugifyGenre(label);
-      if (!slug) return this.latest(p);
+      if (!slug) {
+        return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
+      }
       slugs.push(slug);
     }
     const fetchArchive = async (slug: string): Promise<SourceSearchResult> => {
@@ -249,7 +252,9 @@ export class RawdexSource implements PanelSource {
     const run = async (): Promise<SourceSearchResult> => {
       if (slugs.length === 1) return fetchArchive(slugs[0] as string);
       const settled = await Promise.allSettled(slugs.map((slug) => fetchArchive(slug)));
-      return unionSearchResults(settled, p);
+      return matchAllGenres
+        ? intersectSearchResults(settled, p)
+        : unionSearchResults(settled, p);
     };
     try {
       return await run();
@@ -261,7 +266,7 @@ export class RawdexSource implements PanelSource {
         genres: includes,
         error: error instanceof Error ? error.message : String(error),
       });
-      return this.latest(p);
+      return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
     }
   }
 

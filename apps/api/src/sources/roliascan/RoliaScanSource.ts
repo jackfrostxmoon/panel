@@ -364,29 +364,50 @@ export class RoliaScanSource implements PanelSource {
   }
 
   /**
-   * Server-side genre filtering through the `/genre/<slug>` archives
-   * (single include only — the site has no multi-include or exclusion
-   * endpoint; further constraints narrow client-side, and the service
-   * always applies exclusions centrally as well).
+   * Server-side genre filtering through the site's browse form. The form
+   * filters multiple genres natively — `?genre[]=a&genre[]=b&genre_mode=all`
+   * for AND, `...&genre_mode=any` for OR — which is the only accurate
+   * server-side path here: listing cards carry no genre markup.
+   *
+   * Labels resolve to slugs through the nav genre index; an unknown label
+   * fails closed in AND mode (an unfiltered fallback could not prove
+   * membership) and falls back to the unfiltered listing for OR.
+   * Exclusions are ignored here — the service applies them centrally.
    */
   async latestByGenre(
     genres: string[] | null,
     excludedGenres: string[] | null,
     page = 1,
+    matchAllGenres = false,
   ): Promise<SourceSearchResult> {
     this.assertEnabled();
     void excludedGenres;
     const p = page >= 1 ? page : 1;
     const includes = genres ?? [];
     if (includes.length === 0) return this.latest(p);
+
+    // Resolve display labels to the browse form's genre slugs (the nav
+    // index carries one `/genre/<slug>` link per label).
     const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/updated`);
-    const href = parseGenreLinks(indexHtml, this.baseUrl).find(
-      (entry) => entry.label.toLowerCase() === (includes[0] ?? '').toLowerCase(),
-    )?.href;
-    if (!href) return this.latest(p);
-    const url = p <= 1 ? href : `${href}?page=${encodeURIComponent(String(p))}`;
-    const { body } = await this.http.fetchText(url);
-    const parsed = parseLatestPage(body, this.baseUrl);
+    const links = parseGenreLinks(indexHtml, this.baseUrl);
+    const slugs: string[] = [];
+    for (const label of includes) {
+      const href = links.find(
+        (entry) => entry.label.toLowerCase() === label.toLowerCase(),
+      )?.href;
+      const slug = href ? /\/genre\/([^/?#]+)/i.exec(href)?.[1] : null;
+      if (!slug) {
+        return matchAllGenres ? { results: [], page: p, hasMore: false } : this.latest(p);
+      }
+      slugs.push(slug);
+    }
+
+    const params = new URLSearchParams({ q: '' });
+    for (const slug of slugs) params.append('genre[]', slug);
+    params.set('genre_mode', matchAllGenres ? 'all' : 'any');
+    if (p > 1) params.set('page', String(p));
+    const { body } = await this.http.fetchText(`${this.baseUrl}/search?${params.toString()}`);
+    const parsed = parseSearchPage(body, this.baseUrl);
     await this.enrichListGenres(parsed.items);
     return {
       results: parsed.items.map((item) => this.toPanelSummary(item)),

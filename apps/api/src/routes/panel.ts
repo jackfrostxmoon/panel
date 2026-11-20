@@ -92,10 +92,11 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     return c.json(ok(result));
   });
 
-  // GET /api/panel/latest?page=1&source=mk,nk&genre=Action&exclude=Hentai
+  // GET /api/panel/latest?page=1&source=mk,nk&genre=Action&exclude=Hentai&match=all
   // genre/exclude accept repeated (?genre=a&genre=b) and comma-separated
-  // (?genre=a,b) forms; include semantics are OR.
-  app.get('/latest', async (c) => {    const pageRaw = Number.parseInt(c.req.query('page') ?? '1', 10);
+  // (?genre=a,b) forms; include semantics are OR unless `match=all` (AND).
+  app.get('/latest', async (c) => {
+    const pageRaw = Number.parseInt(c.req.query('page') ?? '1', 10);
     const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
 
     // Genre constraints (display labels from the filter dropdowns). When
@@ -103,8 +104,17 @@ export function panelRoutes(panelService: PanelService, registry: SourceRegistry
     // searched; otherwise the UI narrows the returned page client-side.
     const genres = trimParamList(c.req.queries('genre'), 100);
     const excludedGenres = trimParamList(c.req.queries('exclude'), 100);
+    const matchAllGenres = c.req.query('match') === 'all';
     return c.json(
-      ok(await panelService.latest(page, parseSourceFilter(c.req.query('source')), genres, excludedGenres)),
+      ok(
+        await panelService.latest(
+          page,
+          parseSourceFilter(c.req.query('source')),
+          genres,
+          excludedGenres,
+          matchAllGenres,
+        ),
+      ),
     );
   });
 

@@ -82,8 +82,8 @@ function genreKey(labels: readonly string[] | undefined): string {
 export const queryKeys = {
   search: (q: string, page: number, source?: string, genres?: readonly string[], excludes?: readonly string[], mode?: SearchMode) =>
     ['search', q, page, source ?? 'all', genreKey(genres), genreKey(excludes), mode ?? 'title'] as const,
-  latest: (page: number, source?: string, genres?: readonly string[], excludes?: readonly string[]) =>
-    ['latest', page, source ?? 'all', genreKey(genres), genreKey(excludes)] as const,
+  latest: (page: number, source?: string, genres?: readonly string[], excludes?: readonly string[], matchAll?: boolean) =>
+    ['latest', page, source ?? 'all', genreKey(genres), genreKey(excludes), matchAll ? 'all' : 'any'] as const,
   panel: (id: string) => ['panel', id] as const,
   chapters: (id: string) => ['chapters', id] as const,
   chapterPages: (id: string, mkServer?: string) => ['chapterPages', id, mkServer ?? ''] as const,
@@ -185,10 +185,11 @@ export function useLatest(
   genres?: readonly string[],
   excludes?: readonly string[],
   opts?: QueryOpts<SourceSearchResult>,
+  matchAll = false,
 ) {
   return useQuery<SourceSearchResult, ApiClientError>({
-    queryKey: queryKeys.latest(page, source, genres, excludes),
-    queryFn: () => api.latest(page, source, genres, excludes),
+    queryKey: queryKeys.latest(page, source, genres, excludes, matchAll),
+    queryFn: () => api.latest(page, source, genres, excludes, matchAll),
     staleTime: 60_000,
     ...opts,
   });

@@ -137,6 +137,7 @@ export function LatestPage() {
     {
       placeholderData: (previous) => previous,
     },
+    matchAllGenres,
   );
 
   /**
@@ -177,6 +178,8 @@ export function LatestPage() {
   genreFilterRef.current = genreFilter;
   const excludedGenreRef = useRef(excludedGenre);
   excludedGenreRef.current = excludedGenre;
+  const matchAllGenresRef = useRef(matchAllGenres);
+  matchAllGenresRef.current = matchAllGenres;
   const extraPagesRef = useRef(extraPages);
   extraPagesRef.current = extraPages;
 
@@ -204,7 +207,7 @@ export function LatestPage() {
   // navigation per gesture.
   useEffect(() => {
     resetExtraPages();
-  }, [source, genreFilter, excludedGenre, infiniteScroll]);
+  }, [source, genreFilter, excludedGenre, infiniteScroll, matchAllGenres]);
   const showLoading = useDelayedLoading(latest.isLoading);
   const { settings } = useDisplaySettings();
 
@@ -309,7 +312,7 @@ export function LatestPage() {
         (excludeSet.size === 0 ||
           !m.genres.some((g) => excludeSet.has(g.toLowerCase()))),
     );
-  }, [allResults, statusFilter, includeSet, excludeSet]);
+  }, [allResults, statusFilter, includeSet, excludeSet, matchAllGenres]);
 
   const filtersActive = statusFilter !== '' || genreFilter.length > 0 || excludedGenre.length > 0;
   /** Applied-refinement count for the filters disclosure badge. */
@@ -378,6 +381,7 @@ export function LatestPage() {
     const liveSource = sourceRef.current;
     const liveGenres = genreFilterRef.current;
     const liveExcludes = excludedGenreRef.current;
+    const liveMatchAll = matchAllGenresRef.current;
     const next = extraPagesRef.current.length + 2;
     const generation = generationRef.current;
     setLoadingMore(true);
@@ -388,6 +392,7 @@ export function LatestPage() {
         liveSource,
         liveGenres.length > 0 ? liveGenres : undefined,
         liveExcludes.length > 0 ? liveExcludes : undefined,
+        liveMatchAll,
       );
       // Navigated away mid-flight (e.g. Home) — drop the stale page
       // instead of rewriting the new route's URL back to this listing.
@@ -486,6 +491,9 @@ export function LatestPage() {
       searchOpen,
       matchAllGenres: next,
     });
+    // A different match mode is a different result set — rewind the
+    // infinite-scroll depth so stale appended pages never mix in.
+    if (infiniteScroll) rewindPageParam();
   }
 
   function changeSource(next: string) {
