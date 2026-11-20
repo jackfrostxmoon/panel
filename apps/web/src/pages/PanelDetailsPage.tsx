@@ -105,8 +105,12 @@ export function PanelDetailsPage() {
   // the icon would barely flicker — hold the spin for at least MIN_MS after
   // the click so the feedback is actually perceivable.
   const MIN_REFRESH_SPIN_MS = 700;
+  // One-shot background revalidation after open — never a polling loop.
+  const REVALIDATE_DELAY_MS = 3_000;
   const [refreshSpinning, setRefreshSpinning] = useState(false);
   const refreshSpinStartedAt = useRef(0);
+  /** Set by the Refresh button so the one-shot revalidation below skips it. */
+  const manualRefreshRef = useRef(false);
   const recent = useRecentProgress();
   const showPanelLoading = useDelayedLoading(panel.isLoading);
   const showChaptersLoading = useDelayedLoading(chapters.isLoading);
@@ -244,8 +248,9 @@ export function PanelDetailsPage() {
    * were downloaded in a previous session should still render as done.
    *
    * `useImageCacheTags` returns every cached provenance tag (chapter
-   * global-id → 8-hex hash) and polls every 10s, so newly-completed
-   * downloads flip to the "done" style without a manual refresh.
+   * global-id → 8-hex hash). It is fetched once per mount and refreshed on
+   * invalidation (cache clears / settled download runs) — it is not polled,
+   * so the page makes no recurring background requests for it.
    */
   const cachedChapterTags = useImageCacheTags('chapter');
   const cachedChapterPrefixes = useMemo(() => {
@@ -902,22 +907,19 @@ const filteredAndSortedChapters = useMemo(() => {
   );
 
   /**
-   * Auto-refresh until fresh. The API serves the cached DB row instantly on
-   * open, then revalidates live in the background — so the first paint is
-   * stale (e.g. "1 chapters" while Chapter 206 exists) and only a manual
-   * refresh showed new chapters. Poll panel + chapters every 2s until the
-   * chapter count moves past the first-paint snapshot, or ~40s passes.
-   * Polls are cheap server-memory hits; the single live source fetch is
-   * the background refresh the server already fires on the first request.
+   * Single delayed revalidation. The API serves the cached DB row instantly
+   * on open, then revalidates live in the background — so the first paint
+   * can be one chapter behind until the server's refresh lands. Refetch
+   * panel + chapters once, ~3s after open, instead of polling every 2s for
+   * 40s: the manual Refresh button covers anything later, so the page
+   * otherwise stays quiet (the repeated `/chapters` requests in the network
+   * panel came from that old loop). Keyed on `id`, so switching panels
+   * re-arms it; the cleanup drops the pending timer on unmount.
    */
-  const autoFreshSettledRef = useRef(false);
-  const initialChapterCountRef = useRef<number | null>(null);
   const panelRefetchRef = useRef(panel.refetch);
   panelRefetchRef.current = panel.refetch;
   const chaptersRefetchRef = useRef(chapters.refetch);
   chaptersRefetchRef.current = chapters.refetch;
-  const chaptersDataRef = useRef(chapters.data);
-  chaptersDataRef.current = chapters.data;
   // End the manual-refresh spin only once the fetch settles AND at least
   // MIN_REFRESH_SPIN_MS have elapsed since the click.
   useEffect(() => {
@@ -928,39 +930,14 @@ const filteredAndSortedChapters = useMemo(() => {
     // oxlint-disable-next-line react/exhaustive-deps -- MIN_REFRESH_SPIN_MS is a constant of this component.
   }, [refreshSpinning, chapters.isFetching]);
   useEffect(() => {
-    autoFreshSettledRef.current = false;
-    initialChapterCountRef.current = null;
-    let attempts = 0;
-    const timer = setInterval(() => {
-      if (autoFreshSettledRef.current) {
-        clearInterval(timer);
-        return;
-      }
-      attempts += 1;
-      void Promise.all([panelRefetchRef.current(), chaptersRefetchRef.current()])
-        .then(([, c]) => {
-          const data = c.data ?? chaptersDataRef.current;
-          if (data === undefined) return;
-          if (initialChapterCountRef.current === null) {
-            // First loaded list is the snapshot; the countdown starts here.
-            initialChapterCountRef.current = data.length;
-            attempts = 0;
-            return;
-          }
-          if (data.length !== initialChapterCountRef.current || attempts >= 20) {
-            autoFreshSettledRef.current = true;
-            clearInterval(timer);
-          }
-        })
-        .catch(() => {
-          if (attempts >= 20) {
-            autoFreshSettledRef.current = true;
-            clearInterval(timer);
-          }
-        });
-    }, 2000);
-    return () => clearInterval(timer);
-    // oxlint-disable-next-line react/exhaustive-deps -- once-per-panel poller; live query values via refs.
+    manualRefreshRef.current = false;
+    const timer = window.setTimeout(() => {
+      // A manual refresh already covered this window — don't fetch twice.
+      if (manualRefreshRef.current) return;
+      void Promise.all([panelRefetchRef.current(), chaptersRefetchRef.current()]);
+    }, REVALIDATE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+    // oxlint-disable-next-line react/exhaustive-deps -- once-per-panel timer; live query values via refs.
   }, [id]);
 
   // Handle keyboard navigation for chapter list
@@ -1623,11 +1600,14 @@ const filteredAndSortedChapters = useMemo(() => {
               }`}
               onClick={() => {
                 refreshSpinStartedAt.current = Date.now();
+                manualRefreshRef.current = true;
                 setRefreshSpinning(true);
-                void chapters.refetch();
+                // Refresh metadata (chapter count / latest chapter) too, not
+                // just the list — the page no longer polls in the background.
+                void Promise.all([panel.refetch(), chapters.refetch()]);
               }}
-              aria-label="Refresh chapter list"
-              title="Refresh chapter list"
+              aria-label="Refresh details and chapter list"
+              title="Refresh details and chapter list"
               aria-busy={refreshSpinning || chapters.isFetching}
             >
               <svg
