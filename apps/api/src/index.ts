@@ -269,9 +269,12 @@ if (existsSync(webDist)) {
 
 const server = Bun.serve({
   port: config.port,
-  // Bind every interface so devices on the LAN can reach the API — mirrors
-  // Vite's `host: true`. Bun defaults to localhost only.
-  hostname: '0.0.0.0',
+  // Bind every interface ONLY when LAN access is a deliberate choice: a
+  // shared ACCESS_TOKEN is configured (LAN callers must present it) or
+  // BIND_ALL=1 was set explicitly. Otherwise the API listens on loopback —
+  // the data it serves (bookmarks, reading history, full DB dumps) is
+  // private, and there is no auth layer to protect it on an open socket.
+  hostname: config.accessToken || config.bindAll ? '0.0.0.0' : '127.0.0.1',
   fetch: app.fetch,
   // Cap the request body at 220 MiB. The largest legitimate payload is the
   // POST /api/backup/import dump — the route validates it at 200 MB — with
@@ -288,9 +291,10 @@ const server = Bun.serve({
 });
 
 logger.info(`Panel viewer API listening`, {
-  url: `http://0.0.0.0:${server.port}`,
+  url: `http://${server.hostname}:${server.port}`,
   local: `http://localhost:${server.port}`,
   env: process.env.NODE_ENV ?? 'development',
+  tokenGate: config.accessToken ? 'on (LAN callers need ACCESS_TOKEN)' : 'off',
   sources: registry.list().map((s) => `${s.label} (${s.enabled ? 'enabled' : 'disabled'})`),
 });
 

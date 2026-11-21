@@ -90,6 +90,15 @@ export class RawUwUSource implements PanelSource {
         allowedHosts: RawUwUSource.allowedHostsFor(config.baseUrl),
         // Chapter images live on s1.rawuwu.net (same registrable domain,
         // covered by the allowlist) and the b-cdn.net mirror.
+        //
+        // SECURITY NOTE (plans/SECURITY_AUDIT L-8): b-cdn.net is Bunny's
+        // MULTI-TENANT CDN — any third-party bucket on any *.b-cdn.net host
+        // is reachable through the unauthenticated image proxy while the
+        // registrable domain is allowlisted. The specific bucket name is
+        // not statically derivable (it rotates in the source's markup), so
+        // narrowing it requires observing a live fetch. When you catch the
+        // exact host (e.g. `xyz.b-cdn.net`) in the server logs, replace
+        // this entry with it.
         imageHosts: ['b-cdn.net'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,

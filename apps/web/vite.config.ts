@@ -19,7 +19,11 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    sourcemap: true,
+    // No source maps in the served build: `bun run lan` serves dist/ to the
+    // LAN, and `.map` files would hand anyone on the network the full
+    // original client source. Debugging tip: run `bun run build` once with
+    // `sourcemap: true` locally, then flip back before committing/serving.
+    sourcemap: false,
     // Suppress the per-chunk file listing and the >500 kB chunk-size
     // warning so `bun run lan` (which builds before serving) stays quiet.
     reportCompressedSize: false,

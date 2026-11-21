@@ -29,6 +29,18 @@ const addItemSchema = z.object({
   bookmarkId: z.uuid(),
 });
 
+/** Validate with safeParse and map failures to a 400 (a raw ZodError would
+ *  fall through the error handler as a 500 INTERNAL_ERROR). */
+function parseOr400<T>(schema: z.ZodType<T>, input: unknown): T {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invalid bookmark-folder payload.', {
+      issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+  return parsed.data;
+}
+
 /**
  * Bookmark folder CRUD + membership (T2-8).
  *
@@ -58,21 +70,21 @@ export function bookmarkFolderRoutes(folderService: BookmarkFolderService): Hono
 
   // GET /api/bookmark-folders/:id → folder + its contents
   app.get('/:id', async (c) => {
-    const folderId = folderIdSchema.parse(c.req.param('id'));
+    const folderId = parseOr400(folderIdSchema, c.req.param('id'));
     const contents = await folderService.contents(folderId);
     return c.json(ok(toApiContents(contents)));
   });
 
   // POST /api/bookmark-folders
   app.post('/', async (c) => {
-    const input: CreateBookmarkFolderInput = createFolderSchema.parse(await c.req.json());
+    const input: CreateBookmarkFolderInput = parseOr400(createFolderSchema, await c.req.json());
     const folder = await folderService.create(input.name);
     return c.json(ok(toApiFolder(folder)), 201);
   });
 
   // PATCH /api/bookmark-folders/:id → rename
   app.patch('/:id', async (c) => {
-    const body: UpdateBookmarkFolderInput = updateFolderSchema.parse({
+    const body: UpdateBookmarkFolderInput = parseOr400(updateFolderSchema, {
       id: c.req.param('id'),
       ...(await c.req.json()),
     });
@@ -82,7 +94,7 @@ export function bookmarkFolderRoutes(folderService: BookmarkFolderService): Hono
 
   // DELETE /api/bookmark-folders/:id
   app.delete('/:id', async (c) => {
-    const folderId = folderIdSchema.parse(c.req.param('id'));
+    const folderId = parseOr400(folderIdSchema, c.req.param('id'));
     const removed = await folderService.remove(folderId);
     if (!removed) {
       throw new AppError(ErrorCodes.BOOKMARK_NOT_FOUND, 'Folder not found.', { folderId });
@@ -92,7 +104,7 @@ export function bookmarkFolderRoutes(folderService: BookmarkFolderService): Hono
 
   // POST /api/bookmark-folders/:id/items
   app.post('/:id/items', async (c) => {
-    const body: AddBookmarkToFolderInput = addItemSchema.parse({
+    const body: AddBookmarkToFolderInput = parseOr400(addItemSchema, {
       folderId: c.req.param('id'),
       ...(await c.req.json()),
     });

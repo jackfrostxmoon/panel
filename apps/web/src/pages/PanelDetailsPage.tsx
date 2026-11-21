@@ -9,6 +9,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useChapterDownloader } from '../hooks/useChapterDownloader';
 import { useDownloadSettings } from '../hooks/useDownloadSettings';
 import { api } from '../api/client';
+import { safeExternalUrl } from '../utils/safeExternalUrl';
 import { DEFAULT_READER_SETTINGS, type ReaderSettings } from '../reader/settings';
 import { resolveDownloadPageConcurrency } from '../download/pageConcurrency';
 import { BookmarkFolderPicker, BookmarkToggle } from '../components/BookmarkButton';
@@ -1273,29 +1274,35 @@ const filteredAndSortedChapters = useMemo(() => {
             <div className="meta-group">
               <dt className="meta-label">Source</dt>
               <dd className="meta-value">
-                <a
-                  href={m.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="source-link"
-                  aria-label={`View on ${m.source}`}
-                >
-                  {m.source}
-                  <svg
-                    className="link-external-icon"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
+                {safeExternalUrl(m.sourceUrl) ? (
+                  <a
+                    href={safeExternalUrl(m.sourceUrl) ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="source-link"
+                    aria-label={`View on ${m.source}`}
                   >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                </a>
+                    {m.source}
+                    <svg
+                      className="link-external-icon"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                ) : (
+                  // Remote data produced a non-http(s) or unparseable URL —
+                  // render the label without a link rather than trust it.
+                  m.source
+                )}
               </dd>
             </div>
           </dl>

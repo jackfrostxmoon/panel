@@ -1,10 +1,28 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api } from '../api/client';
+import { api, storedAccessToken } from '../api/client';
 import { IconCheck, IconX } from './icons';
 
 /** Hostnames that only work on the machine running the app itself. */
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * Append the LAN access token to `url` when the device holds one, so the
+ * share link/QR pairs another device in one tap (the target app claims
+ * `?token=` on load — see `claimTokenFromUrl` in api/client). No token
+ * stored (host PC) → the URL passes through unchanged.
+ */
+function withShareToken(url: string): string {
+  const token = storedAccessToken();
+  if (!token) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('token', token);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
 /**
  * Replace a loopback hostname in `url` with the server's LAN IP so the
@@ -12,11 +30,13 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
  * the original URL if the LAN address can't be resolved.
  */
 function useShareUrl(url: string): string {
-  const [shareUrl, setShareUrl] = useState(url);
+  const [shareUrl, setShareUrl] = useState(() => withShareToken(url));
   useEffect(() => {
     let alive = true;
+    const tokened = withShareToken(url);
+    setShareUrl(tokened);
     try {
-      const parsed = new URL(url);
+      const parsed = new URL(tokened);
       if (!LOCAL_HOSTS.has(parsed.hostname)) return;
       api
         .getHealth()

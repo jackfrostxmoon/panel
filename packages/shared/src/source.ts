@@ -219,4 +219,11 @@ export interface SourceConfig {  readonly name: string;
    * all of its pages. Kill-switch: IMAGE_FETCH_ISOLATED=false.
    */
   readonly isolatedImageFetch: boolean;
+  /**
+   * Optional per-source site-API token (e.g. the SPA `x-cfg-auth` header
+   * value). Read from env (`SOURCE_<NAME>_API_KEY`) so a site-side rotation
+   * is a config change rather than a code change; adapters fall back to
+   * their built-in value when unset.
+   */
+  readonly apiKey?: string;
 }

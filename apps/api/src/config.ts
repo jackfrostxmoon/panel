@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Context } from 'hono';
 import type { BackupExportScope, SourceConfig } from '@panel/shared';
+import { logger } from './lib/logger.js';
 
 /**
  * Centralised, validated environment configuration.
@@ -30,6 +32,33 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   /**
+   * Shared access token for non-localhost callers (R2). When set, every
+   * /api request from a non-loopback peer must present it via the
+   * `X-Panel-Token` header or `?token=` query parameter — the web client
+   * claims it from the share-link URL and stores it in localStorage.
+   * Unset = no token gate; the server then binds loopback unless
+   * BIND_ALL=1 (see below). Minimum 16 chars so a casual value can't be
+   * guessed or brute-forced over the network.
+   */
+  ACCESS_TOKEN: z.string().min(16).optional(),
+
+  /**
+   * Bind the server to every interface (`0.0.0.0`) even when no
+   * ACCESS_TOKEN is configured. Default false: without a token the API
+   * only listens on localhost, so LAN exposure is always a deliberate
+   * choice (`bun run lan` sets this together with a generated token).
+   */
+  BIND_ALL: boolFromString(false),
+
+  /**
+   * Trust X-Forwarded-For / X-Real-IP when keying the rate limiter. Only
+   * set this when a reverse proxy you control sits in front of the API —
+   * with a direct connection these headers are client-settable, so the
+   * limiter keys on the socket's real peer address instead (default).
+   */
+  TRUST_PROXY: boolFromString(false),
+
+  /**
    * Override the LAN address reported by /api/health for shareable links.
    * Set this when auto-detection picks the wrong adapter (Docker/WSL/VPN
    * often expose virtual interfaces, e.g. 172.x or 192.168.x VMware NICs).
@@ -47,6 +76,12 @@ const envSchema = z.object({
   SOURCE_RAWSAKURA_ENABLED: boolFromString(true),
   SOURCE_HIPERDEX_BASE_URL: z.url().default('https://hiperdex.com'),
   SOURCE_HIPERDEX_ENABLED: boolFromString(true),
+  /**
+   * The SPA api's site token sent as `x-cfg-auth` (publicly distributed by
+   * the site to every visitor — not a secret). Kept in config so a site-side
+   * rotation is an env change, not a code change.
+   */
+  SOURCE_HIPERDEX_API_KEY: z.string().min(1).default('yceqt7qgu004'),
   SOURCE_MANGAREAD_BASE_URL: z.url().default('https://www.mangaread.org'),
   SOURCE_MANGAREAD_ENABLED: boolFromString(true),
   SOURCE_TOONILY_BASE_URL: z.url().default('https://toonily.com'),
@@ -239,7 +274,7 @@ export interface AppConfig {
    * the explicit `CORS_ORIGIN` allowlist (set per-deployment, e.g. in
    * docker-compose).
    */
-  readonly corsOrigin: (origin: string) => string | null;
+  readonly corsOrigin: (origin: string, c?: Context) => string | null;
   /** The raw, parsed allowlist (useful for logging / future tooling). */
   readonly corsOrigins: string[];
   /** Explicit LAN address for shareable links (SHARE_LAN_ADDRESS), or
@@ -247,6 +282,15 @@ export interface AppConfig {
   readonly shareLanAddress: string | undefined;
   readonly isProduction: boolean;
   readonly isTest: boolean;
+  /**
+   * Shared access token required from non-localhost callers when set
+   * (see ACCESS_TOKEN above). `undefined` = gate off.
+   */
+  readonly accessToken: string | undefined;
+  /** Bind 0.0.0.0 even without an ACCESS_TOKEN (see BIND_ALL above). */
+  readonly bindAll: boolean;
+  /** Trust X-Forwarded-For for rate-limit keying (see TRUST_PROXY above). */
+  readonly trustProxy: boolean;
   readonly sources: {
     readonly mangakatana: SourceConfig;
     readonly nihonkuni: SourceConfig;
@@ -324,6 +368,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     .map((o) => o.trim())
     .filter(Boolean);
 
+  /**
+   * Same-host check for the production CORS branch: the SPA served by this
+   * very server (`bun run lan`, Docker, `bun run start`) shares the server's
+   * hostname, so its origin must be accepted even though it is not in the
+   * CORS_ORIGIN allowlist. Hostname-only comparison (port-insensitive) so a
+   * Vite-style dev proxy on another port still matches. A drive-by site's
+   * origin NEVER shares the server's hostname, which is what makes this
+   * check the meaningful security boundary.
+   */
+  const isSameHostOrigin = (origin: string, c?: Context): boolean => {
+    if (!c) return false;
+    try {
+      const originHost = new URL(origin).hostname.toLowerCase();
+      const requestHost = new URL(c.req.url).hostname.toLowerCase();
+      return originHost === requestHost;
+    } catch {
+      return false;
+    }
+  };
+
   return {
     databaseUrl: resolveDatabaseFile(e.DATABASE_URL),
     dumpPath: resolveRepoDir(e.DUMP_PATH),
@@ -334,19 +398,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     /**
      * In dev/test we allow every origin so `bun run dev` works on any LAN
      * device with zero config — the Vite server already listens on 0.0.0.0
-     * (`host: true`), and the API should match. In production we restrict to
-     * the explicit `CORS_ORIGIN` allowlist (per-deployment, e.g.
-     * docker-compose). Hono's cors middleware treats a `null` return as
-     * "origin not allowed" and an echoed string as "allowed".
+     * (`host: true`), and the API should match. In production we restrict
+     * to the explicit CORS_ORIGIN allowlist PLUS same-host origins (see
+     * above), and log every rejected cross-origin attempt so a
+     * misconfigured CORS_ORIGIN is visible instead of silently breaking
+     * LAN clients.
      */
     corsOrigin:
       isProduction || isTest
-        ? (origin: string): string | null => (corsOrigins.includes(origin) ? origin : null)
+        ? (origin: string, c?: Context): string | null => {
+            if (corsOrigins.includes(origin)) return origin;
+            if (origin && origin !== 'null' && isSameHostOrigin(origin, c)) return origin;
+            if (origin && origin !== 'null') {
+              logger.warn('CORS origin rejected', { origin });
+            }
+            return null;
+          }
         : (origin: string): string => origin,
     corsOrigins,
     shareLanAddress: e.SHARE_LAN_ADDRESS,
     isProduction,
     isTest,
+    accessToken: e.ACCESS_TOKEN,
+    bindAll: e.BIND_ALL,
+    trustProxy: e.TRUST_PROXY,
     sources: {
       mangakatana: {
         name: 'mk',
@@ -401,6 +476,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         label: 'Hiperdex',
         baseUrl: hiperdexBaseUrl,
         enabled: e.SOURCE_HIPERDEX_ENABLED,
+        apiKey: e.SOURCE_HIPERDEX_API_KEY,
         requestTimeoutMs: e.SOURCE_REQUEST_TIMEOUT_MS,
         requestRetryCount: e.SOURCE_REQUEST_RETRY_COUNT,
         requestRetryBaseDelayMs: e.SOURCE_REQUEST_RETRY_BASE_DELAY_MS,

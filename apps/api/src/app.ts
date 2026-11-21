@@ -5,6 +5,8 @@ import type { AppConfig } from './config.js';
 import type { Database } from './db/client.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { incognitoGuard } from './middleware/incognito.js';
+import { accessTokenGate } from './middleware/accessToken.js';
+import { sameOriginGuard } from './middleware/sameOrigin.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { BookmarkFolderRepository, BookmarkRepository, PanelRatingRepository, TagRepository } from './repositories/bookmarkRepository.js';
@@ -149,17 +151,40 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
 
   const app = new Hono();
 
-  // Global middleware
-  app.use('*', secureHeaders());
+  // Global middleware. The CSP governs the served SPA (and JSON responses —
+  // inert there). In dev the HTML comes from Vite (unaffected); in
+  // `bun run lan` / production the built index.html is served by this app,
+  // so this is the document-level policy: no external origins anywhere,
+  // no objects, no framing from foreign sites. React applies styling via
+  // CSSOM (not style attributes), so style-src can stay 'self'.
+  app.use(
+    '*',
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        mediaSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+        workerSrc: ["'self'"],
+      },
+    }),
+  );
   app.use('*', requestLogger);
   app.use(
     '/api/*',
     cors({
       origin: config.corsOrigin,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      // The incognito marker rides as a custom header; list it explicitly
-      // so LAN/preflight traffic isn't rejected.
-      allowHeaders: ['Content-Type', 'X-Panel-Incognito'],
+      // The incognito marker and the LAN access token ride as custom
+      // headers; list both explicitly so LAN/preflight traffic isn't rejected.
+      allowHeaders: ['Content-Type', 'X-Panel-Incognito', 'X-Panel-Token'],
       maxAge: 600,
     }),
   );
@@ -171,7 +196,20 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   // Anything past ~20 req/s sustained is a runaway loop, not browsing.
   // Upstream is guarded separately (source TTL cache + in-flight dedup +
   // retry backoff), so this cap only needs to stop client-side storms.
-  app.use('/api/*', rateLimit({ windowMs: 60_000, max: 1200 }));
+  app.use('/api/*', rateLimit({ windowMs: 60_000, max: 1200, trustProxy: config.trustProxy }));
+  // Security gates (after the limiter so blocked floods still count):
+  //  - accessTokenGate: non-localhost callers need the shared token when
+  //    ACCESS_TOKEN is configured (off otherwise).
+  //  - sameOriginGuard (production/test only): browsers may only issue
+  //    writes from this host — the CSRF backstop that works even if CORS is
+  //    ever misconfigured. NOT mounted in development: there the phone UX
+  //    reaches the API through the Vite proxy (Origin = <phone-ip>:5173 vs
+  //    Host = localhost:3001 — unmatchable hostnames), and dev's CORS policy
+  //    already trusts the whole network by design (echoes every origin).
+  app.use('/api/*', accessTokenGate(config.accessToken));
+  if (config.isProduction || config.isTest) {
+    app.use('/api/*', sameOriginGuard());
+  }
 
   app.onError(errorHandler);
 

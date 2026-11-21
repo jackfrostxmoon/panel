@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ErrorCodes, ok } from '@panel/shared';
 import type { Database } from '../db/client.js';
 import { AppError } from '../lib/errors.js';
+import { logger } from '../lib/logger.js';
 import { buildSqlDump, restoreSqlDump } from '../lib/backupDump.js';
 
 const importBackupSchema = z.object({
@@ -14,6 +15,13 @@ const exportQuerySchema = z.object({
 });
 
 const MAX_DUMP_BYTES = 200_000_000;
+/**
+ * Restore-failure messages that are our own validation strings — safe to
+ * surface. Anything else (driver constraint text, table/column names from
+ * the dump) is logged server-side and replaced with a generic message.
+ */
+const SAFE_RESTORE_MESSAGES =
+  /No bookmark data found|unexpected tables|Invalid identifiers|Column count mismatch|Duplicate COPY block|Unterminated COPY block|Invalid (date|numeric) value for column|Invalid JSON/;
 
 /**
  * Full-database backup as a COPY-block .sql dump.
@@ -51,9 +59,33 @@ export function backupRoutes(db: Database): Hono {
   });
 
   app.post('/import', async (c) => {
+    // Reject oversize uploads BEFORE buffering the body: every client that
+    // can send a 200 MB dump declares Content-Length, so this check avoids
+    // materializing the request in heap just to throw it away. (The server
+    // cap stays at 220 MiB because the JSON envelope path needs escape-headroom.)
+    const declared = Number.parseInt(c.req.header('content-length') ?? '0', 10);
+    if (Number.isFinite(declared) && declared > MAX_DUMP_BYTES) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid backup file (larger than 200 MB).',
+      );
+    }
     const contentType = c.req.header('content-type') ?? '';
+    const isJson = contentType.includes('application/json');
+    // The accepted raw shapes: the web client chunks dumps as application/sql,
+    // and curl/CLI callers use text/plain. Anything else is not a dump.
+    const isRawSql =
+      contentType.includes('application/sql') ||
+      contentType.includes('text/plain') ||
+      contentType === '';
+    if (!isJson && !isRawSql) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        'Import expects the JSON envelope ({ "sql": "…" }) or a raw .sql dump (application/sql / text/plain).',
+      );
+    }
     let dump: string;
-    if (contentType.includes('application/json')) {
+    if (isJson) {
       const body = await c.req.json().catch(() => null);
       const parsed = importBackupSchema.safeParse(body);
       if (!parsed.success) {
@@ -75,10 +107,17 @@ export function backupRoutes(db: Database): Hono {
     try {
       tables = await restoreSqlDump(db, dump);
     } catch (error) {
-      throw new AppError(
-        ErrorCodes.VALIDATION_ERROR,
-        error instanceof Error ? error.message : 'Could not restore that backup file.',
-      );
+      const message = error instanceof Error ? error.message : 'Could not restore that backup file.';
+      if (!SAFE_RESTORE_MESSAGES.test(message)) {
+        // Driver/parse internals (constraint names, schema details) stay in
+        // the log — the client gets a fixed, human-useful message.
+        logger.warn('Backup restore failed', { error: message });
+        throw new AppError(
+          ErrorCodes.VALIDATION_ERROR,
+          'Could not restore that backup file — see the server log for details.',
+        );
+      }
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, message);
     }
     return c.json(ok({ tables }));
   });

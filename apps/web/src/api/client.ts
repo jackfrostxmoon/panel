@@ -78,6 +78,69 @@ export class ApiClientError extends Error {
 
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
+/**
+ * LAN access token (see `ACCESS_TOKEN` in apps/api/src/config.ts). When the
+ * server requires one, the share-link lands on `/?token=<hex>`; this module
+ * claims it on first load — persists it in localStorage and strips it from
+ * the address bar — and then presents it on every request. Requests from
+ * the host PC (loopback) need no token; this stays empty there and nothing
+ * changes.
+ */
+const TOKEN_STORAGE_KEY = 'panel-reader:access-token:v1';
+
+/** In-memory fallback when localStorage is unavailable (private mode). */
+let memoryToken: string | null = null;
+
+function claimTokenFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const url = new URL(window.location.href);
+    const claimed = url.searchParams.get('token');
+    if (claimed && /^[A-Za-z0-9_-]{16,128}$/.test(claimed)) {
+      try {
+        localStorage.setItem(TOKEN_STORAGE_KEY, claimed);
+      } catch {
+        // Storage unavailable (private mode) — keep the in-memory token.
+        memoryToken = claimed;
+      }
+      // Strip the token from the address bar so it doesn't leak into
+      // history entries, screen-shares, or the Referer of external links.
+      url.searchParams.delete('token');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+      return claimed;
+    }
+    // No fresh claim — fall back to the stored token (or in-memory when
+    // localStorage is unavailable).
+    try {
+      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+      return stored && /^[A-Za-z0-9_-]{16,128}$/.test(stored) ? stored : null;
+    } catch {
+      return memoryToken;
+    }
+  } catch {
+    return null;
+  }
+}
+
+const accessToken: string | null = claimTokenFromUrl();
+
+/** Token header for fetch-based calls (`?token=` query param is used by
+ *  `<img>` URLs, which cannot set custom headers). */
+function tokenHeaders(): Record<string, string> {
+  return accessToken ? { 'X-Panel-Token': accessToken } : {};
+}
+
+/** Token query parameter for image-proxy URLs built in format.ts. */
+export function accessTokenQueryParam(): string {
+  return accessToken ? `&token=${encodeURIComponent(accessToken)}` : '';
+}
+
+/** Raw claimed/stored token (null when none) — for building share links
+ *  that pair another device in one tap (see ShareDialog). */
+export function storedAccessToken(): string | null {
+  return accessToken;
+}
+
 /** Root of the API request log; every path group is a child of this scope. */
 const apiLog = rootLog.child('api');
 
@@ -145,6 +208,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         // Incognito: the server refuses user-data writes when this is set.
         // Never persisted server-side — rides along as a request header only.
         ...(isIncognito() ? { 'X-Panel-Incognito': '1' } : {}),
+        // LAN access token (empty on the host PC — see ACCESS_TOKEN).
+        ...tokenHeaders(),
         ...init?.headers,
       },
       ...init,
@@ -467,7 +532,9 @@ export const api = {
   exportBackup: async (scope: BackupExportScope = 'full'): Promise<string> => {
     let response: Response;
     try {
-      response = await fetch(`${BASE_URL}/api/backup/export?scope=${scope}`);
+      response = await fetch(`${BASE_URL}/api/backup/export?scope=${encodeURIComponent(scope)}`, {
+        headers: tokenHeaders(),
+      });
     } catch {
       throw new ApiClientError('NETWORK_ERROR', 'Could not reach the server.', 0);
     }
@@ -510,7 +577,7 @@ export const api = {
       try {
         response = await fetch(`${BASE_URL}/api/backup/import`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/sql' },
+          headers: { 'Content-Type': 'application/sql', ...tokenHeaders() },
           body: chunks[i],
         });
       } catch {

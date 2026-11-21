@@ -13,6 +13,18 @@ const setTagsSchema = z.object({
   names: z.array(z.string().max(32)).max(50),
 });
 
+/** Validate with safeParse and map failures to a 400 (a raw ZodError would
+ *  fall through the error handler as a 500 INTERNAL_ERROR). */
+function parseOr400<T>(schema: z.ZodType<T>, input: unknown): T {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invalid tag payload.', {
+      issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+  return parsed.data;
+}
+
 /** Custom tags (T3-4): list, create, delete, per-panel get/set. */
 export function tagRoutes(tagService: TagService): Hono {
   const app = new Hono();
@@ -24,7 +36,7 @@ export function tagRoutes(tagService: TagService): Hono {
 
   // POST /api/tags
   app.post('/', async (c) => {
-    const input = createTagSchema.parse(await c.req.json());
+    const input = parseOr400(createTagSchema, await c.req.json());
     return c.json(ok(await tagService.create(input.name)), 201);
   });
 
@@ -45,7 +57,7 @@ export function tagRoutes(tagService: TagService): Hono {
 
   // PUT /api/tags/by-panel/:panelId → replace the panel's tag set
   app.put('/by-panel/:panelId', async (c) => {
-    const body = setTagsSchema.parse({ ...(await c.req.json()), panelId: c.req.param('panelId') });
+    const body = parseOr400(setTagsSchema, { ...(await c.req.json()), panelId: c.req.param('panelId') });
     if (!isGlobalId(body.panelId)) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Malformed panel id.', {
         panelId: body.panelId,

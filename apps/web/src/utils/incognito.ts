@@ -36,11 +36,17 @@ export function isIncognito(): boolean {
 }
 
 /** Flip (or set) incognito mode. Persists to localStorage and notifies
- *  every `useSyncExternalStore` subscriber. */
+ *  every `useSyncExternalStore` subscriber.
+ *
+ *  Only the ON state is persisted; disabling REMOVES the key, so the
+ *  key's absence means "off". This avoids leaving a persistent `0`
+ *  meta-trace that incognito mode exists / was used on the device —
+ *  absence of the key is indistinguishable from never having used it. */
 export function setIncognito(next: boolean): void {
   enabled = next;
   try {
-    localStorage.setItem(STORAGE_KEY, next ? '1' : '0');
+    if (next) localStorage.setItem(STORAGE_KEY, '1');
+    else localStorage.removeItem(STORAGE_KEY);
   } catch {
     // Storage blocked/full — the flag still applies for this session. Non-fatal.
   }

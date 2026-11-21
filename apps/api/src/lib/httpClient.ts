@@ -115,6 +115,13 @@ const DEFAULT_RETRY_COUNT = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 
 /**
+ * Redirect hops followed manually per attempt (mirrors fetch's internal
+ * redirect cap). Every hop is allowlist-validated before it is requested —
+ * see doFetch.
+ */
+const MAX_REDIRECT_HOPS = 10;
+
+/**
  * Performance-mode profile for outbound source traffic (the cache-settings
  * toggle). Slow panel CDNs stall to the per-attempt timeout and then pay
  * the full retry backoff — under max throughput that idle time is the
@@ -483,62 +490,119 @@ export class SourceHttpClient {
 
   /** Shared guard + timing wrapper around fetch with timeout and redirects.
    *
+   * Redirects are followed MANUALLY, one hop at a time, with every hop's
+   * target re-asserted against the allowlist BEFORE it is requested. The
+   * previous `redirect: 'follow'` + final-URL-check pattern let a hostile
+   * source bounce credentials through an off-allowlist host: the hop to
+   * `evil.com` happened first, and the check only ran on the landing URL
+   * (plain headers — unlike `Authorization` — are re-sent on cross-origin
+   * redirects per the fetch spec). Following nothing that was never
+   * allowlisted removes that window entirely.
+   *
    * Throws `SourceNetworkError` for any TRANSIENT failure (timeout, network
    * error, 429, 5xx) — those are the only cases the retry loop in
    * `request`/`requestBinary` will retry. Non-transient failures (other 4xx,
    * SSRF rejections) throw a public `SourceError` immediately. */
-  private async doFetch(rawUrl: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+  private async doFetch(
+    rawUrl: string,
+    init: RequestInit,
+    hosts: readonly string[] = this.allowedHosts,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     // An already-aborted client must never start an upstream fetch that
     // would hold a proxy slot for a reader that is already gone.
     signal?.throwIfAborted();
     const combined = combinedSignal(this.timeoutMs, signal);
-    let response: Response;
+    let currentUrl = rawUrl;
+    let currentInit = init;
     try {
-      response = await fetch(rawUrl, {
-        ...init,
-        redirect: 'follow',
-        signal: combined.signal,
-      });
-    } catch (error) {
+      // Bounded hop count — a hostile source can no longer loop redirects
+      // forever (fetch 'follow' had its own internal cap; this mirrors it).
+      for (let hop = 0; hop < MAX_REDIRECT_HOPS; hop++) {
+        let response: Response;
+        try {
+          response = await fetch(currentUrl, {
+            ...currentInit,
+            redirect: 'manual',
+            signal: combined.signal,
+          });
+        } catch (error) {
+          // A client abort (closed reader / chapter hop) is intentional — let
+          // the raw AbortError propagate so callers can tell it apart from a
+          // real timeout and, crucially, so the retry loop does NOT retry it.
+          if (isClientAbort(error, signal)) {
+            logger.debug('Source request aborted by client disconnect', { url: rawUrl });
+            throw error;
+          }
+          if (error instanceof DOMException && error.name === 'TimeoutError') {
+            logger.warn('Source request timed out', { url: rawUrl, timeoutMs: this.timeoutMs });
+            throw new SourceNetworkError(
+              `Request to ${rawUrl} timed out after ${this.timeoutMs}ms`,
+              error,
+              undefined,
+              true,
+            );
+          }
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            logger.warn('Source request aborted', { url: rawUrl });
+            throw new SourceNetworkError(
+              `Request to ${rawUrl} was aborted`,
+              error,
+              undefined,
+              true,
+            );
+          }
+          logger.error('Source request failed', {
+            url: rawUrl,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw new SourceNetworkError(
+            `Request to ${rawUrl} failed: ${error instanceof Error ? error.message : String(error)}`,
+            error,
+            undefined,
+            false,
+          );
+        }
+
+        // 3xx → validate the NEXT hop against the allowlist BEFORE requesting
+        // it (this is the security boundary — see the doc header).
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (location) {
+            let nextUrl: URL;
+            try {
+              nextUrl = new URL(location, currentUrl);
+            } catch {
+              logger.warn('Redirect Location could not be resolved', { url: rawUrl, location });
+              throw SourceError.unavailable(this.sourceName, rawUrl);
+            }
+            if (!this.isAllowedUrlHost(nextUrl.toString(), hosts)) {
+              logger.warn('Redirect left the allowlist', { url: rawUrl, finalUrl: nextUrl.toString() });
+              throw SourceError.unavailable(this.sourceName, rawUrl);
+            }
+            // Mirror fetch-'follow' semantics: 301/302/303 downgrade to GET
+            // and drop the body; 307/308 keep the method and body verbatim.
+            const status = response.status;
+            if (status === 301 || status === 302 || status === 303) {
+              currentInit = { ...currentInit, method: 'GET', body: undefined };
+            }
+            currentUrl = nextUrl.toString();
+            continue;
+          }
+          // 3xx without a Location header — return it; assertResponseOk maps
+          // the non-2xx status to the usual error shapes.
+          return response;
+        }
+
+        // Non-redirect: done. assertResponseOk re-checks response.url as
+        // belt-and-suspenders (the landing host was validated above already).
+        return response;
+      }
+      logger.warn('Redirect hop limit reached', { url: rawUrl, maxRedirects: MAX_REDIRECT_HOPS });
+      throw SourceError.unavailable(this.sourceName, rawUrl);
+    } finally {
       combined.dispose();
-      // A client abort (closed reader / chapter hop) is intentional — let
-      // the raw AbortError propagate so callers can tell it apart from a
-      // real timeout and, crucially, so the retry loop does NOT retry it.
-      if (isClientAbort(error, signal)) {
-        logger.debug('Source request aborted by client disconnect', { url: rawUrl });
-        throw error;
-      }
-      if (error instanceof DOMException && error.name === 'TimeoutError') {
-        logger.warn('Source request timed out', { url: rawUrl, timeoutMs: this.timeoutMs });
-        throw new SourceNetworkError(
-          `Request to ${rawUrl} timed out after ${this.timeoutMs}ms`,
-          error,
-          undefined,
-          true,
-        );
-      }
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        logger.warn('Source request aborted', { url: rawUrl });
-        throw new SourceNetworkError(
-          `Request to ${rawUrl} was aborted`,
-          error,
-          undefined,
-          true,
-        );
-      }
-      logger.error('Source request failed', {
-        url: rawUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new SourceNetworkError(
-        `Request to ${rawUrl} failed: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-        undefined,
-        false,
-      );
     }
-    combined.dispose();
-    return response;
   }
 
   /** Shared response validation (status + redirect target).
@@ -561,7 +625,9 @@ export class SourceHttpClient {
       throw SourceError.unavailable(this.sourceName, rawUrl, response.status);
     }
 
-    // The final URL after redirects must still be on the allowlist.
+    // Belt-and-suspenders: doFetch already validated every hop against the
+    // allowlist; this re-checks the response's own URL in case the platform
+    // ever reports a landing URL that differed.
     if (response.url && !this.isAllowedUrlHost(response.url, hosts)) {
       logger.warn('Redirect left the allowlist', { url: rawUrl, finalUrl: response.url });
       throw SourceError.unavailable(this.sourceName, rawUrl);
@@ -585,6 +651,15 @@ export class SourceHttpClient {
    * Any failure throws a `ChildInfrastructureError` (or an allowlist
    * `SourceError`) so the caller keeps the original fetch error — a broken
    * fallback must never look like a different kind of source outage.
+   *
+   * SECURITY INVARIANT: unlike the in-process path (which validates every
+   * redirect hop, see doFetch), curl follows redirects internally and only
+   * the effective URL is re-checked afterwards. It is therefore safe ONLY
+   * for requests that carry no credentials in plain headers. Today that
+   * holds — only toonily enables this fallback and sends constant,
+   * credential-free headers (UA/Accept). A source that needs cookies or an
+   * auth header through this transport must first move it to per-hop
+   * validation.
    */
   private async doFetchViaCurl(
     rawUrl: string,
@@ -1226,7 +1301,7 @@ export class SourceHttpClient {
       // Never start (or retry) for a reader that already went away.
       signal?.throwIfAborted();
       try {
-        const response = await this.doFetch(rawUrl, init, signal);
+        const response = await this.doFetch(rawUrl, init, hosts, signal);
         try {
           this.assertResponseOk(response, rawUrl, hosts);
           return response;

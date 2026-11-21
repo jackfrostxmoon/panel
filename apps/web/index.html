@@ -8,17 +8,10 @@
     <meta name="description" content="A clean, fast panel reader." />
     <title>Panel Reader</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Apply the saved theme before React mounts to avoid a dark flash.
-      try {
-        if (localStorage.getItem('panel-reader:theme:v1') === 'light') {
-          document.documentElement.dataset.theme = 'light';
-        }
-      } catch {}
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

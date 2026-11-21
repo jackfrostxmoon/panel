@@ -84,6 +84,14 @@ function sleep(ms: number): Promise<void> {
  *  New uploads always land in the newest files, so 3 (~2.4k chapters) covers
  *  the recent-updates window at a fraction of fetching all ~260 sitemaps. */
 const RECENT_CHAPTER_SITEMAPS = 3;
+/**
+ * Hard cap on chapter sitemaps fetched for one getChapters call (security:
+ * the sitemap index is source-controlled data — see the discovery guard in
+ * getChaptersViaSitemaps). Set above the real-world ~260 files so a genuine
+ * catalog is never truncated; a hostile index listing thousands of URLs
+ * can no longer drive an unbounded fetch fan-out.
+ */
+const MAX_CHAPTER_SITEMAPS = 300;
 
 /**
  * Hiperdex source adapter (hiperdex.com).
@@ -113,6 +121,12 @@ export class HiperdexSource implements PanelSource {
   readonly enabled: boolean;
 
   private readonly http: SourceHttpClient;
+  /**
+   * The SPA api's site token (`x-cfg-auth` header). Sourced from config
+   * (`SOURCE_HIPERDEX_API_KEY`) so a site-side rotation is an env change,
+   * not a code change; falls back to the built-in constant.
+   */
+  private readonly apiKey: string;
 
   /**
    * Runtime max-throughput profile for the performance-mode toggle —
@@ -134,8 +148,11 @@ export class HiperdexSource implements PanelSource {
    * (~100KB each); holding all of them lets any panel's chapter list be
    * served without re-downloading the whole set (the site answers 429
    * quickly when hammered). Expired entries free the memory again.
+   * Second ctor arg is a hard byte budget so a hostile index feeding us
+   * multi-MB bodies can never pin hundreds of MB here (entries are sized
+   * at write time and oldest-first evicted past the cap).
    */
-  private readonly sitemapCache = new TtlCache<string>(300);
+  private readonly sitemapCache = new TtlCache<string>(300, 48 * 1024 * 1024);
   /** Parsed chapter lists per panel (fast tRPC path); short TTL. */
   private readonly chaptersCache = new TtlCache<RawChapterItem[]>(300);
   /** __st cookie value for the SPA's reader api; null = bootstrap failed. */
@@ -148,13 +165,17 @@ export class HiperdexSource implements PanelSource {
     this.label = config.label;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.enabled = config.enabled;
+    this.apiKey = config.apiKey ?? HIPERDEX_API_KEY;
     this.http =
       http ??
       new SourceHttpClient(config.name, {
         allowedHosts: HiperdexSource.allowedHostsFor(config.baseUrl),
         // Chapter images live on the r2d2storage.com CDN (and some series
-        // serve from i.imgur.com instead), not hiperdex.com.
-        imageHosts: ['r2d2storage.com', 'imgur.com'],
+        // serve from i.imgur.com instead), not hiperdex.com. `i.imgur.com`
+        // (not the whole imgur.com registrable domain) — the narrowest host
+        // that actually serves the images, so the proxy can't be pointed at
+        // arbitrary public imgur content.
+        imageHosts: ['r2d2storage.com', 'i.imgur.com'],
         timeoutMs: config.requestTimeoutMs,
         retryCount: config.requestRetryCount,
         retryBaseDelayMs: config.requestRetryBaseDelayMs,
@@ -168,7 +189,9 @@ export class HiperdexSource implements PanelSource {
     const cached = this.sitemapCache.get(url);
     if (cached !== undefined) return cached;
     const { body } = await this.http.fetchText(url, SITEMAP_MAX_BYTES);
-    this.sitemapCache.set(url, body, SITEMAP_TTL_MS);
+    // Size the entry by its real byte length so the cache's byte budget
+    // (see above) can evict — default sizeBytes=0 would make it inert.
+    this.sitemapCache.set(url, body, SITEMAP_TTL_MS, Buffer.byteLength(body, 'utf8'));
     return body;
   }
 
@@ -230,7 +253,7 @@ export class HiperdexSource implements PanelSource {
     const p = page >= 1 ? page : 1;
     const cookie = await this.ensureSessionCookie();
     const headers: Record<string, string> = {
-      [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+      [HIPERDEX_API_HEADER]: this.apiKey,
       ...(cookie ? { Cookie: cookie } : {}),
     };
     const { body } = await this.http.fetchJson(
@@ -527,7 +550,7 @@ export class HiperdexSource implements PanelSource {
   private async fetchSeriesDetails(nativePanelId: string) {    try {
       const cookie = await this.ensureSessionCookie();
       const headers: Record<string, string> = {
-        [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+        [HIPERDEX_API_HEADER]: this.apiKey,
         ...(cookie ? { Cookie: cookie } : {}),
       };
       const { body } = await this.http.fetchJson(
@@ -563,7 +586,7 @@ export class HiperdexSource implements PanelSource {
     if (includes.length === 0) return this.latest(p);
     const cookie = await this.ensureSessionCookie();
     const headers: Record<string, string> = {
-      [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+      [HIPERDEX_API_HEADER]: this.apiKey,
       ...(cookie ? { Cookie: cookie } : {}),
     };
     const { body } = await this.http.fetchJson(
@@ -594,7 +617,7 @@ export class HiperdexSource implements PanelSource {
     this.assertEnabled();
     const cookie = await this.ensureSessionCookie();
     const headers: Record<string, string> = {
-      [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+      [HIPERDEX_API_HEADER]: this.apiKey,
       ...(cookie ? { Cookie: cookie } : {}),
     };
     const { body } = await this.http.fetchJson(buildGenreListApiUrl(this.baseUrl), headers);
@@ -626,7 +649,7 @@ export class HiperdexSource implements PanelSource {
     try {
       const cookie = await this.ensureSessionCookie();
       let headers: Record<string, string> = {
-        [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+        [HIPERDEX_API_HEADER]: this.apiKey,
         ...(cookie ? { Cookie: cookie } : {}),
       };
 
@@ -647,7 +670,7 @@ export class HiperdexSource implements PanelSource {
         this.sessionCookie = null;
         const freshCookie = await this.ensureSessionCookie();
         if (!freshCookie || freshCookie === cookie) throw new Error('series.chapters failed');
-        headers = { [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY, Cookie: freshCookie };
+        headers = { [HIPERDEX_API_HEADER]: this.apiKey, Cookie: freshCookie };
         listBody = (
           await this.http.fetchJson(buildSeriesChaptersApiUrl(this.baseUrl, seriesId), headers)
         ).body;
@@ -696,8 +719,22 @@ export class HiperdexSource implements PanelSource {
     if (!this.sitemapChapterUrls) {
       const indexBody = await this.fetchSitemap(`${this.baseUrl}/sitemap_index.xml`);
       const allSitemaps = parseSitemapIndex(indexBody);
-      this.sitemapChapterUrls = allSitemaps.filter((url) => url.includes('sitemap-chapters-'));
-      logger.debug('Discovered chapter sitemaps', { count: this.sitemapChapterUrls.length });
+      const chapterSitemaps = allSitemaps.filter((url) => url.includes('sitemap-chapters-'));
+      // Hostile-index guard: the sitemap index is source-controlled data, so
+      // the number of URLs it lists is NOT trusted. Cap the fan-out just
+      // above the real-world count (~260) — a 10k-URL index would otherwise
+      // drive ~10k guarded fetches (each with retry/timeout budgets) per
+      // getChapters call. Sorted numerically ascending so the oldest-first
+      // encounter order (and therefore chapter seq order) is preserved.
+      const keyed = chapterSitemaps
+        .map((url) => ({ url, n: /sitemap-chapters-(\d+)\.xml$/i.exec(url)?.[1] }))
+        .filter((e): e is { url: string; n: string } => e.n !== undefined)
+        .sort((a, b) => Number(a.n) - Number(b.n));
+      this.sitemapChapterUrls = keyed.slice(0, MAX_CHAPTER_SITEMAPS).map((e) => e.url);
+      logger.debug('Discovered chapter sitemaps', {
+        count: this.sitemapChapterUrls.length,
+        total: chapterSitemaps.length,
+      });
     }
 
     // Fetch all chapter sitemaps with bounded concurrency — 264 parallel
@@ -960,7 +997,7 @@ private async getOrderedChapters(nativePanelId: string): Promise<RawChapterItem[
   private async callReaderApi(seriesSlug: string, chapterNumber: number): Promise<string> {
     const cookie = await this.ensureSessionCookie();
     const headers: Record<string, string> = {
-      [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+      [HIPERDEX_API_HEADER]: this.apiKey,
       ...(cookie ? { Cookie: cookie } : {}),
     };
     const url = buildChapterPagesApiUrl(this.baseUrl, seriesSlug, chapterNumber);
@@ -973,7 +1010,7 @@ private async getOrderedChapters(nativePanelId: string): Promise<RawChapterItem[
       if (!freshCookie || freshCookie === cookie) throw error;
       return (
         await this.http.fetchJson(url, {
-          [HIPERDEX_API_HEADER]: HIPERDEX_API_KEY,
+          [HIPERDEX_API_HEADER]: this.apiKey,
           Cookie: freshCookie,
         })
       ).body;

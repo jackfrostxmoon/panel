@@ -502,7 +502,22 @@ export class RoliaScanSource implements PanelSource {
       const { body: batchHtml } = await this.http.fetchText(
         `${parsed.chaptersUrl}?offset=${encodeURIComponent(String(offset))}`,
       );
-      const batch = parseChapterBatch(batchHtml, this.baseUrl);
+      // An empty/garbage batch (hostile or half-broken source) must truncate
+      // the list gracefully instead of bubbling a 500 out of getChapters.
+      let batch: ReturnType<typeof parseChapterBatch>;
+      try {
+        batch = parseChapterBatch(batchHtml, this.baseUrl);
+      } catch (error) {
+        if (error instanceof PageNotRecognizedError) {
+          logger.warn('Chapter batch not recognized — truncating chapter list', {
+            source: this.name,
+            nativePanelId,
+            offset,
+          });
+          break;
+        }
+        throw error;
+      }
       allItems.push(...batch.items);
       hasMore = batch.hasMore;
       offset = batch.nextOffset;

@@ -12,8 +12,12 @@ import { recordRequest } from '../lib/stats.js';
  */
 export const requestLogger: MiddlewareHandler = async (c, next) => {
   const start = Date.now();
+  // An incoming X-Request-Id (e.g. from a reverse proxy) is honoured, but only
+  // when it is a safe token: bounded length, no CR/LF or separator characters —
+  // the value is echoed back as a response header and embedded in log lines.
+  const incoming = c.req.header('x-request-id');
   const requestId =
-    c.req.header('x-request-id') ?? randomUUID();
+    incoming && /^[A-Za-z0-9_.-]{1,64}$/.test(incoming) ? incoming : randomUUID();
   c.header('X-Request-Id', requestId);
   recordRequest();
   await next();

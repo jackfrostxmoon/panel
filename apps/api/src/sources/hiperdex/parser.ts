@@ -99,11 +99,11 @@ function decodeEntities(input: string): string {
   return input
     .replace(/&#(\d+);/g, (_, code: string) => {
       const cp = Number.parseInt(code, 10);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : '';
+      return Number.isSafeInteger(cp) && cp >= 0 && cp <= 0x10FFFF ? String.fromCodePoint(cp) : '';
     })
     .replace(/&#x([0-9a-fA-F]+);/g, (_, code: string) => {
       const cp = Number.parseInt(code, 16);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : '';
+      return Number.isSafeInteger(cp) && cp >= 0 && cp <= 0x10FFFF ? String.fromCodePoint(cp) : '';
     })
     .replace(/&([a-zA-Z]+);/g, (whole, name: string) => ENTITY_MAP[name] ?? whole);
 }

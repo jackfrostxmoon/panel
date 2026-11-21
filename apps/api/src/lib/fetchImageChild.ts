@@ -152,24 +152,62 @@ async function main(): Promise<void> {
     fail(`URL host is not allowlisted: ${url}.`);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'TimeoutError') {
-      fail(`Request to ${url} timed out after ${timeoutMs}ms.`, { transient: true, timeout: true });
+  // One timeout budget shared by every hop (the previous redirect:'follow'
+  // path applied one signal to the whole chain too).
+  const signal = AbortSignal.timeout(timeoutMs);
+
+  // Redirects are followed MANUALLY, one hop at a time, with every hop
+  // re-validated against the allowlist BEFORE it is requested — the
+  // previous follow-then-check-final-URL pattern let a hostile source
+  // bounce the Referer/User-Agent headers through an off-list host (plain
+  // headers are re-sent on cross-origin redirects per the fetch spec).
+  let currentUrl = url;
+  let response: Response | null = null;
+  for (let hop = 0; hop < 10; hop++) {
+    let attempt: Response;
+    try {
+      attempt = await fetch(currentUrl, {
+        headers,
+        redirect: 'manual',
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        fail(`Request to ${url} timed out after ${timeoutMs}ms.`, { transient: true, timeout: true });
+      }
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        fail(`Request to ${url} was aborted.`, { transient: true, timeout: true });
+      }
+      if (error instanceof TypeError) {
+        fail(`Request to ${url} failed: ${error.message}.`, { transient: true });
+      }
+      fail(`Request to ${url} failed.`, { transient: false });
     }
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      fail(`Request to ${url} was aborted.`, { transient: true, timeout: true });
+    if (attempt.status >= 300 && attempt.status < 400) {
+      const location = attempt.headers.get('location');
+      if (location) {
+        let nextUrl: URL;
+        try {
+          nextUrl = new URL(location, currentUrl);
+        } catch {
+          fail(`Redirect Location for ${url} could not be resolved: ${location}.`);
+        }
+        if (!hostAllowed(nextUrl.toString(), allowedHosts.map((h) => String(h).toLowerCase()))) {
+          fail(`Redirect left the allowlist: ${url} -> ${nextUrl.toString()}.`);
+        }
+        currentUrl = nextUrl.toString();
+        continue;
+      }
+      // 3xx without Location — return it to the standard status handling.
+      response = attempt;
+      break;
     }
-    if (error instanceof TypeError) {
-      fail(`Request to ${url} failed: ${error.message}.`, { transient: true });
-    }
-    fail(`Request to ${url} failed.`, { transient: false });
+    response = attempt;
+    break;
+  }
+  if (response === null) {
+    // Exhausted the hop budget without reaching a non-redirect response.
+    fail(`Redirect hop limit reached for ${url}.`, { transient: false });
   }
 
   if (!response.ok) {
@@ -180,7 +218,8 @@ async function main(): Promise<void> {
     fail(`${url} returned HTTP ${status}.`, { transient: false, status });
   }
 
-  // Redirects are followed above — the landing host must still be trusted.
+  // Landing host was validated per hop above; keep the check as
+  // belt-and-suspenders against platform quirks.
   if (response.url && !hostAllowed(response.url, allowedHosts.map((h) => String(h).toLowerCase()))) {
     fail(`Redirect left the allowlist: ${url} -> ${response.url}.`);
   }

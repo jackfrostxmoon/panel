@@ -22,4 +22,4 @@ if defined VERBOSE set "SILENT_ARG="
 echo.
 echo Using backup scope: %BACKUP_SCOPE%
 if defined VERBOSE (echo Logs: verbose) else (echo Logs: silent)
-powershell -NoProfile -Command "$env:BACKUP_SCOPE='%BACKUP_SCOPE%'; %SMOL_ARG% bun run lan %SILENT_ARG%"
+powershell -NoProfile -Command "$env:NODE_ENV='production'; $env:BACKUP_SCOPE='%BACKUP_SCOPE%'; %SMOL_ARG% bun run lan %SILENT_ARG%"
