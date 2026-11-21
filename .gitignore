@@ -48,6 +48,5 @@ database/
 backup.bat
 recover.bat
 .agents/
-scripts/
 AGENTS.md
 plans/
