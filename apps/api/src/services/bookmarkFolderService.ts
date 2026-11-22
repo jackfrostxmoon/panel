@@ -193,6 +193,9 @@ function toBookmarkSummary(
     // See bookmarkService.toBookmark — same raw-label cleanup.
     genres: dedupeGenreLabels(panel.genres),
     summary: panel.description,
+    altTitles: panel.altTitles ?? [],
+    authors: panel.authors ?? [],
+    artists: panel.artists ?? [],
     latestChapter,
     latestChapterCachedAt:
       latestChapterCachedAt instanceof Date

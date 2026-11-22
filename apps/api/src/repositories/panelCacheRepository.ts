@@ -67,6 +67,13 @@ export class PanelCacheRepository {
     const sourceUrl = data.sourceUrl?.trim() ? data.sourceUrl : (existing?.sourceUrl ?? data.sourceUrl);
     const status = data.status?.trim() ? data.status : (existing?.status ?? 'unknown');
     const genres = data.genres?.length ? data.genres : (existing?.genres ?? []);
+    // Credits/alt titles arrive only from full panel fetches (bookmark adds
+    // and paid list payloads omit them). Keep the stored lists when the
+    // incoming payload is empty so a refresh never wipes them, and write
+    // them on conflict so a panel first cached by a bookmark backfills.
+    const altTitles = data.altTitles?.length ? data.altTitles : (existing?.altTitles ?? []);
+    const authors = data.authors?.length ? data.authors : (existing?.authors ?? []);
+    const artists = data.artists?.length ? data.artists : (existing?.artists ?? []);
     const description = data.description !== undefined ? data.description : (existing?.description ?? null);
     const [row] = await this.db
       .insert(panel)
@@ -75,10 +82,10 @@ export class PanelCacheRepository {
         sourceId: data.sourceId,
         globalId: data.globalId,
         title,
-        altTitles: data.altTitles ?? [],
+        altTitles,
         description,
-        authors: data.authors ?? [],
-        artists: data.artists ?? [],
+        authors,
+        artists,
         genres,
         status,
         coverUrl,
@@ -95,6 +102,9 @@ export class PanelCacheRepository {
           sourceUrl,
           status,
           genres,
+          altTitles,
+          authors,
+          artists,
           cachedAt: new Date(),
           updatedAt: new Date(),
         },

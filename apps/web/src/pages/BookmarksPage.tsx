@@ -49,6 +49,7 @@ import { useDisplaySettings } from '../hooks/useDisplaySettings';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useFastScrollKeys } from '../hooks/useFastScrollKeys';
 import { readDefaultFolderId, writeDefaultFolderId } from '../utils/defaultBookmarkFolder';
+import { bookmarkMatchesQuery } from '../utils/bookmarkSearch';
 import { effectiveHiddenSources, formatBytes, sourceLabel } from '../utils/format';
 import { rankByLatestFeed, sortBookmarks, sortByCreatedAt } from '../utils/latestFeedOrder';
 
@@ -107,15 +108,22 @@ export function BookmarksPage() {
    */
   const [params, setParams] = useSearchParams();
   const sourceFilter = params.get('source') ?? '';
-  /** Write the source param, keeping any other params untouched. */
+  /** Write the source param, keeping any other params untouched. The
+      functional updater reads the latest URL state, so a source change and
+      a simultaneous search-param write can't clobber each other. */
   const setSourceFilter = useCallback(
     (next: string, { replace = false }: { replace?: boolean } = {}) => {
-      const nextParams = new URLSearchParams(params);
-      if (next) nextParams.set('source', next);
-      else nextParams.delete('source');
-      setParams(nextParams, replace ? { replace: true } : undefined);
+      setParams(
+        (prev) => {
+          const nextParams = new URLSearchParams(prev);
+          if (next) nextParams.set('source', next);
+          else nextParams.delete('source');
+          return nextParams;
+        },
+        replace ? { replace: true } : undefined,
+      );
     },
-    [params, setParams],
+    [setParams],
   );
   /**
    * Sources hidden via the Sources page toggle — their pills vanish (via
@@ -205,7 +213,43 @@ export function BookmarksPage() {
       non-blocking badge. The grid stays fully interactive (cards can be
       opened while re-ranking happens in the background). */
   const latestFeedFetching = feedPage1.isFetching || feedPage2.isFetching || feedPage3.isFetching;
-  const [query, setQuery] = useState('');
+  /**
+   * Local filter query, mirrored to the URL (`/bookmarks?q=…`) like the
+   * search page so refreshes, shared links and back-navigation keep the
+   * term. Typing updates a local draft immediately (the shelf filters on
+   * every keystroke); a short debounce writes it to the URL with `replace`
+   * so the history isn't spammed. An external URL change (back/forward,
+   * deep link) flows the other way through the sync effect below.
+   */
+  const queryParam = params.get('q') ?? '';
+  const [query, setQuery] = useState(queryParam);
+  /**
+   * Last value this page wrote to (or read from) the URL. It keeps the
+   * debounced write and the URL→draft sync from fighting: a URL update we
+   * just caused must not overwrite newer keystrokes typed while it landed.
+   */
+  const lastUrlQueryRef = useRef(queryParam);
+  useEffect(() => {
+    if (queryParam === lastUrlQueryRef.current) return;
+    lastUrlQueryRef.current = queryParam;
+    setQuery(queryParam);
+  }, [queryParam]);
+  useEffect(() => {
+    if (query === lastUrlQueryRef.current) return;
+    const timer = window.setTimeout(() => {
+      lastUrlQueryRef.current = query;
+      setParams(
+        (prev) => {
+          const nextParams = new URLSearchParams(prev);
+          if (query) nextParams.set('q', query);
+          else nextParams.delete('q');
+          return nextParams;
+        },
+        { replace: true },
+      );
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [query, setParams]);
   /** Custom-tag filter (T3-4): show only bookmarks carrying the selected tag. */
   const [tagFilter, setTagFilter] = useState('');
   /** Status / genre filters (mirror the latest page): narrow the shelf
@@ -331,7 +375,7 @@ export function BookmarksPage() {
       (bookmark) =>
         (!sourceFilter || bookmark.source === sourceFilter) &&
         !hiddenSources.has(bookmark.source) &&
-        (!needle || bookmark.title.toLowerCase().includes(needle)) &&
+        (!needle || bookmarkMatchesQuery(bookmark, needle)) &&
         (!tagFilter || panelTags.get(bookmark.panelId)?.has(tagFilter)) &&
         (!statusFilter || bookmark.status === statusFilter) &&
         (chapterBookmarkFilter === 'all' ||
@@ -900,8 +944,8 @@ export function BookmarksPage() {
               <FilterSearchBar
                 value={query}
                 onChange={setQuery}
-                placeholder="Filter bookmarks…"
-                label="Filter bookmarks by title"
+                placeholder="Filter by title, author or artist…"
+                label="Filter bookmarks by title, author or artist"
               />
             )}
           </>
@@ -970,7 +1014,7 @@ export function BookmarksPage() {
           }
           message={
             query.trim()
-              ? 'Try a different title, or clear the filter.'
+              ? 'Try a different title, author or artist, or clear the filter.'
               : filtersActive
                 ? 'No bookmarks match the selected filters.'
                 : 'Try another source filter, or bookmark something from it.'

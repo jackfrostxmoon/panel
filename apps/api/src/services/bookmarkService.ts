@@ -155,6 +155,9 @@ function toBookmark(
     // matching never see the mess.
     genres: dedupeGenreLabels(panel.genres),
     summary: panel.description,
+    altTitles: panel.altTitles ?? [],
+    authors: panel.authors ?? [],
+    artists: panel.artists ?? [],
     latestChapter,
     latestChapterCachedAt:
       latestChapterCachedAt instanceof Date

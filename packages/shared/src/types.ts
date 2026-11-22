@@ -99,6 +99,14 @@ export interface Bookmark {
   status?: PanelStatus;
   genres?: string[];
   summary?: string | null;
+  /**
+   * Cached alternative titles, authors and artists (from the panel cache) —
+   * the bookmarks shelf's local search matches all of these in addition to
+   * the primary title, so a title known by another name stays findable.
+   */
+  altTitles?: string[];
+  authors?: string[];
+  artists?: string[];
   latestChapter?: string | null;
   /**
    * ISO timestamp of when the latest chapter was cached server-side.
