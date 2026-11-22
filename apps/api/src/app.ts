@@ -6,7 +6,7 @@ import type { Database } from './db/client.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { incognitoGuard } from './middleware/incognito.js';
 import { PairedDevices } from './lib/pairedDevices.js';
-import { deviceGate } from './middleware/accessToken.js';
+import { deviceGate, BLANK_PAGE_STYLE_HASH } from './middleware/accessToken.js';
 import { sameOriginGuard } from './middleware/sameOrigin.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { requestLogger } from './middleware/requestLogger.js';
@@ -168,7 +168,10 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
       contentSecurityPolicy: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
+        // `BLANK_PAGE_STYLE_HASH` is the hash of the only inline style the API
+        // ever serves (the empty page for unpaired devices); the SPA still
+        // applies styling via CSSOM and needs no inline styles.
+        styleSrc: ["'self'", BLANK_PAGE_STYLE_HASH],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
         fontSrc: ["'self'"],

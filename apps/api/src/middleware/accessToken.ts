@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { getConnInfo } from 'hono/bun';
@@ -35,9 +36,39 @@ export interface DeviceGateOptions {
 /** Cookie that carries this device's token (HttpOnly, set by /api/devices/pair). */
 export const DEVICE_COOKIE = 'panel-device';
 
-/** Served instead of the SPA to an unpaired device — deliberately blank. */
-const EMPTY_DOCUMENT =
-  '<!doctype html><html><head><meta charset="utf-8"><title></title></head><body></body></html>';
+/**
+ * Layout for the blocked-device page. Kept as one string so its CSP hash is
+ * derived from the exact bytes that are served (`BLANK_PAGE_STYLE_HASH`, used
+ * in app.ts's `style-src`); the app's policy otherwise forbids inline styles.
+ *
+ * Without `width=device-width` a phone renders the empty document in a 980px
+ * layout viewport and lets the user pan/zoom/overscroll around a page with no
+ * content; the fixed, non-scrolling body prevents the rubber-band scroll.
+ * The dark background matches the app's default theme so a blocked device
+ * doesn't get a full-screen white flash.
+ */
+const BLANK_PAGE_STYLE =
+  'html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;' +
+  'overscroll-behavior:none;background:#0e1014;touch-action:none;' +
+  '-webkit-text-size-adjust:100%;}' +
+  'body{position:fixed;inset:0;}';
+
+/** `'sha256-…'` source for the blank page's `<style>` block (see EMPTY_DOCUMENT). */
+export const BLANK_PAGE_STYLE_HASH = `'sha256-${createHash('sha256')
+  .update(BLANK_PAGE_STYLE, 'utf8')
+  .digest('base64')}'`;
+
+/** Served instead of the SPA to an unpaired device — deliberately blank, no scripts. */
+const EMPTY_DOCUMENT = [
+  '<!doctype html><html lang="en"><head>',
+  '<meta charset="utf-8">',
+  '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+  '<meta name="color-scheme" content="dark">',
+  '<title></title>',
+  `<style>${BLANK_PAGE_STYLE}</style>`,
+  '</head><body></body></html>',
+].join('');
+
 
 export function deviceGate({ devices, pairingSecret }: DeviceGateOptions): MiddlewareHandler {
   return async (c, next) => {
