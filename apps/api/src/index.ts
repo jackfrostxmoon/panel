@@ -294,7 +294,7 @@ logger.info(`Panel viewer API listening`, {
   url: `http://${server.hostname}:${server.port}`,
   local: `http://localhost:${server.port}`,
   env: process.env.NODE_ENV ?? 'development',
-  tokenGate: config.accessToken ? 'on (LAN callers need ACCESS_TOKEN)' : 'off',
+  tokenGate: config.accessToken ? 'on (LAN devices must be paired)' : 'off',
   sources: registry.list().map((s) => `${s.label} (${s.enabled ? 'enabled' : 'disabled'})`),
 });
 

@@ -27,11 +27,12 @@
  * to the allowlist + same-host origins) and BIND_ALL=1 (opt-in to LAN
  * binding). An ACCESS_TOKEN is always provided — an env-set one wins;
  * otherwise a random 32-hex token is generated once and persisted in
- * `data/lan-token` — so LAN callers must present it, while the host PC
- * (loopback) stays token-free. The printed LAN link carries `?token=…`
- * for one-tap pairing on phones, and a scannable QR of that link is
- * rendered right in the terminal (uses apps/web's qrcode package;
- * suppressed in --silent mode like the other launcher logs).
+ * `data/lan-token` — so LAN callers must be paired devices (see
+ * apps/api/src/lib/pairedDevices.ts), while the host PC (loopback) stays
+ * pairing-free. The printed LAN link carries `?token=…` for one-tap pairing
+ * on phones, and a scannable QR of that link is rendered right in the
+ * terminal (uses apps/web's qrcode package; suppressed in --silent mode like
+ * the other launcher logs).
  *
  * Port precedence: `--port` flag > `LAN_PORT` env var > default 80.
  * NOTE: the generic `PORT` env var is intentionally ignored here because Bun
@@ -105,11 +106,13 @@ if (backupScope !== 'full' && backupScope !== 'minimal') {
 }
 
 /**
- * Access token for LAN callers. An ACCESS_TOKEN set in the environment
+ * Pairing secret for LAN devices. An ACCESS_TOKEN set in the environment
  * wins; otherwise one is generated once (32 hex chars) and persisted in
- * `data/lan-token` so restarts keep the same token — phones stay paired.
- * The API gate lets loopback callers through without it, so the host PC
- * needs no setup.
+ * `data/lan-token` so restarts keep the same secret — existing pairings (one
+ * record per device in `data/devices/`) stay valid. A device takes the
+ * secret from the printed link/QR once and receives its own token; the
+ * secret itself is never stored on the device. Loopback (the host PC) needs
+ * no pairing at all.
  */
 function loadOrCreateLanToken(): string {
   const fromEnv = process.env.ACCESS_TOKEN;
@@ -182,12 +185,12 @@ const displayHost = (host: string): string =>
   port === 80 ? `http://${host}` : `http://${host}:${port}`;
 log.info(`[lan] Starting server on port ${port} (all interfaces)…`);
 log.info(`[lan] On-exit auto-backup scope: ${backupScope}`);
-log.info('[lan] Security: NODE_ENV=production, CORS locked to this host, LAN callers need the access token');
+log.info('[lan] Security: NODE_ENV=production, CORS locked to this host, LAN devices must be paired');
 if (lan) {
   const pairingUrl = `${displayHost(lan)}?token=${accessToken}`;
   log.info(`[lan] On this PC:      ${displayHost('localhost')}`);
   log.info(`[lan] Other devices:   ${pairingUrl}  ← open this on phones/tablets`);
-  log.info('[lan] (The ?token= pairs the device once; the app remembers it.)');
+  log.info('[lan] (The ?token= pairs that device once; it gets its own cookie afterwards.)');
   // Scan-to-pair QR right in the terminal (suppressed in --silent mode
   // like every other launcher log). Build the QR before spawning the
   // server so it's on screen while the API boots.
@@ -228,8 +231,8 @@ function startChild(): void {
       //  - production → CORS locked to the allowlist + same-host origins
       //    (dev's echo-any-origin matcher must never serve the LAN).
       //  - BIND_ALL=1 → 0.0.0.0 binding is now an explicit opt-in.
-      //  - ACCESS_TOKEN → LAN callers must present the token; loopback
-      //    (the host PC) stays open.
+      //  - ACCESS_TOKEN → the pairing secret devices exchange for their own
+      //    record; loopback (the host PC) stays open.
       NODE_ENV: 'production',
       BIND_ALL: '1',
       ACCESS_TOKEN: accessToken,

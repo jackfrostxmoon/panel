@@ -77,6 +77,22 @@ Port precedence: `--port` flag > `LAN_PORT` env var > default 80. (The
 generic `PORT` from `.env` is ignored by `bun run lan` so the dev default
 `3001` can't silently win over port 80.)
 
+**Device pairing (per device, not one shared password).** The terminal prints a
+pairing link + QR carrying `?token=…`. Opening it pairs that device once: the
+server writes a record in `data/devices/<deviceId>.json` (only a hash of the
+device token — never the token itself) and sets an HTTP-only `panel-device`
+cookie that the browser sends on every request. Unpaired devices are refused
+outright: API calls get the JSON error envelope and page loads get a **completely
+empty page** — the app shell, data and images never load. The Share dialog pairs
+another device with a one-time code (15 minutes, single use).
+
+- Revoke a device: delete `data/devices/<deviceId>.json` (picked up on the next
+  request) or `DELETE /api/devices/<deviceId>`; `GET /api/devices` lists them.
+- The host PC (loopback) and `bun run dev` need no pairing. With `ACCESS_TOKEN`
+  unset the gate is off entirely.
+- Clear a device's cookies and it becomes unpaired again — re-scan the terminal
+  QR or use a Share-dialog link to re-pair.
+
 To change the on-exit backup scope (default `minimal`), edit `lan.bat`:
 `set "BACKUP_SCOPE=minimal"` → `set "BACKUP_SCOPE=full"` (or pass `lan.bat full`).
 
@@ -513,6 +529,11 @@ out of the allowlist) are never retried. Configurable via `SOURCE_REQUEST_RETRY_
 - **Input validation** with Zod on every body/query; ids must parse as
   `source:native` to be accepted.
 - **Rate limiting** (per-IP sliding window) on all `/api/*` routes.
+- **Per-device LAN pairing**: when `ACCESS_TOKEN` is set (`bun run lan`), every
+  non-loopback request must come from a paired device — an HTTP-only cookie tied
+  to a record in `data/devices/`. Tokens are stored hashed, pairing links are
+  single-use in the Share dialog, and unpaired page loads get an empty page
+  instead of the app shell.
 - **SQL injection** prevented by Drizzle parameterized queries throughout.
 - **Safe responses**: clients never receive stack traces or driver messages; everything is
   mapped to typed error codes (`SOURCE_TIMEOUT`, `PANEL_NOT_FOUND`, …).
@@ -561,12 +582,12 @@ design). The four historical specs listed above are grandfathered.
 │   │   ├── src/
 │   │   │   ├── db/           # schema.ts, client.ts, migrate.ts
 │   │   │   ├── lib/          # errors, cache, guarded http client, url helpers, logger
-│   │   │   ├── middleware/   # error handler, rate limit, request log
+│   │   │   ├── middleware/   # error handler, rate limit, device-pairing gate, request log
 │   │   │   ├── repositories/ # data access (panel cache, bookmarks, chapter bookmarks,
 │   │   │   │                 #   progress, reading list)
 │   │   │   ├── routes/       # REST endpoints (panel, chapters, bookmarks, bookmark folders,
 │   │   │   │                 #   chapter-bookmarks, ratings, tags, progress, reading list,
-│   │   │   │                 #   source-image, health)
+│   │   │   │                 #   source-image, health, devices)
 │   │   │   ├── services/     # business logic (panel, bookmark, bookmark folder,
 │   │   │   │                 #   chapter bookmark, rating, tag, progress, reading list)
 │   │   │   ├── sources/      # PanelSource registry + 9 adapters (mk nk rk rs hd mr tn rd ru rl)

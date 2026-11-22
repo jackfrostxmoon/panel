@@ -1,56 +1,49 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api, storedAccessToken } from '../api/client';
+import { api } from '../api/client';
 import { IconCheck, IconX } from './icons';
 
 /** Hostnames that only work on the machine running the app itself. */
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 /**
- * Append the LAN access token to `url` when the device holds one, so the
- * share link/QR pairs another device in one tap (the target app claims
- * `?token=` on load — see `claimTokenFromUrl` in api/client). No token
- * stored (host PC) → the URL passes through unchanged.
- */
-function withShareToken(url: string): string {
-  const token = storedAccessToken();
-  if (!token) return url;
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.set('token', token);
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Replace a loopback hostname in `url` with the server's LAN IP so the
- * link/QR code also works from other devices on the network. Falls back to
- * the original URL if the LAN address can't be resolved.
+ * Resolve the shareable link:
+ *
+ *  - a loopback hostname is replaced with the server's LAN IP so the link
+ *    works from other devices (best-effort — falls back to the original);
+ *  - a one-time pairing code (15 min, single use) is appended as `?token=`
+ *    so the receiving device pairs itself on first load. Only a one-time
+ *    code travels in the link — the long-lived pairing secret stays on the
+ *    server. If minting fails (gate off in dev), the plain page URL is
+ *    shared.
  */
 function useShareUrl(url: string): string {
-  const [shareUrl, setShareUrl] = useState(() => withShareToken(url));
+  const [shareUrl, setShareUrl] = useState(() => url);
   useEffect(() => {
     let alive = true;
-    const tokened = withShareToken(url);
-    setShareUrl(tokened);
-    try {
-      const parsed = new URL(tokened);
-      if (!LOCAL_HOSTS.has(parsed.hostname)) return;
-      api
-        .getHealth()
-        .then((info) => {
-          if (!alive || !info.lanAddress) return;
-          parsed.hostname = info.lanAddress;
-          setShareUrl(parsed.toString());
-        })
-        .catch(() => {
-          // Best-effort — keep the original URL.
-        });
-    } catch {
-      // Not a parseable URL — keep as-is.
-    }
+    void (async () => {
+      let target: URL;
+      try {
+        target = new URL(url, window.location.href);
+      } catch {
+        return; // Not a parseable URL — keep as-is.
+      }
+      if (LOCAL_HOSTS.has(target.hostname)) {
+        try {
+          const info = await api.getHealth();
+          if (info.lanAddress) target.hostname = info.lanAddress;
+        } catch {
+          // Best-effort — keep the original host.
+        }
+      }
+      try {
+        const { code } = await api.createPairingCode();
+        target.searchParams.set('token', code);
+      } catch {
+        // Pairing unavailable — share the plain page URL.
+      }
+      if (alive) setShareUrl(target.toString());
+    })();
     return () => {
       alive = false;
     };

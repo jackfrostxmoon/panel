@@ -5,7 +5,8 @@ import type { AppConfig } from './config.js';
 import type { Database } from './db/client.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { incognitoGuard } from './middleware/incognito.js';
-import { accessTokenGate } from './middleware/accessToken.js';
+import { PairedDevices } from './lib/pairedDevices.js';
+import { deviceGate } from './middleware/accessToken.js';
 import { sameOriginGuard } from './middleware/sameOrigin.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { requestLogger } from './middleware/requestLogger.js';
@@ -46,6 +47,7 @@ import { searchSettingsRoutes } from './routes/search-settings.js';
 import { bookmarksSettingsRoutes } from './routes/bookmarks-settings.js';
 import { detailsSettingsRoutes } from './routes/details-settings.js';
 import { cacheSettingsRoutes } from './routes/cache-settings.js';
+import { deviceRoutes } from './routes/devices.js';
 import { sourceOrderRoutes } from './routes/source-order.js';
 import { memoryFlushRoutes } from './routes/memory-flush.js';
 import { optimizeCoversRoutes } from './routes/optimize-covers.js';
@@ -95,6 +97,9 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   const progressRepo = new ProgressRepository(db);
   const readingListRepo = new ReadingListRepository(db);
   const recentlyViewedRepo = new RecentlyViewedRepository(db);
+
+  // One JSON record per paired LAN device (see lib/pairedDevices.ts).
+  const pairedDevices = new PairedDevices(config.devicesDir);
 
   // Services
   const panelService = new PanelService(registry, config.cache, panelCacheRepo);
@@ -182,9 +187,12 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
     cors({
       origin: config.corsOrigin,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      // The incognito marker and the LAN access token ride as custom
-      // headers; list both explicitly so LAN/preflight traffic isn't rejected.
+      // The incognito marker and LAN device tokens ride as custom headers;
+      // list both explicitly so LAN/preflight traffic isn't rejected.
       allowHeaders: ['Content-Type', 'X-Panel-Incognito', 'X-Panel-Token'],
+      // Paired devices authenticate with an HttpOnly cookie, so credentialed
+      // requests (cross-origin API-base setups included) must be allowed.
+      credentials: true,
       maxAge: 600,
     }),
   );
@@ -198,15 +206,17 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
   // retry backoff), so this cap only needs to stop client-side storms.
   app.use('/api/*', rateLimit({ windowMs: 60_000, max: 1200, trustProxy: config.trustProxy }));
   // Security gates (after the limiter so blocked floods still count):
-  //  - accessTokenGate: non-localhost callers need the shared token when
-  //    ACCESS_TOKEN is configured (off otherwise).
+  //  - deviceGate: non-localhost callers must be paired devices. Unpaired
+  //    document loads get an empty page (never the SPA), unauthenticated API
+  //    calls keep the JSON error envelope, and the pairing endpoint stays
+  //    reachable with a valid pairing credential.
   //  - sameOriginGuard (production/test only): browsers may only issue
   //    writes from this host — the CSRF backstop that works even if CORS is
   //    ever misconfigured. NOT mounted in development: there the phone UX
   //    reaches the API through the Vite proxy (Origin = <phone-ip>:5173 vs
   //    Host = localhost:3001 — unmatchable hostnames), and dev's CORS policy
   //    already trusts the whole network by design (echoes every origin).
-  app.use('/api/*', accessTokenGate(config.accessToken));
+  app.use('*', deviceGate({ devices: pairedDevices, pairingSecret: config.accessToken }));
   if (config.isProduction || config.isTest) {
     app.use('/api/*', sameOriginGuard());
   }
@@ -225,6 +235,7 @@ export function createApp({ config, db, registry }: AppDeps): BuiltApp {
 
   // Routes
   app.route('/api', healthRoutes(db, registry, imageCache, config.shareLanAddress));
+  app.route('/api/devices', deviceRoutes(pairedDevices, config.accessToken));
   app.route('/api/panel', panelRoutes(panelService, registry));
   app.route('/api/chapter', chapterRoutes(panelService, db, { worker: prefetchWorker }));
   app.route('/api/prefetch', prefetchRoutes(db, { worker: prefetchWorker }));

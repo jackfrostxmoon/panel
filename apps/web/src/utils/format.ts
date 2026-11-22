@@ -1,5 +1,4 @@
 /** Display formatting helpers. */
-import { accessTokenQueryParam } from '../api/client';
 
 /** "May 31, 2023" from an ISO string; null-safe. */
 export function formatDate(iso: string | null | undefined): string | null {
@@ -107,32 +106,12 @@ export function getProxiedImageUrl(
   if (!url) return null;
   // Adapters with hotlink-protected CDNs (hd/tn/rd) rewrite their own image
   // URLs to the proxy — don't double-wrap those (e.g. covers saved alongside
-  // reading progress from a chapter payload). Pass them through with the
-  // access token appended so a token-gated server still serves them (the
-  // raw URL may already carry one — the server compares the exact value).
-  if (url.startsWith('/api/source-image')) return appendTokenParam(url);
+  // reading progress from a chapter payload). Pass them through unchanged;
+  // the paired-device cookie authenticates the request, so no token query
+  // parameter is needed (see middleware/accessToken.ts).
+  if (url.startsWith('/api/source-image')) return url;
   const tagPart = tag ? `&tag=${encodeURIComponent(tag)}` : '';
-  return appendTokenParam(
-    `/api/source-image/${kind}?source=${encodeURIComponent(source)}&u=${encodeURIComponent(url)}${tagPart}`,
-  );
-}
-
-/**
- * Append the LAN access token (`?token=…`) to a proxy URL when the server
- * requires one. `<img>` tags cannot set custom headers, so the query
- * parameter is the only channel for image requests. Empty on the host PC —
- * a no-op there. Persisted payloads (chapter_pages rows) may carry a token
- * from an earlier pairing — that stale value is REPLACED, never appended
- * as a duplicate (a duplicated param would leave the stale value first in
- * the query string and fail the server's check).
- */
-function appendTokenParam(url: string): string {
-  const token = accessTokenQueryParam();
-  if (!token) return url;
-  if (/[?&]token=/.test(url)) {
-    return url.replace(/([?&])token=[^&]*/, `$1${token.slice(1)}`);
-  }
-  return `${url}${token}`;
+  return `/api/source-image/${kind}?source=${encodeURIComponent(source)}&u=${encodeURIComponent(url)}${tagPart}`;
 }
 
 /**

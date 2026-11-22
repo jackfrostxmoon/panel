@@ -79,66 +79,39 @@ export class ApiClientError extends Error {
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
 /**
- * LAN access token (see `ACCESS_TOKEN` in apps/api/src/config.ts). When the
- * server requires one, the share-link lands on `/?token=<hex>`; this module
- * claims it on first load — persists it in localStorage and strips it from
- * the address bar — and then presents it on every request. Requests from
- * the host PC (loopback) need no token; this stays empty there and nothing
- * changes.
+ * LAN device pairing (see apps/api/src/middleware/accessToken.ts).
+ *
+ * `bun run lan` prints a link/QR carrying `?token=<pairing secret>` (or the
+ * Share dialog hands out a one-time code). The server refuses every data
+ * request and serves an empty page to unpaired devices, so the token is
+ * exchanged for a device record + HttpOnly `panel-device` cookie BEFORE the
+ * app renders (see main.tsx). The token is stripped from the address bar
+ * immediately, so it never lands in history entries, screen-shares, or the
+ * Referer of external links — and nothing is stored in localStorage.
  */
-const TOKEN_STORAGE_KEY = 'panel-reader:access-token:v1';
+const PAIRING_TOKEN_RE = /^[A-Za-z0-9_.-]{16,128}$/;
 
-/** In-memory fallback when localStorage is unavailable (private mode). */
-let memoryToken: string | null = null;
-
-function claimTokenFromUrl(): string | null {
+/** Read `?token=` from the address bar, strip it, and return it (or null). */
+export function takePairingTokenFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     const url = new URL(window.location.href);
     const claimed = url.searchParams.get('token');
-    if (claimed && /^[A-Za-z0-9_-]{16,128}$/.test(claimed)) {
-      try {
-        localStorage.setItem(TOKEN_STORAGE_KEY, claimed);
-      } catch {
-        // Storage unavailable (private mode) — keep the in-memory token.
-        memoryToken = claimed;
-      }
-      // Strip the token from the address bar so it doesn't leak into
-      // history entries, screen-shares, or the Referer of external links.
-      url.searchParams.delete('token');
-      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-      return claimed;
-    }
-    // No fresh claim — fall back to the stored token (or in-memory when
-    // localStorage is unavailable).
-    try {
-      const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
-      return stored && /^[A-Za-z0-9_-]{16,128}$/.test(stored) ? stored : null;
-    } catch {
-      return memoryToken;
-    }
+    if (!claimed) return null;
+    url.searchParams.delete('token');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    return PAIRING_TOKEN_RE.test(claimed) ? claimed : null;
   } catch {
     return null;
   }
 }
 
-const accessToken: string | null = claimTokenFromUrl();
-
-/** Token header for fetch-based calls (`?token=` query param is used by
- *  `<img>` URLs, which cannot set custom headers). */
-function tokenHeaders(): Record<string, string> {
-  return accessToken ? { 'X-Panel-Token': accessToken } : {};
-}
-
-/** Token query parameter for image-proxy URLs built in format.ts. */
-export function accessTokenQueryParam(): string {
-  return accessToken ? `&token=${encodeURIComponent(accessToken)}` : '';
-}
-
-/** Raw claimed/stored token (null when none) — for building share links
- *  that pair another device in one tap (see ShareDialog). */
-export function storedAccessToken(): string | null {
-  return accessToken;
+/** Exchange a pairing secret/code for this device's own record + cookie. */
+export function pairDevice(token: string): Promise<{ deviceId: string }> {
+  return request<{ deviceId: string }>('/api/devices/pair', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 }
 
 /** Root of the API request log; every path group is a child of this scope. */
@@ -203,13 +176,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
+      // Send the paired-device cookie (see apps/api/src/middleware/accessToken.ts).
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         // Incognito: the server refuses user-data writes when this is set.
         // Never persisted server-side — rides along as a request header only.
         ...(isIncognito() ? { 'X-Panel-Incognito': '1' } : {}),
-        // LAN access token (empty on the host PC — see ACCESS_TOKEN).
-        ...tokenHeaders(),
         ...init?.headers,
       },
       ...init,
@@ -533,7 +506,7 @@ export const api = {
     let response: Response;
     try {
       response = await fetch(`${BASE_URL}/api/backup/export?scope=${encodeURIComponent(scope)}`, {
-        headers: tokenHeaders(),
+        credentials: 'include',
       });
     } catch {
       throw new ApiClientError('NETWORK_ERROR', 'Could not reach the server.', 0);
@@ -577,7 +550,8 @@ export const api = {
       try {
         response = await fetch(`${BASE_URL}/api/backup/import`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/sql', ...tokenHeaders() },
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/sql' },
           body: chunks[i],
         });
       } catch {
@@ -683,6 +657,14 @@ export const api = {
    */
   getHealth: () =>
     request<{ status: string; lanAddress: string | null }>('/api/health'),
+
+  /**
+   * Mint a one-time LAN pairing code (15 min, single use) for the Share
+   * dialog. Exchanged by the receiving device for its own device record via
+   * `pairDevice` — the long-lived pairing secret never leaves the server.
+   */
+  createPairingCode: () =>
+    request<{ code: string }>('/api/devices/pairing-code', { method: 'POST' }),
 
   /**
    * Detailed health incl. per-source rolling stats. The image counters back

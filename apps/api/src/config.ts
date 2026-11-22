@@ -32,13 +32,13 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   /**
-   * Shared access token for non-localhost callers (R2). When set, every
-   * /api request from a non-loopback peer must present it via the
-   * `X-Panel-Token` header or `?token=` query parameter — the web client
-   * claims it from the share-link URL and stores it in localStorage.
-   * Unset = no token gate; the server then binds loopback unless
-   * BIND_ALL=1 (see below). Minimum 16 chars so a casual value can't be
-   * guessed or brute-forced over the network.
+   * Pairing secret for non-localhost devices (R2). When set, every request
+   * from another device must come from a paired device (HttpOnly
+   * `panel-device` cookie, one record per device in DEVICES_DIR). The
+   * terminal QR/link carries this secret as `?token=` and the web client
+   * trades it for a device record on first load. Unset = no gate; the server
+   * then binds loopback unless BIND_ALL=1 (see below). Minimum 16 chars so a
+   * casual value can't be guessed or brute-forced over the network.
    */
   ACCESS_TOKEN: z.string().min(16).optional(),
 
@@ -212,6 +212,15 @@ const envSchema = z.object({
    */
   BACKUP_INTERVAL_MS: z.coerce.number().int().min(0).default(3_600_000),
 
+  /**
+   * Folder holding one JSON record per paired LAN device (relative paths
+   * resolve against the repo root, default `data/devices`). The raw device
+   * token is never stored — only its hash — and deleting a device's file
+   * revokes it without a restart. Placed next to the rest of `data/` so a
+   * backup/delete of that folder covers pairing as well.
+   */
+  DEVICES_DIR: z.string().default('data/devices'),
+
 });
 
 export interface CacheConfig {
@@ -265,6 +274,11 @@ export interface AppConfig {
    * running (from BACKUP_INTERVAL_MS, default 1h; `0` disables).
    */
   readonly backupIntervalMs: number;
+  /**
+   * Absolute path of the paired-device folder (resolved from DEVICES_DIR —
+   * see `resolveRepoDir`). One JSON file per paired LAN device.
+   */
+  readonly devicesDir: string;
   /**
    * CORS origin matcher passed to Hono's `cors` middleware.
    *
@@ -394,6 +408,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     backupDir: resolveRepoDir(e.BACKUP_DIR),
     backupScope: e.BACKUP_SCOPE,
     backupIntervalMs: e.BACKUP_INTERVAL_MS,
+    devicesDir: resolveRepoDir(e.DEVICES_DIR),
     port: e.PORT,
     /**
      * In dev/test we allow every origin so `bun run dev` works on any LAN
