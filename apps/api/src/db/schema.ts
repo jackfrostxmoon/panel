@@ -185,8 +185,17 @@ export const tags = sqliteTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    /** Lowercased on write — tags are case-insensitive. */
+    /**
+     * Canonical lowercase key — tags are case-insensitive, so this column
+     * backs the unique index and every lookup.
+     */
     name: text('name').notNull(),
+    /**
+     * Display form exactly as the user typed it (trimmed, casing intact —
+     * including ALL CAPS). Nullable for rows created before this column
+     * existed; those fall back to `name`.
+     */
+    displayName: text('display_name'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
       .$defaultFn(() => new Date()),

@@ -435,8 +435,8 @@ export class PanelRatingRepository {
 }
 
 /**
- * Custom-tag repository (T3-4). Tags are created on demand and matched
- * case-insensitively (stored lowercase).
+ * Custom-tag repository (T3-4). Tags are matched case-insensitively through
+ * a lowercase `name` key, while `displayName` preserves the user's casing.
  */
 export class TagRepository {
   constructor(private readonly db: Database) {}
@@ -446,21 +446,39 @@ export class TagRepository {
   }
 
   async findByName(name: string): Promise<TagRow | undefined> {
-    const [row] = await this.db.select().from(tags).where(eq(tags.name, name)).limit(1);
+    const [row] = await this.db
+      .select()
+      .from(tags)
+      .where(eq(tags.name, name.trim().toLowerCase()))
+      .limit(1);
     return row;
   }
 
-  /** Idempotent insert by name. */
+  /** Idempotent insert by case-insensitive name; keeps the given casing for display. */
   async ensure(name: string): Promise<TagRow> {
-    const existing = await this.findByName(name);
-    if (existing) return existing;
+    const displayName = name.trim();
+    const key = displayName.toLowerCase();
+    const existing = await this.findByName(key);
+    if (existing) {
+      // Backfill legacy rows created before display_name existed: the first
+      // time the tag is re-applied, adopt the casing the user just typed.
+      if (existing.displayName == null) {
+        const [updated] = await this.db
+          .update(tags)
+          .set({ displayName })
+          .where(eq(tags.id, existing.id))
+          .returning();
+        if (updated) return updated;
+      }
+      return existing;
+    }
     const [row] = await this.db
       .insert(tags)
-      .values({ name })
+      .values({ name: key, displayName })
       .onConflictDoNothing()
       .returning();
     if (row) return row;
-    const again = await this.findByName(name);
+    const again = await this.findByName(key);
     if (!again) throw new Error('Failed to create tag.');
     return again;
   }
@@ -475,7 +493,12 @@ export class TagRepository {
 
   async listByPanelRowId(panelRowId: string): Promise<TagRow[]> {
     return this.db
-      .select({ id: tags.id, name: tags.name, createdAt: tags.createdAt })
+      .select({
+        id: tags.id,
+        name: tags.name,
+        displayName: tags.displayName,
+        createdAt: tags.createdAt,
+      })
       .from(panelTags)
       .innerJoin(tags, eq(panelTags.tagId, tags.id))
       .where(eq(panelTags.panelId, panelRowId))

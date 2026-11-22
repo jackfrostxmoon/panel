@@ -14,8 +14,9 @@ const MAX_TAG_NAME = 32;
 
 /**
  * Custom-tag use-cases (T3-4). Tags are free-form labels the user applies
- * to panel; they are created on demand and matched case-insensitively
- * (stored lowercase). Replacing a panel's set prunes tags left orphaned.
+ * to panel; they are created on demand and matched case-insensitively. A
+ * lowercase key dedupes them while `displayName` keeps the user's original
+ * casing (including ALL CAPS) so the chips render exactly what was typed.
  */
 export class TagService {
   constructor(
@@ -56,7 +57,8 @@ export class TagService {
     return rows.map(toApiTag);
   }
 
-  /** Replace a panel's tag set. Names are trimmed, lowercased, de-duped. */
+  /** Replace a panel's tag set. Names are trimmed, de-duped case-insensitively,
+   *  and stored with the casing the user typed. */
   async setPanelTags(globalPanelId: string, names: string[]): Promise<Tag[]> {
     const parsed = parseGlobalId(globalPanelId);
     if (!parsed) {
@@ -70,13 +72,15 @@ export class TagService {
         panelId: globalPanelId,
       });
     }
-    const normalized = [
-      ...new Set(
-        names
-          .map((n) => n.trim().toLowerCase())
-          .filter((n) => n.length > 0 && n.length <= MAX_TAG_NAME),
-      ),
-    ];
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of names) {
+      const name = (raw ?? '').trim();
+      const key = name.toLowerCase();
+      if (!name || name.length > MAX_TAG_NAME || seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(name);
+    }
     const tagRows = [];
     for (const name of normalized) {
       tagRows.push(await this.tags.ensure(name));
@@ -88,7 +92,7 @@ export class TagService {
   }
 
   async create(name: string): Promise<Tag> {
-    const trimmed = (name ?? '').trim().toLowerCase();
+    const trimmed = (name ?? '').trim();
     if (!trimmed || trimmed.length > MAX_TAG_NAME) {
       throw new AppError(ErrorCodes.VALIDATION_ERROR, `Tag name must be 1–${MAX_TAG_NAME} chars.`, {
         name,
@@ -106,26 +110,10 @@ export class TagService {
   }
 }
 
-/** Small words kept lowercase mid-name (matches how source genres render). */
-const SMALL_WORDS = new Set(['of', 'the', 'a', 'an', 'and', 'or', 'in', 'on', 'to', 'for', 'with', 'at', 'by', 'vs']);
-
 /**
- * Display form for tag names: tags are stored lowercased (for dedup), but
- * the UI presents them title-cased like the source's genre labels —
- * "test" → "Test", "my test tag" → "My Test Tag", "slice of life" → "Slice of Life".
- * Round-trips safely through import/export: the server re-lowercases on write.
+ * The UI gets the exact casing the user typed (`displayName`). Legacy rows
+ * created before that column existed fall back to their lowercase key.
  */
-function displayTagName(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((word, index) => {
-      const lower = word.toLowerCase();
-      if (index > 0 && SMALL_WORDS.has(lower)) return lower;
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
-}
-
 function toApiTag(row: TagRow): Tag {
-  return { id: row.id, name: displayTagName(row.name) };
+  return { id: row.id, name: row.displayName ?? row.name };
 }
