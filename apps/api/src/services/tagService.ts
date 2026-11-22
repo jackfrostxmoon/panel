@@ -111,9 +111,26 @@ export class TagService {
 }
 
 /**
- * The UI gets the exact casing the user typed (`displayName`). Legacy rows
- * created before that column existed fall back to their lowercase key.
+ * The UI gets the exact casing the user typed (`displayName`). Rows created
+ * before that column existed fall back to the previous title-cased display
+ * so existing tags don't visibly regress; re-saving such a tag backfills
+ * `displayName` with whatever casing the user then applies.
  */
 function toApiTag(row: TagRow): Tag {
-  return { id: row.id, name: row.displayName ?? row.name };
+  return { id: row.id, name: row.displayName ?? legacyDisplayName(row.name) };
+}
+
+/** Small words kept lowercase mid-name (the pre-display_name behaviour). */
+const SMALL_WORDS = new Set(['of', 'the', 'a', 'an', 'and', 'or', 'in', 'on', 'to', 'for', 'with', 'at', 'by', 'vs']);
+
+/** Title-cased form used only for legacy rows with no stored display name. */
+function legacyDisplayName(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && SMALL_WORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
 }
