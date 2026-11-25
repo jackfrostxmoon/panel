@@ -299,51 +299,28 @@ export function isOddSpread(spread: SpreadPage): boolean {
 /* ------------------------------------------------------------------ */
 
 /**
- * Normalize a list of manual pair starts (0-based first page of each
- * adjacent pair). Drops negatives/non-integers, dedupes, sorts ascending and
- * removes pairs that would overlap an earlier one — a page can only belong to
- * one merged spread, so starts closer than 2 apart keep the lower one.
+ * An explicit merged spread: two adjacent 0-based page indices in the
+ * user-entered reading order. `[1, 0]` shows page 2 before page 1.
  */
-export function normalizeManualSpreadStarts(starts: readonly unknown[]): number[] {
-  const cleaned: number[] = [];
-  for (const entry of starts) {
-    if (typeof entry !== 'number' || !Number.isFinite(entry)) continue;
-    const start = Math.trunc(entry);
-    if (start < 0 || start > 10_000) continue;
-    cleaned.push(start);
-  }
-  const sorted = [...new Set(cleaned)].sort((a, b) => a - b);
-  const result: number[] = [];
-  for (const start of sorted) {
-    const previous = result[result.length - 1];
-    if (previous !== undefined && start - previous < 2) continue;
-    result.push(start);
-  }
-  return result;
-}
+export type PagePair = readonly [number, number];
 
 /**
- * The manual pair covering `page`, as sheet indices in page order
- * (`left` = first page, `right` = second page), or null when the page is not
- * part of a complete manual pair. Incomplete pairs (no following page) are
- * ignored so the last page still renders solo.
- *
- * Callers must pass normalized `starts` (see `normalizeManualSpreadStarts`);
- * the helper still tolerates unsorted input and only needs to scan until it
- * passes the current page.
+ * The manual pair covering `page`, returned as `{ left: first, right:
+ * second }` in the user's reading order (the paged reader mirrors the sheets
+ * for RTL, so `first` is always read before `second`). Null when the page is
+ * not part of a complete manual pair.
  */
 export function manualSpreadPages(
   page: number,
   pageCount: number,
-  starts: readonly number[] | undefined,
+  pairs: readonly PagePair[] | undefined,
 ): SpreadPage | null {
-  if (!starts || starts.length === 0 || pageCount <= 1) return null;
+  if (!pairs || pairs.length === 0 || pageCount <= 1) return null;
   const p = clampPage(page, pageCount);
-  for (const start of starts) {
-    if (start > p) break;
-    if ((p === start || p === start + 1) && start + 1 < pageCount) {
-      return { left: start, right: start + 1 };
-    }
+  for (const [first, second] of pairs) {
+    if (Math.abs(first - second) !== 1) continue;
+    if (first >= pageCount || second >= pageCount) continue;
+    if (p === first || p === second) return { left: first, right: second };
   }
   return null;
 }
@@ -355,26 +332,30 @@ export function manualSpreadPages(
  */
 export function nextPageWithSpreads(
   state: NavigationState,
-  starts: readonly number[] | undefined,
+  pairs: readonly PagePair[] | undefined,
 ): number | null {
   const { page, pageCount } = state;
   if (pageCount <= 0) return null;
-  const pair = manualSpreadPages(page, pageCount, starts);
-  const start = pair?.left ?? null;
-  const next = start !== null ? start + 2 : page + 1;
+  const pair = manualSpreadPages(page, pageCount, pairs);
+  const next =
+    pair !== null && pair.left !== null
+      ? Math.max(pair.left, pair.right) + 1
+      : page + 1;
   return next < pageCount ? next : null;
 }
 
 /** Previous reading position in paged single mode, stepping over manual pairs. */
 export function prevPageWithSpreads(
   state: NavigationState,
-  starts: readonly number[] | undefined,
+  pairs: readonly PagePair[] | undefined,
 ): number | null {
   const { page, pageCount } = state;
   if (pageCount <= 0) return null;
-  const pair = manualSpreadPages(page, pageCount, starts);
-  const start = pair?.left ?? null;
-  const previous = start !== null ? start - 1 : page - 1;
+  const pair = manualSpreadPages(page, pageCount, pairs);
+  const previous =
+    pair !== null && pair.left !== null
+      ? Math.min(pair.left, pair.right) - 1
+      : page - 1;
   return previous >= 0 ? previous : null;
 }
 

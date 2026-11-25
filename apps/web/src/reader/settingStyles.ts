@@ -10,7 +10,6 @@ import {
   PRELOAD_AHEAD_MIN,
   type ReaderSettings,
 } from './settings';
-import { normalizeManualSpreadStarts } from './navigation';
 
 export type { ReaderStylePreset } from '@panel/shared';
 export const READER_STYLE_FORMAT = 'panel-viewer-reader-styles';
@@ -75,18 +74,57 @@ function bool(value: unknown, fallback: boolean): boolean {
 }
 
 /**
- * Sanitize the per-chapter manual page merges. Keys are chapter global ids
- * (bounded), values are pair starts normalized by the shared helper. Empty
- * chapters are dropped so the map never keeps dead keys.
+ * Sanitize one chapter's merge list. Accepts the current ordered-pair shape
+ * and migrates the legacy shape (a list of 0-based pair starts, where `n`
+ * meant `[n, n + 1]`). Only adjacent, in-range pairs whose pages are not
+ * already used survive.
  */
-function sanitizeManualSpreads(raw: unknown): Record<string, number[]> {
+export function sanitizeChapterPairs(raw: unknown): Array<[number, number]> {
+  if (!Array.isArray(raw)) return [];
+  const pairs: Array<[number, number]> = [];
+  const used = new Set<number>();
+  for (const entry of raw) {
+    let first: number;
+    let second: number;
+    if (typeof entry === 'number' && Number.isFinite(entry)) {
+      // Legacy: `n` meant the adjacent pair [n, n + 1].
+      first = Math.trunc(entry);
+      second = first + 1;
+    } else if (
+      Array.isArray(entry) &&
+      entry.length === 2 &&
+      typeof entry[0] === 'number' &&
+      typeof entry[1] === 'number'
+    ) {
+      first = Math.trunc(entry[0]);
+      second = Math.trunc(entry[1]);
+    } else {
+      continue;
+    }
+    if (first < 0 || second < 0 || first > 10_000 || second > 10_000) continue;
+    if (Math.abs(first - second) !== 1) continue;
+    if (used.has(first) || used.has(second)) continue;
+    used.add(first);
+    used.add(second);
+    pairs.push([first, second]);
+  }
+  pairs.sort((a, b) => Math.min(a[0], a[1]) - Math.min(b[0], b[1]));
+  return pairs;
+}
+
+/**
+ * Sanitize the per-chapter manual page merges. Keys are chapter global ids
+ * (bounded); values are ordered adjacent page pairs.
+ */
+function sanitizeManualSpreads(
+  raw: unknown,
+): Record<string, Array<[number, number]>> {
   if (!isRecord(raw)) return {};
-  const result: Record<string, number[]> = {};
+  const result: Record<string, Array<[number, number]>> = {};
   for (const [chapterId, value] of Object.entries(raw)) {
     if (!chapterId || chapterId.length > 200) continue;
-    if (!Array.isArray(value)) continue;
-    const starts = normalizeManualSpreadStarts(value);
-    if (starts.length > 0) result[chapterId] = starts;
+    const pairs = sanitizeChapterPairs(value);
+    if (pairs.length > 0) result[chapterId] = pairs;
   }
   return result;
 }

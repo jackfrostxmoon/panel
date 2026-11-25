@@ -53,12 +53,12 @@ export interface ReaderSettings {
   mkImageServer?: 'default' | 'sv2' | 'sv3';
   /**
    * Manual side-by-side merges for paged mode, keyed by chapter global id
-   * (`mk:x~c200`). Each entry lists the 0-based index of the first page of
-   * an adjacent pair (`n` means pages `n` and `n+1` render as one spread).
-   * Sorted, unique and non-overlapping; only used while double-page spread
-   * mode is off. Empty/absent = no manual merges.
+   * (`mk:x~c200`). Each entry is an ordered pair of adjacent 0-based page
+   * indices: `[first, second]` — the first page is the reading-first sheet
+   * (left in LTR, right in RTL). Entering `[1, 0]` shows page 2 before
+   * page 1. Only used while double-page spread mode is off.
    */
-  manualSpreads?: Record<string, number[]>;
+  manualSpreads?: Record<string, Array<[number, number]>>;
   /**
    * Per-chapter first page of the automatic double-page spread, keyed by
    * chapter global id. 1-based page number; pages before it render solo and

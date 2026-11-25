@@ -184,11 +184,12 @@ export interface ReaderSettings {
   mkImageServer?: 'default' | 'sv2' | 'sv3';
   /**
    * Manual side-by-side merges for paged mode, keyed by chapter global id.
-   * Each value lists the 0-based first page of an adjacent pair (`n` merges
-   * pages `n` and `n+1`). Sorted, unique, non-overlapping. Only used while
+   * Each value is an ordered pair of adjacent 0-based pages `[first, second]`
+   * in reading order — the first page is the left sheet in LTR / right sheet
+   * in RTL. `[1, 0]` therefore shows page 2 before page 1. Only used while
    * double-page spread mode is off.
    */
-  manualSpreads?: Record<string, number[]>;
+  manualSpreads?: Record<string, Array<[number, number]>>;
   /**
    * Per-chapter first page of the automatic double-page spread (1-based).
    * Pages before it render solo; pairing starts at that page. Absent = the

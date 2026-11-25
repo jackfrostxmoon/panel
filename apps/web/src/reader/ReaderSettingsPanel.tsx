@@ -41,7 +41,6 @@ import {
 import { parseGlobalId } from '@panel/shared';
 import { api } from '../api/client';
 import { useImageConcurrency, useSetImageConcurrency } from '../api/hooks';
-import { normalizeManualSpreadStarts } from './navigation';
 import {
   READER_STYLE_MAX_NAME,
   clearLegacyLocalPresets,
@@ -53,6 +52,7 @@ import {
   parseStyleImport,
   readerSettingsEqual,
   replaceStylePresets,
+  sanitizeChapterPairs,
   sanitizeStylePresets,
   saveStylePreset,
   type ReaderStylePreset,
@@ -111,8 +111,9 @@ export function ReaderSettingsPanel({
   const [importError, setImportError] = useState<string | null>(null);
   /** True while a style list is being written to the server JSON file. */
   const [persisting, setPersisting] = useState(false);
-  /** 0-based first page selected in the manual "Merge pages" picker. */
-  const [pairStart, setPairStart] = useState(0);
+  /** 1-based pages selected in the two manual "Merge pages" inputs. */
+  const [pairFirst, setPairFirst] = useState(1);
+  const [pairSecond, setPairSecond] = useState(2);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -140,34 +141,43 @@ export function ReaderSettingsPanel({
     saveConcurrency.error?.message ??
     (concurrencyQuery.isError ? 'Could not reach the server.' : null);
 
-  /** Manual merges for the open chapter (0-based starts of adjacent pairs). */
-  const chapterSpreads = settings.manualSpreads?.[currentChapterId] ?? [];
-  const maxPairStart = Math.max(0, pageCount - 2);
-  const selectedPairStart = Math.min(pairStart, maxPairStart);
-  /** A page can only be in one merge — starts must differ by at least 2. */
-  const pairAlreadyMerged = chapterSpreads.some(
-    (start) => Math.abs(start - selectedPairStart) < 2,
+  /** Manual merges for the open chapter (ordered adjacent pairs). */
+  const chapterPairs = settings.manualSpreads?.[currentChapterId] ?? [];
+  /** 0-based indices of the two typed pages, clamped to the chapter. */
+  const pairFirstIndex = Math.min(Math.max(pairFirst, 1), Math.max(pageCount, 1)) - 1;
+  const pairSecondIndex = Math.min(Math.max(pairSecond, 1), Math.max(pageCount, 1)) - 1;
+  const pairAdjacent = Math.abs(pairFirstIndex - pairSecondIndex) === 1;
+  /** A page can only be in one merge. */
+  const pairOverlap = chapterPairs.some(
+    ([first, second]) =>
+      first === pairFirstIndex ||
+      second === pairFirstIndex ||
+      first === pairSecondIndex ||
+      second === pairSecondIndex,
   );
   const canMergePages =
     settings.mode === 'paged' &&
     !settings.doublePage &&
     pageCount >= 2 &&
-    !pairAlreadyMerged;
+    pairAdjacent &&
+    !pairOverlap;
   /** This chapter's explicit spread start (1-based), null = default pairing. */
   const chapterSpreadStart = settings.spreadStarts?.[currentChapterId] ?? null;
 
-  // Opening the panel pre-fills the merge picker with the page being read, so
-  // "Merge pages" does the obvious thing without scrolling two dropdowns.
+  // Opening the panel pre-fills the merge inputs with the page being read and
+  // its neighbour, so "Merge pages" does the obvious thing without typing.
   useEffect(() => {
     if (!open) return;
-    setPairStart(Math.min(Math.max(page, 0), Math.max(pageCount - 2, 0)));
+    const start = Math.min(Math.max(page, 0), Math.max(pageCount - 2, 0));
+    setPairFirst(start + 1);
+    setPairSecond(start + 2);
   }, [open, page, pageCount]);
 
   /** Persist this chapter's merge list, dropping the key when it empties. */
-  const setChapterSpreads = (starts: number[]) => {
+  const setChapterPairs = (pairs: Array<[number, number]>) => {
     const next = { ...settings.manualSpreads };
-    const normalized = normalizeManualSpreadStarts(starts);
-    if (normalized.length > 0) next[currentChapterId] = normalized;
+    const clean = sanitizeChapterPairs(pairs);
+    if (clean.length > 0) next[currentChapterId] = clean;
     else delete next[currentChapterId];
     onUpdate({ manualSpreads: next });
   };
@@ -1100,58 +1110,67 @@ export function ReaderSettingsPanel({
             <div className="reader-settings__size-row">
               <NumberField
                 label="First page"
-                value={selectedPairStart + 1}
+                value={pairFirst}
                 min={1}
-                max={Math.max(pageCount - 1, 1)}
+                max={Math.max(pageCount, 1)}
                 step={1}
                 unit="page"
                 disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
                 onChange={(value) => {
                   if (value === null) return;
-                  setPairStart(Math.min(Math.max(value - 1, 0), maxPairStart));
+                  setPairFirst(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
                 }}
               />
               <NumberField
                 label="Second page"
-                value={selectedPairStart + 2}
-                min={2}
-                max={Math.max(pageCount, 2)}
+                value={pairSecond}
+                min={1}
+                max={Math.max(pageCount, 1)}
                 step={1}
                 unit="page"
                 disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
                 onChange={(value) => {
                   if (value === null) return;
-                  setPairStart(Math.min(Math.max(value - 2, 0), maxPairStart));
+                  setPairSecond(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
                 }}
               />
               <p className="reader-settings__sub-hint">
-                Type the page to merge. The second page always follows the first.
+                Enter the two adjacent pages in the order they should read — e.g.
+                First 2, Second 1 shows page 2 before page 1.
               </p>
             </div>
             <button
               type="button"
               className="btn btn--ghost btn--sm"
-              onClick={() => setChapterSpreads([...chapterSpreads, selectedPairStart])}
+              onClick={() => setChapterPairs([...chapterPairs, [pairFirstIndex, pairSecondIndex]])}
               disabled={!canMergePages}
             >
-              {pairAlreadyMerged ? 'Already merged' : 'Merge pages'}
+              {pairOverlap
+                ? 'Page already merged'
+                : pairAdjacent
+                  ? 'Merge pages'
+                  : 'Pages must be adjacent'}
             </button>
-            {chapterSpreads.length === 0 ? (
+            {chapterPairs.length === 0 ? (
               <p className="reader-settings__sub-hint">No merged pages in this chapter.</p>
             ) : (
               <ul className="reader-settings__pair-list">
-                {chapterSpreads.map((start) => (
-                  <li key={start} className="reader-settings__pair-row">
+                {chapterPairs.map(([first, second]) => (
+                  <li key={`${first}-${second}`} className="reader-settings__pair-row">
                     <span>
-                      Page {start + 1} + Page {start + 2}
+                      Page {first + 1} then Page {second + 1}
                     </span>
                     <button
                       type="button"
                       className="btn btn--ghost btn--sm"
                       onClick={() =>
-                        setChapterSpreads(chapterSpreads.filter((entry) => entry !== start))
+                        setChapterPairs(
+                          chapterPairs.filter(
+                            ([a, b]) => !(a === first && b === second),
+                          ),
+                        )
                       }
-                      aria-label={`Remove merge of pages ${start + 1} and ${start + 2}`}
+                      aria-label={`Remove merge of pages ${first + 1} and ${second + 1}`}
                     >
                       Remove
                     </button>

@@ -51,14 +51,21 @@ const readerSettingsSchema = z
     defaultFolderId: z.string().max(64).nullable().catch(null),
     mkImageServer: z.enum(['default', 'sv2', 'sv3']).catch('default'),
     /**
-     * Manual page merges for paged mode: chapter id -> 0-based start pages of
-     * adjacent pairs. Bounded so a client can't grow the settings file
-     * without limit; ids are capped at the global-id length.
+     * Manual page merges for paged mode: chapter id -> ordered adjacent pairs
+     * of 0-based page indices. Bounded so a client can't grow the settings
+     * file without limit; ids are capped at the global-id length.
      */
     manualSpreads: z
       .record(
         z.string().max(200),
-        z.array(z.number().int().min(0).max(10_000)).max(200),
+        z
+          .array(
+            z.tuple([
+              z.number().int().min(0).max(10_000),
+              z.number().int().min(0).max(10_000),
+            ]),
+          )
+          .max(200),
       )
       .catch({}),
     /** Per-chapter 1-based first page of the automatic spread pairing. */

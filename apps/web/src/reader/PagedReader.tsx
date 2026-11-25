@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import type { ReadingDirection, SpreadOddPolicy } from './settings';
-import { isOddSpread, spreadPages, halfSideFromClientX, manualSpreadPages, nextPageWithSpreads, nextSpreadPage, nextSpreadPageAt, prevPageWithSpreads, prevSpreadPage, prevSpreadPageAt, spreadPagesAt } from './navigation';
+import { isOddSpread, spreadPages, halfSideFromClientX, manualSpreadPages, nextPageWithSpreads, nextSpreadPage, nextSpreadPageAt, prevPageWithSpreads, prevSpreadPage, prevSpreadPageAt, spreadPagesAt, type PagePair } from './navigation';
 import { proxiedPageUrl } from '../utils/format';
 
 /**
@@ -100,11 +100,12 @@ export function PagedReader({
    */
   fitToHeight?: boolean;
   /**
-   * Manual page merges for this chapter (0-based starts of adjacent pairs).
-   * Only honored in single mode: the pair renders as one spread and page
-   * turns step over both sheets. Ignored while `doublePage` is on.
+   * Manual page merges for this chapter as ordered adjacent pairs in reading
+   * order. Only honored in single mode: the pair renders as one spread, the
+   * first page on the reading-first sheet, and page turns step over both
+   * sheets. Ignored while `doublePage` is on.
    */
-  manualSpreads?: number[];
+  manualSpreads?: readonly PagePair[];
   /**
    * Per-chapter first page of the automatic spread (1-based). Pages before
    * it render solo, so a cover or credits page stays on its own. `null` =

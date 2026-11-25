@@ -25,6 +25,7 @@ import { GalleryReader, type GalleryReaderHandle } from '../reader/GalleryReader
 import { ReaderSettingsPanel } from '../reader/ReaderSettingsPanel';
 import { ReaderToolbar, useChapterBookmarkToggle } from '../reader/ReaderToolbar';
 import { nextReadingMode, resolveEffectiveReaderSettings, scrollSpeedPx, DEFAULT_READER_SETTINGS, type ReaderSettings, type ReadingMode, type GlidePreset } from '../reader/settings';
+import { sanitizeChapterPairs } from '../reader/settingStyles';
 import { VerticalReader, type VerticalReaderHandle } from '../reader/VerticalReader';
 import { proxiedPageUrl } from '../utils/format';
 import {
@@ -289,12 +290,14 @@ export function ReaderPage() {
   const [page, setPage] = useState(0);
   const [scrollRatio, setScrollRatio] = useState(0);
   /**
-   * Manual page merges for the open chapter (0-based starts of adjacent
-   * pairs). Only used in paged mode while double-page spread mode is off —
-   * the pair renders as one spread and page turns step over both sheets.
+   * Manual page merges for the open chapter as ordered adjacent pairs
+   * (`[first, second]` in reading order). Normalized on read so legacy stored
+   * shapes and stale/overlapping entries can't break rendering. Only used in
+   * paged mode while double-page spread mode is off — the pair renders as one
+   * spread and page turns step over both sheets.
    */
   const manualStarts = useMemo(
-    () => settings.manualSpreads?.[chapterId] ?? [],
+    () => sanitizeChapterPairs(settings.manualSpreads?.[chapterId]),
     [settings.manualSpreads, chapterId],
   );
   /**
