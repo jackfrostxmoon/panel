@@ -574,6 +574,91 @@ export function ReaderSettingsPanel({
           </SettingGroup>
 
           <SettingGroup
+            id="rs-mergePages"
+            title="Merge pages"
+            hint={
+              settings.mode !== 'paged'
+                ? 'Merge two adjacent pages into one spread. Only available in page (F) reading mode.'
+                : settings.doublePage
+                  ? 'Turn off Double-page spread in Advanced (Single) to merge individual page pairs.'
+                  : 'Merge two adjacent pages so they show side by side as one spread. Page turns step over both pages. Applies to this chapter only.'
+            }
+            disabled={settings.mode !== 'paged' || settings.doublePage}
+          >
+            <div className="reader-settings__size-row">
+              <NumberField
+                label="First page"
+                value={pairFirst}
+                min={1}
+                max={Math.max(pageCount, 1)}
+                step={1}
+                unit="page"
+                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                onChange={(value) => {
+                  if (value === null) return;
+                  setPairFirst(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
+                }}
+              />
+              <NumberField
+                label="Second page"
+                value={pairSecond}
+                min={1}
+                max={Math.max(pageCount, 1)}
+                step={1}
+                unit="page"
+                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                onChange={(value) => {
+                  if (value === null) return;
+                  setPairSecond(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
+                }}
+              />
+              <p className="reader-settings__sub-hint">
+                Enter the two adjacent pages in the order they should read — e.g.
+                First 2, Second 1 shows page 2 before page 1.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => setChapterPairs([...chapterPairs, [pairFirstIndex, pairSecondIndex]])}
+              disabled={!canMergePages}
+            >
+              {pairOverlap
+                ? 'Page already merged'
+                : pairAdjacent
+                  ? 'Merge pages'
+                  : 'Pages must be adjacent'}
+            </button>
+            {chapterPairs.length === 0 ? (
+              <p className="reader-settings__sub-hint">No merged pages in this chapter.</p>
+            ) : (
+              <ul className="reader-settings__pair-list">
+                {chapterPairs.map(([first, second]) => (
+                  <li key={`${first}-${second}`} className="reader-settings__pair-row">
+                    <span>
+                      Page {first + 1} then Page {second + 1}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() =>
+                        setChapterPairs(
+                          chapterPairs.filter(
+                            ([a, b]) => !(a === first && b === second),
+                          ),
+                        )
+                      }
+                      aria-label={`Remove merge of pages ${first + 1} and ${second + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SettingGroup>
+
+          <SettingGroup
             id="rs-chapter"
             title="Chapter"
             hint="Switch to another chapter of this panel."
@@ -1092,91 +1177,6 @@ export function ReaderSettingsPanel({
                   start here — enter 2 when page 1 is a cover.
                 </p>
               </div>
-            )}
-          </SettingGroup>
-
-          <SettingGroup
-            id="rs-mergePages"
-            title="Merge pages"
-            hint={
-              settings.mode !== 'paged'
-                ? 'Merge two adjacent pages into one spread. Only available in page (F) reading mode.'
-                : settings.doublePage
-                  ? 'Turn off Double-page spread (Single) to merge individual page pairs.'
-                  : 'Merge two adjacent pages so they show side by side as one spread. Page turns step over both pages. Applies to this chapter only.'
-            }
-            disabled={settings.mode !== 'paged' || settings.doublePage}
-          >
-            <div className="reader-settings__size-row">
-              <NumberField
-                label="First page"
-                value={pairFirst}
-                min={1}
-                max={Math.max(pageCount, 1)}
-                step={1}
-                unit="page"
-                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
-                onChange={(value) => {
-                  if (value === null) return;
-                  setPairFirst(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
-                }}
-              />
-              <NumberField
-                label="Second page"
-                value={pairSecond}
-                min={1}
-                max={Math.max(pageCount, 1)}
-                step={1}
-                unit="page"
-                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
-                onChange={(value) => {
-                  if (value === null) return;
-                  setPairSecond(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
-                }}
-              />
-              <p className="reader-settings__sub-hint">
-                Enter the two adjacent pages in the order they should read — e.g.
-                First 2, Second 1 shows page 2 before page 1.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={() => setChapterPairs([...chapterPairs, [pairFirstIndex, pairSecondIndex]])}
-              disabled={!canMergePages}
-            >
-              {pairOverlap
-                ? 'Page already merged'
-                : pairAdjacent
-                  ? 'Merge pages'
-                  : 'Pages must be adjacent'}
-            </button>
-            {chapterPairs.length === 0 ? (
-              <p className="reader-settings__sub-hint">No merged pages in this chapter.</p>
-            ) : (
-              <ul className="reader-settings__pair-list">
-                {chapterPairs.map(([first, second]) => (
-                  <li key={`${first}-${second}`} className="reader-settings__pair-row">
-                    <span>
-                      Page {first + 1} then Page {second + 1}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--sm"
-                      onClick={() =>
-                        setChapterPairs(
-                          chapterPairs.filter(
-                            ([a, b]) => !(a === first && b === second),
-                          ),
-                        )
-                      }
-                      aria-label={`Remove merge of pages ${first + 1} and ${second + 1}`}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
             )}
           </SettingGroup>
 
