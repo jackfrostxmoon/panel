@@ -294,6 +294,90 @@ export function isOddSpread(spread: SpreadPage): boolean {
   return spread.left === null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Manual page merges (paged single mode)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Normalize a list of manual pair starts (0-based first page of each
+ * adjacent pair). Drops negatives/non-integers, dedupes, sorts ascending and
+ * removes pairs that would overlap an earlier one — a page can only belong to
+ * one merged spread, so starts closer than 2 apart keep the lower one.
+ */
+export function normalizeManualSpreadStarts(starts: readonly unknown[]): number[] {
+  const cleaned: number[] = [];
+  for (const entry of starts) {
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) continue;
+    const start = Math.trunc(entry);
+    if (start < 0 || start > 10_000) continue;
+    cleaned.push(start);
+  }
+  const sorted = [...new Set(cleaned)].sort((a, b) => a - b);
+  const result: number[] = [];
+  for (const start of sorted) {
+    const previous = result[result.length - 1];
+    if (previous !== undefined && start - previous < 2) continue;
+    result.push(start);
+  }
+  return result;
+}
+
+/**
+ * The manual pair covering `page`, as sheet indices in page order
+ * (`left` = first page, `right` = second page), or null when the page is not
+ * part of a complete manual pair. Incomplete pairs (no following page) are
+ * ignored so the last page still renders solo.
+ *
+ * Callers must pass normalized `starts` (see `normalizeManualSpreadStarts`);
+ * the helper still tolerates unsorted input and only needs to scan until it
+ * passes the current page.
+ */
+export function manualSpreadPages(
+  page: number,
+  pageCount: number,
+  starts: readonly number[] | undefined,
+): SpreadPage | null {
+  if (!starts || starts.length === 0 || pageCount <= 1) return null;
+  const p = clampPage(page, pageCount);
+  for (const start of starts) {
+    if (start > p) break;
+    if ((p === start || p === start + 1) && start + 1 < pageCount) {
+      return { left: start, right: start + 1 };
+    }
+  }
+  return null;
+}
+
+/**
+ * Next reading position in paged single mode, stepping over a manual pair as
+ * one spread (forward from either sheet lands past both pages). Returns null
+ * at the end of the chapter so the caller hops to the next chapter.
+ */
+export function nextPageWithSpreads(
+  state: NavigationState,
+  starts: readonly number[] | undefined,
+): number | null {
+  const { page, pageCount } = state;
+  if (pageCount <= 0) return null;
+  const pair = manualSpreadPages(page, pageCount, starts);
+  const start = pair?.left ?? null;
+  const next = start !== null ? start + 2 : page + 1;
+  return next < pageCount ? next : null;
+}
+
+/** Previous reading position in paged single mode, stepping over manual pairs. */
+export function prevPageWithSpreads(
+  state: NavigationState,
+  starts: readonly number[] | undefined,
+): number | null {
+  const { page, pageCount } = state;
+  if (pageCount <= 0) return null;
+  const pair = manualSpreadPages(page, pageCount, starts);
+  const start = pair?.left ?? null;
+  const previous = start !== null ? start - 1 : page - 1;
+  return previous >= 0 ? previous : null;
+}
+
 /**
  * Advance to the next spread's current page; null when already at the end.
  *

@@ -10,6 +10,7 @@ import {
   PRELOAD_AHEAD_MIN,
   type ReaderSettings,
 } from './settings';
+import { normalizeManualSpreadStarts } from './navigation';
 
 export type { ReaderStylePreset } from '@panel/shared';
 export const READER_STYLE_FORMAT = 'panel-viewer-reader-styles';
@@ -73,6 +74,33 @@ function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+/**
+ * Sanitize the per-chapter manual page merges. Keys are chapter global ids
+ * (bounded), values are pair starts normalized by the shared helper. Empty
+ * chapters are dropped so the map never keeps dead keys.
+ */
+function sanitizeManualSpreads(raw: unknown): Record<string, number[]> {
+  if (!isRecord(raw)) return {};
+  const result: Record<string, number[]> = {};
+  for (const [chapterId, value] of Object.entries(raw)) {
+    if (!chapterId || chapterId.length > 200) continue;
+    if (!Array.isArray(value)) continue;
+    const starts = normalizeManualSpreadStarts(value);
+    if (starts.length > 0) result[chapterId] = starts;
+  }
+  return result;
+}
+
+/**
+ * Chapter-specific bits that must not leak into a named style: page numbers
+ * only make sense in the chapter they were entered for. Comparing/exporting
+ * with these cleared keeps the styles dropdown honest and stops applying a
+ * style from wiping another chapter's merges.
+ */
+function withoutChapterSpreads(settings: ReaderSettings): ReaderSettings {
+  return { ...sanitizeReaderSettings(settings), manualSpreads: {} };
+}
+
 /** Drop unknown keys, fill defaults for missing/invalid fields. */
 export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
   const d = DEFAULT_READER_SETTINGS;
@@ -126,6 +154,7 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
       ['default', 'sv2', 'sv3'] as const,
       d.mkImageServer ?? 'default',
     ) as 'default' | 'sv2' | 'sv3',
+    manualSpreads: sanitizeManualSpreads(raw['manualSpreads']),
   };
 }
 
@@ -198,7 +227,12 @@ export function saveStylePreset(
   const clean = normalizeStyleName(name);
   if (!clean) throw new Error('Enter a name for this style.');
   const next = existing.filter((p) => p.name !== clean);
-  next.push({ name: clean, settings: { ...settings }, updatedAt: new Date().toISOString() });
+  // Manual page merges are chapter-specific — never capture them in a style.
+  next.push({
+    name: clean,
+    settings: withoutChapterSpreads(settings),
+    updatedAt: new Date().toISOString(),
+  });
   return sortPresets(next).slice(0, READER_STYLE_MAX_COUNT);
 }
 
@@ -213,9 +247,13 @@ export function deleteStylePreset(name: string, existing: ReaderStylePreset[]): 
  * settings compare on the same normalized shape.
  */
 export function readerSettingsEqual(a: ReaderSettings, b: ReaderSettings): boolean {
-  const left = sanitizeReaderSettings(a);
-  const right = sanitizeReaderSettings(b);
+  // Manual page merges belong to a chapter, not a style — ignore them so
+  // adding a merge doesn't flip the dropdown to "Custom".
+  const left = withoutChapterSpreads(a);
+  const right = withoutChapterSpreads(b);
   for (const key of Object.keys(left) as (keyof ReaderSettings)[]) {
+    // Cleared on both sides above, and each call builds a fresh object.
+    if (key === 'manualSpreads') continue;
     if (left[key] !== right[key]) return false;
   }
   return true;

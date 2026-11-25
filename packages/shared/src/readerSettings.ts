@@ -51,6 +51,14 @@ export interface ReaderSettings {
   defaultFolderId?: string | null;
   /** MangaKatana image-server preference (only visible for `mk` source). */
   mkImageServer?: 'default' | 'sv2' | 'sv3';
+  /**
+   * Manual side-by-side merges for paged mode, keyed by chapter global id
+   * (`mk:x~c200`). Each entry lists the 0-based index of the first page of
+   * an adjacent pair (`n` means pages `n` and `n+1` render as one spread).
+   * Sorted, unique and non-overlapping; only used while double-page spread
+   * mode is off. Empty/absent = no manual merges.
+   */
+  manualSpreads?: Record<string, number[]>;
 }
 
 /**

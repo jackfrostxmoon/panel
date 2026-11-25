@@ -35,6 +35,7 @@ export function loadReaderSettings(): ReaderSettings {
       showScrollbar: false,
       defaultFolderId: null,
       mkImageServer: 'default',
+      manualSpreads: {},
     };
   if (!existsSync(FILE_PATH)) {
     // Return defaults by importing from web settings? We can't import web here easily.

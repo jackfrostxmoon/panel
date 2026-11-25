@@ -1192,6 +1192,25 @@
   gap: var(--space-3);
 }
 
+/* Manual page merges: this chapter's pair list under the pickers. */
+.reader-settings__pair-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.reader-settings__pair-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+}
+
 /* Clear button for the fixed pixel-size fields */
 .reader-settings__clear {
   margin-top: var(--space-3);

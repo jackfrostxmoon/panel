@@ -182,6 +182,13 @@ export interface ReaderSettings {
   glidePreset: GlidePreset;
   /** MangaKatana image-server preference (only visible for `mk` source). */
   mkImageServer?: 'default' | 'sv2' | 'sv3';
+  /**
+   * Manual side-by-side merges for paged mode, keyed by chapter global id.
+   * Each value lists the 0-based first page of an adjacent pair (`n` merges
+   * pages `n` and `n+1`). Sorted, unique, non-overlapping. Only used while
+   * double-page spread mode is off.
+   */
+  manualSpreads?: Record<string, number[]>;
 }
 
 /**
@@ -244,6 +251,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   glidePreset: 'quick',
   showScrollbar: false,
   mkImageServer: 'default',
+  /** No page merges by default — paged single mode shows one page at a time. */
+  manualSpreads: {},
 };
 
 /** Forced pages-ahead while performance mode is on (the allowed maximum). */

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import type { ReadingDirection, SpreadOddPolicy } from './settings';
-import { isOddSpread, spreadPages, halfSideFromClientX } from './navigation';
+import { isOddSpread, spreadPages, halfSideFromClientX, manualSpreadPages, nextPageWithSpreads, nextSpreadPage, prevPageWithSpreads, prevSpreadPage } from './navigation';
 import { proxiedPageUrl } from '../utils/format';
 
 /**
@@ -20,6 +20,9 @@ import { proxiedPageUrl } from '../utils/format';
  * On an odd final spread there is no facing page; the chosen `spreadOddPolicy`
  * decides what fills the empty half. Chapter transitions at the first/last
  * spread are handled by the parent, which owns the full navigation state.
+ *
+ * Manual merges (`manualSpreads`) are honored in single mode: the selected
+ * adjacent pair renders as one spread and page turns step over both sheets.
  */
 export function PagedReader({
   pages,
@@ -57,6 +60,7 @@ export function PagedReader({
    */
   imageWidth = 100,
   fitToHeight = false,
+  manualSpreads,
   onPageError,
   onPageLoad,
 }: {
@@ -95,6 +99,12 @@ export function PagedReader({
    */
   fitToHeight?: boolean;
   /**
+   * Manual page merges for this chapter (0-based starts of adjacent pairs).
+   * Only honored in single mode: the pair renders as one spread and page
+   * turns step over both sheets. Ignored while `doublePage` is on.
+   */
+  manualSpreads?: number[];
+  /**
    * A page gave up loading (see `ReaderImage`). Lets the parent pin the
    * toolbar when a chapter is failing page after page. Paged mode only
    * mounts the current spread, so this fires for the sheets actually
@@ -105,7 +115,13 @@ export function PagedReader({
   onPageLoad?: (page: PanelPage) => void;
 }) {
   const touchStartX = useRef<number | null>(null);
-  const spread = spreadPages(page, pages.length, direction);
+  /* A manual pair wins over the automatic pairing: when the current page is
+     part of an explicit merge, those two sheets render side by side even in
+     single mode. `doublePage` keeps its usual meaning (the whole chapter is
+     paired), so manual merges are ignored there and automatic pairing
+     applies. */
+  const manualPair = doublePage ? null : manualSpreadPages(page, pages.length, manualSpreads);
+  const spread = manualPair ?? spreadPages(page, pages.length, direction);
 
   /* Preload pages so a page turn is instant.
    *
@@ -167,13 +183,22 @@ export function PagedReader({
     preloadImgsRef.current = [];
     if (!chapterTag) return;
 
-    // Compute which page indices to preload. The current spread in LTR
-    // shows `[page-1, page]` and the next is `[p+1, p+2]`; in RTL the
-    // current shows `[page+1, page]` and the next is `[p-1, p-2]`.
-    // `spreadPages` is the source of truth for these pairings, so we ask
-    // it for the next/prev spread and preload the pages it returns.
+    // Compute which page indices to preload. `nextPageWithSpreads` /
+    // `prevPageWithSpreads` know about manual merges (one spread = two
+    // sheets), and `nextSpreadPage` / `prevSpreadPage` drive automatic
+    // double-page mode. `manualSpreadPages` is the source of truth for a
+    // merged pair's two sheets, so a preload never lands on only half of it.
     const indices: number[] = [];
-    const pushSpread = (s: { left: number | null; right: number }) => {
+    const collect = (target: number | null) => {
+      if (target === null) return;
+      const pair = doublePage
+        ? null
+        : manualSpreadPages(target, pages.length, manualSpreads);
+      if (pair) {
+        indices.push(pair.left as number, pair.right);
+        return;
+      }
+      const s = spreadPages(target, pages.length, direction);
       if (doublePage) {
         if (s.left !== null) indices.push(s.left);
         indices.push(s.right);
@@ -181,14 +206,22 @@ export function PagedReader({
         indices.push(s.right);
       }
     };
-    const nextSpread = spreadPages(page + (direction === 'ltr' ? 2 : -2), pages.length, direction);
-    if (nextSpread.right !== page) pushSpread(nextSpread);
-    const prevSpread = spreadPages(page + (direction === 'ltr' ? -2 : 2), pages.length, direction);
-    if (prevSpread.right !== page) pushSpread(prevSpread);
+    const state = { page, pageCount: pages.length };
+    collect(
+      doublePage
+        ? nextSpreadPage(state, direction)
+        : nextPageWithSpreads(state, manualSpreads),
+    );
+    collect(
+      doublePage
+        ? prevSpreadPage(state, direction)
+        : prevPageWithSpreads(state, manualSpreads),
+    );
 
-    if (indices.length === 0) return;
+    const unique = [...new Set(indices)];
+    if (unique.length === 0) return;
     const imgs: HTMLImageElement[] = [];
-    for (const idx of indices) {
+    for (const idx of unique) {
       const pageObj = pages[idx];
       if (!pageObj) continue;
       const img = new Image();
@@ -207,7 +240,7 @@ export function PagedReader({
         img.removeAttribute('src');
       }
     };
-  }, [eagerPages, page, pages, direction, doublePage, chapterTag]);
+  }, [eagerPages, page, pages, direction, doublePage, chapterTag, manualSpreads]);
 
   // Parallel-mode preloader: every page at high priority.
   // Does NOT depend on `page` — the whole chapter is the preload
@@ -284,14 +317,17 @@ export function PagedReader({
   if (!rightPage) return null;
 
   /* T3-6: a landscape page is a scanned two-page spread — render it solo at
-     full stage width so it stays readable instead of being halved. */
+     full stage width so it stays readable instead of being halved. An
+     explicit manual merge always wins over this heuristic. */
   const landscapeSolo =
+    manualPair === null &&
     autoLandscapeSingle &&
     typeof rightPage.width === 'number' &&
     typeof rightPage.height === 'number' &&
     rightPage.width > rightPage.height;
-  const odd = isOddSpread(spread);
-  const effectiveDoublePage = doublePage && !landscapeSolo && !odd;
+  const odd = manualPair === null && isOddSpread(spread);
+  const effectiveDoublePage =
+    manualPair !== null || (doublePage && !landscapeSolo && !odd);
 
   /* Desktop: the overlay zones are pointer-events:none (see reader.css), so
      this reproduces the original "click left/right half" behavior while the

@@ -41,6 +41,7 @@ import {
 import { parseGlobalId } from '@panel/shared';
 import { api } from '../api/client';
 import { useImageConcurrency, useSetImageConcurrency } from '../api/hooks';
+import { normalizeManualSpreadStarts } from './navigation';
 import {
   READER_STYLE_MAX_NAME,
   clearLegacyLocalPresets,
@@ -110,6 +111,8 @@ export function ReaderSettingsPanel({
   const [importError, setImportError] = useState<string | null>(null);
   /** True while a style list is being written to the server JSON file. */
   const [persisting, setPersisting] = useState(false);
+  /** 0-based first page selected in the manual "Merge pages" picker. */
+  const [pairStart, setPairStart] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -136,6 +139,44 @@ export function ReaderSettingsPanel({
   const concurrencyError =
     saveConcurrency.error?.message ??
     (concurrencyQuery.isError ? 'Could not reach the server.' : null);
+
+  /** Manual merges for the open chapter (0-based starts of adjacent pairs). */
+  const chapterSpreads = settings.manualSpreads?.[currentChapterId] ?? [];
+  const maxPairStart = Math.max(0, pageCount - 2);
+  const selectedPairStart = Math.min(pairStart, maxPairStart);
+  /** A page can only be in one merge — starts must differ by at least 2. */
+  const pairAlreadyMerged = chapterSpreads.some(
+    (start) => Math.abs(start - selectedPairStart) < 2,
+  );
+  const canMergePages =
+    settings.mode === 'paged' &&
+    !settings.doublePage &&
+    pageCount >= 2 &&
+    !pairAlreadyMerged;
+
+  // Opening the panel pre-fills the merge picker with the page being read, so
+  // "Merge pages" does the obvious thing without scrolling two dropdowns.
+  useEffect(() => {
+    if (!open) return;
+    setPairStart(Math.min(Math.max(page, 0), Math.max(pageCount - 2, 0)));
+  }, [open, page, pageCount]);
+  const firstPageOptions = Array.from({ length: Math.max(pageCount - 1, 0) }, (_, index) => ({
+    value: String(index),
+    label: `Page ${index + 1}`,
+  }));
+  const secondPageOptions = Array.from({ length: Math.max(pageCount - 1, 0) }, (_, index) => ({
+    value: String(index + 1),
+    label: `Page ${index + 2}`,
+  }));
+
+  /** Persist this chapter's merge list, dropping the key when it empties. */
+  const setChapterSpreads = (starts: number[]) => {
+    const next = { ...settings.manualSpreads };
+    const normalized = normalizeManualSpreadStarts(starts);
+    if (normalized.length > 0) next[currentChapterId] = normalized;
+    else delete next[currentChapterId];
+    onUpdate({ manualSpreads: next });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -345,7 +386,11 @@ export function ReaderSettingsPanel({
                   // Picking the empty row just clears back to custom state.
                   if (!value) return;
                   const preset = presets.find((p) => p.name === value);
-                  if (preset) onUpdate({ ...preset.settings });
+                  // Manual page merges are chapter-specific — applying a style
+                  // must not wipe the merges entered for this chapter.
+                  if (preset) {
+                    onUpdate({ ...preset.settings, manualSpreads: settings.manualSpreads ?? {} });
+                  }
                 }}
                 options={[
                   { value: '', label: 'Custom…' },
@@ -1003,6 +1048,75 @@ export function ReaderSettingsPanel({
               <label id="rs-autoLandscape" className="reader-settings__switch-label">
                 Show landscape pages full-width automatically (T3-6)
               </label>
+            )}
+          </SettingGroup>
+
+          <SettingGroup
+            id="rs-mergePages"
+            title="Merge pages"
+            hint={
+              settings.mode !== 'paged'
+                ? 'Merge two adjacent pages into one spread. Only available in page (F) reading mode.'
+                : settings.doublePage
+                  ? 'Turn off Double-page spread (Single) to merge individual page pairs.'
+                  : 'Merge two adjacent pages so they show side by side as one spread. Page turns step over both pages. Applies to this chapter only.'
+            }
+            disabled={settings.mode !== 'paged' || settings.doublePage}
+          >
+            <div className="reader-settings__size-row">
+              <label className="reader-settings__field">
+                <span className="reader-settings__field-label">First page</span>
+                <Select
+                  value={String(selectedPairStart)}
+                  onChange={(value) => setPairStart(Number(value))}
+                  options={firstPageOptions}
+                  label="First page to merge"
+                  disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                />
+              </label>
+              <label className="reader-settings__field">
+                <span className="reader-settings__field-label">Second page</span>
+                <Select
+                  value={String(selectedPairStart + 1)}
+                  onChange={(value) =>
+                    setPairStart(Math.min(Number(value) - 1, maxPairStart))
+                  }
+                  options={secondPageOptions}
+                  label="Second page to merge"
+                  disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => setChapterSpreads([...chapterSpreads, selectedPairStart])}
+              disabled={!canMergePages}
+            >
+              {pairAlreadyMerged ? 'Already merged' : 'Merge pages'}
+            </button>
+            {chapterSpreads.length === 0 ? (
+              <p className="reader-settings__sub-hint">No merged pages in this chapter.</p>
+            ) : (
+              <ul className="reader-settings__pair-list">
+                {chapterSpreads.map((start) => (
+                  <li key={start} className="reader-settings__pair-row">
+                    <span>
+                      Page {start + 1} + Page {start + 2}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() =>
+                        setChapterSpreads(chapterSpreads.filter((entry) => entry !== start))
+                      }
+                      aria-label={`Remove merge of pages ${start + 1} and ${start + 2}`}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </SettingGroup>
 

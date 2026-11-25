@@ -34,7 +34,9 @@ import {
   deriveAdjacentChapterIds,
   intentForKey,
   isEditableKeyTarget,
+  nextPageWithSpreads,
   nextSpreadPage,
+  prevPageWithSpreads,
   prevSpreadPage,
   progressFraction,
   smoothProgressFraction,
@@ -284,6 +286,15 @@ export function ReaderPage() {
 
   const [page, setPage] = useState(0);
   const [scrollRatio, setScrollRatio] = useState(0);
+  /**
+   * Manual page merges for the open chapter (0-based starts of adjacent
+   * pairs). Only used in paged mode while double-page spread mode is off —
+   * the pair renders as one spread and page turns step over both sheets.
+   */
+  const manualStarts = useMemo(
+    () => settings.manualSpreads?.[chapterId] ?? [],
+    [settings.manualSpreads, chapterId],
+  );
   /**
    * Chapter the page state was last reset for. Guards the progress-save
    * effect below against a stale payload: never persist a page against a
@@ -631,14 +642,24 @@ export function ReaderPage() {
 
   const handleIntent = useCallback(
     (intent: 'forward' | 'backward') => {
-      // Double-page mode (T1-1): turn whole spreads, not single pages —
-      // stepping by one would re-show the sheet we were just looking at.
-      const next =
-        settings.mode === 'paged' && settings.doublePage
-          ? intent === 'forward'
+      // Paged mode: double-page turns whole spreads (T1-1); otherwise manual
+      // merges turn a merged pair as one spread, and all other pages step by
+      // one. Stepping by one through a merged pair would re-show the sheet
+      // we were just looking at.
+      let next: number | null;
+      if (settings.mode === 'paged' && settings.doublePage) {
+        next =
+          intent === 'forward'
             ? nextSpreadPage({ page, pageCount }, settings.direction)
-            : prevSpreadPage({ page, pageCount }, settings.direction)
-          : applyIntent({ page, pageCount }, intent);
+            : prevSpreadPage({ page, pageCount }, settings.direction);
+      } else if (settings.mode === 'paged' && manualStarts.length > 0) {
+        next =
+          intent === 'forward'
+            ? nextPageWithSpreads({ page, pageCount }, manualStarts)
+            : prevPageWithSpreads({ page, pageCount }, manualStarts);
+      } else {
+        next = applyIntent({ page, pageCount }, intent);
+      }
       if (next !== null) {
         goToPage(next);
         return;
@@ -646,7 +667,7 @@ export function ReaderPage() {
       // At the chapter boundary → hop to the adjacent chapter.
       navigateToChapter(intent === 'forward' ? 'next' : 'prev');
     },
-    [page, pageCount, goToPage, navigateToChapter, settings.mode, settings.doublePage, settings.direction],
+    [page, pageCount, goToPage, navigateToChapter, settings.mode, settings.doublePage, settings.direction, manualStarts],
   );
 
   /* Jump straight to the adjacent chapter (tap zones on the page / vertical & gallery arrows). */
@@ -1279,11 +1300,16 @@ export function ReaderPage() {
 
     const id = window.setInterval(() => {
       const current = pageRef.current;
-      // Double-page paged mode turns whole spreads (T1-1).
-      const next =
-        settings.mode === 'paged' && settings.doublePage
-          ? nextSpreadPage({ page: current, pageCount }, settings.direction)
-          : applyIntent({ page: current, pageCount }, 'forward');
+      // Paged double-page mode turns whole spreads; manual merges turn a
+      // merged pair as one spread (T1-1 + manual page merges).
+      let next: number | null;
+      if (settings.mode === 'paged' && settings.doublePage) {
+        next = nextSpreadPage({ page: current, pageCount }, settings.direction);
+      } else if (settings.mode === 'paged' && manualStarts.length > 0) {
+        next = nextPageWithSpreads({ page: current, pageCount }, manualStarts);
+      } else {
+        next = applyIntent({ page: current, pageCount }, 'forward');
+      }
       if (next !== null) {
         goToPage(next, 'smooth');
         setAutoScrollPaused(false);
@@ -1302,6 +1328,7 @@ export function ReaderPage() {
     settings.mode,
     settings.direction,
     settings.doublePage,
+    manualStarts,
     settingsOpen,
     pages.length,
     pageCount,
@@ -1587,6 +1614,7 @@ export function ReaderPage() {
                  while fit-to-height is on. */
               imageWidth={settings.imageWidth}
               fitToHeight={settings.fitToHeight}
+              manualSpreads={manualStarts}
               onPageError={handlePageError}
               onPageLoad={handlePageLoad}
             />
