@@ -153,6 +153,8 @@ export function ReaderSettingsPanel({
     !settings.doublePage &&
     pageCount >= 2 &&
     !pairAlreadyMerged;
+  /** This chapter's explicit spread start (1-based), null = default pairing. */
+  const chapterSpreadStart = settings.spreadStarts?.[currentChapterId] ?? null;
 
   // Opening the panel pre-fills the merge picker with the page being read, so
   // "Merge pages" does the obvious thing without scrolling two dropdowns.
@@ -160,14 +162,6 @@ export function ReaderSettingsPanel({
     if (!open) return;
     setPairStart(Math.min(Math.max(page, 0), Math.max(pageCount - 2, 0)));
   }, [open, page, pageCount]);
-  const firstPageOptions = Array.from({ length: Math.max(pageCount - 1, 0) }, (_, index) => ({
-    value: String(index),
-    label: `Page ${index + 1}`,
-  }));
-  const secondPageOptions = Array.from({ length: Math.max(pageCount - 1, 0) }, (_, index) => ({
-    value: String(index + 1),
-    label: `Page ${index + 2}`,
-  }));
 
   /** Persist this chapter's merge list, dropping the key when it empties. */
   const setChapterSpreads = (starts: number[]) => {
@@ -176,6 +170,17 @@ export function ReaderSettingsPanel({
     if (normalized.length > 0) next[currentChapterId] = normalized;
     else delete next[currentChapterId];
     onUpdate({ manualSpreads: next });
+  };
+
+  /** Persist this chapter's spread start, dropping the key to restore auto. */
+  const setChapterSpreadStart = (startPage: number | null) => {
+    const next = { ...settings.spreadStarts };
+    if (startPage !== null && startPage >= 1) {
+      next[currentChapterId] = Math.trunc(startPage);
+    } else {
+      delete next[currentChapterId];
+    }
+    onUpdate({ spreadStarts: next });
   };
 
   useEffect(() => {
@@ -389,7 +394,11 @@ export function ReaderSettingsPanel({
                   // Manual page merges are chapter-specific — applying a style
                   // must not wipe the merges entered for this chapter.
                   if (preset) {
-                    onUpdate({ ...preset.settings, manualSpreads: settings.manualSpreads ?? {} });
+                    onUpdate({
+                      ...preset.settings,
+                      manualSpreads: settings.manualSpreads ?? {},
+                      spreadStarts: settings.spreadStarts ?? {},
+                    });
                   }
                 }}
                 options={[
@@ -1049,6 +1058,31 @@ export function ReaderSettingsPanel({
                 Show landscape pages full-width automatically (T3-6)
               </label>
             )}
+            {settings.doublePage && (
+              <div className="reader-settings__size-row">
+                <NumberField
+                  label="Start spread at page"
+                  value={chapterSpreadStart}
+                  min={1}
+                  max={Math.max(pageCount, 1)}
+                  step={1}
+                  unit="page"
+                  onChange={(startPage) => setChapterSpreadStart(startPage)}
+                />
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => setChapterSpreadStart(null)}
+                  disabled={chapterSpreadStart === null}
+                >
+                  Automatic pairing
+                </button>
+                <p className="reader-settings__sub-hint">
+                  Applies to this chapter. Pages before it render alone, then pairs
+                  start here — enter 2 when page 1 is a cover.
+                </p>
+              </div>
+            )}
           </SettingGroup>
 
           <SettingGroup
@@ -1064,28 +1098,35 @@ export function ReaderSettingsPanel({
             disabled={settings.mode !== 'paged' || settings.doublePage}
           >
             <div className="reader-settings__size-row">
-              <label className="reader-settings__field">
-                <span className="reader-settings__field-label">First page</span>
-                <Select
-                  value={String(selectedPairStart)}
-                  onChange={(value) => setPairStart(Number(value))}
-                  options={firstPageOptions}
-                  label="First page to merge"
-                  disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
-                />
-              </label>
-              <label className="reader-settings__field">
-                <span className="reader-settings__field-label">Second page</span>
-                <Select
-                  value={String(selectedPairStart + 1)}
-                  onChange={(value) =>
-                    setPairStart(Math.min(Number(value) - 1, maxPairStart))
-                  }
-                  options={secondPageOptions}
-                  label="Second page to merge"
-                  disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
-                />
-              </label>
+              <NumberField
+                label="First page"
+                value={selectedPairStart + 1}
+                min={1}
+                max={Math.max(pageCount - 1, 1)}
+                step={1}
+                unit="page"
+                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                onChange={(value) => {
+                  if (value === null) return;
+                  setPairStart(Math.min(Math.max(value - 1, 0), maxPairStart));
+                }}
+              />
+              <NumberField
+                label="Second page"
+                value={selectedPairStart + 2}
+                min={2}
+                max={Math.max(pageCount, 2)}
+                step={1}
+                unit="page"
+                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                onChange={(value) => {
+                  if (value === null) return;
+                  setPairStart(Math.min(Math.max(value - 2, 0), maxPairStart));
+                }}
+              />
+              <p className="reader-settings__sub-hint">
+                Type the page to merge. The second page always follows the first.
+              </p>
             </div>
             <button
               type="button"

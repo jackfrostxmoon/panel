@@ -378,6 +378,78 @@ export function prevPageWithSpreads(
   return previous >= 0 ? previous : null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Configurable spread start (double-page mode)                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 0-based index of the first page of the first automatic spread. Pages
+ * before it render solo, so a cover page stays on its own and pairing begins
+ * at the page the user typed.
+ */
+function spreadStartIndex(pageCount: number, startPage: number): number {
+  if (pageCount <= 0) return 0;
+  return Math.min(Math.max(Math.trunc(startPage) - 1, 0), pageCount - 1);
+}
+
+/**
+ * Pair of 0-based indices for the spread that contains `page` when the
+ * automatic pairing starts at `startPage` (1-based). `left`/`right` are in
+ * page order; the paged reader mirrors them for right-to-left reading.
+ * Pages before the start — and a final page without a partner — render solo
+ * (`left: null`).
+ */
+export function spreadPagesAt(
+  page: number,
+  pageCount: number,
+  startPage: number,
+): SpreadPage {
+  if (pageCount <= 0) return { left: null, right: 0 };
+  const p = clampPage(page, pageCount);
+  const start = spreadStartIndex(pageCount, startPage);
+  if (p < start) return { left: null, right: p };
+  const first = start + 2 * Math.floor((p - start) / 2);
+  if (first + 1 < pageCount) return { left: first, right: first + 1 };
+  return { left: null, right: first };
+}
+
+/**
+ * Next spread's landing page under an explicit spread start. Forward always
+ * moves to the next pages in reading order (higher indices) in both reading
+ * directions, matching single-page navigation.
+ */
+export function nextSpreadPageAt(
+  state: NavigationState,
+  startPage: number,
+): number | null {
+  const { page, pageCount } = state;
+  if (pageCount <= 0) return null;
+  const p = clampPage(page, pageCount);
+  const start = spreadStartIndex(pageCount, startPage);
+  if (p < start) {
+    const next = p + 1;
+    return next < pageCount ? next : null;
+  }
+  const first = start + 2 * Math.floor((p - start) / 2);
+  const next = first + 2;
+  return next < pageCount ? next : null;
+}
+
+/** Previous spread's landing page under an explicit spread start. */
+export function prevSpreadPageAt(
+  state: NavigationState,
+  startPage: number,
+): number | null {
+  const { page, pageCount } = state;
+  if (pageCount <= 0) return null;
+  const p = clampPage(page, pageCount);
+  const start = spreadStartIndex(pageCount, startPage);
+  if (p < start) return p > 0 ? p - 1 : null;
+  const first = start + 2 * Math.floor((p - start) / 2);
+  const previous = first - 2 >= start ? first - 2 : first - 1;
+  return previous >= 0 ? previous : null;
+}
+
 /**
  * Advance to the next spread's current page; null when already at the end.
  *

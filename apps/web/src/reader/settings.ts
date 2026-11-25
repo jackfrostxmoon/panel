@@ -189,6 +189,12 @@ export interface ReaderSettings {
    * double-page spread mode is off.
    */
   manualSpreads?: Record<string, number[]>;
+  /**
+   * Per-chapter first page of the automatic double-page spread (1-based).
+   * Pages before it render solo; pairing starts at that page. Absent = the
+   * reader's default pairing.
+   */
+  spreadStarts?: Record<string, number>;
 }
 
 /**
@@ -253,6 +259,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   mkImageServer: 'default',
   /** No page merges by default — paged single mode shows one page at a time. */
   manualSpreads: {},
+  /** No explicit spread start — each chapter uses the default pairing. */
+  spreadStarts: {},
 };
 
 /** Forced pages-ahead while performance mode is on (the allowed maximum). */

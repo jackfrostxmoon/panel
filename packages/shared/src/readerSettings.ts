@@ -59,6 +59,12 @@ export interface ReaderSettings {
    * mode is off. Empty/absent = no manual merges.
    */
   manualSpreads?: Record<string, number[]>;
+  /**
+   * Per-chapter first page of the automatic double-page spread, keyed by
+   * chapter global id. 1-based page number; pages before it render solo and
+   * pairing starts there. Absent = the reader's default pairing.
+   */
+  spreadStarts?: Record<string, number>;
 }
 
 /**

@@ -61,6 +61,10 @@ const readerSettingsSchema = z
         z.array(z.number().int().min(0).max(10_000)).max(200),
       )
       .catch({}),
+    /** Per-chapter 1-based first page of the automatic spread pairing. */
+    spreadStarts: z
+      .record(z.string().max(200), z.number().int().min(1).max(10_000))
+      .catch({}),
   })
   // Unknown keys are dropped (zod strips them) — they never reach the disk.
   .strip();

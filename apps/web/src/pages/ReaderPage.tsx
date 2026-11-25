@@ -36,8 +36,10 @@ import {
   isEditableKeyTarget,
   nextPageWithSpreads,
   nextSpreadPage,
+  nextSpreadPageAt,
   prevPageWithSpreads,
   prevSpreadPage,
+  prevSpreadPageAt,
   progressFraction,
   smoothProgressFraction,
   wheelPageStep,
@@ -294,6 +296,14 @@ export function ReaderPage() {
   const manualStarts = useMemo(
     () => settings.manualSpreads?.[chapterId] ?? [],
     [settings.manualSpreads, chapterId],
+  );
+  /**
+   * Per-chapter "start spread at page" (1-based) for double-page mode.
+   * `null` = the default pairing.
+   */
+  const spreadStartPage = useMemo(
+    () => settings.spreadStarts?.[chapterId] ?? null,
+    [settings.spreadStarts, chapterId],
   );
   /**
    * Chapter the page state was last reset for. Guards the progress-save
@@ -648,10 +658,17 @@ export function ReaderPage() {
       // we were just looking at.
       let next: number | null;
       if (settings.mode === 'paged' && settings.doublePage) {
-        next =
-          intent === 'forward'
-            ? nextSpreadPage({ page, pageCount }, settings.direction)
-            : prevSpreadPage({ page, pageCount }, settings.direction);
+        if (spreadStartPage !== null) {
+          next =
+            intent === 'forward'
+              ? nextSpreadPageAt({ page, pageCount }, spreadStartPage)
+              : prevSpreadPageAt({ page, pageCount }, spreadStartPage);
+        } else {
+          next =
+            intent === 'forward'
+              ? nextSpreadPage({ page, pageCount }, settings.direction)
+              : prevSpreadPage({ page, pageCount }, settings.direction);
+        }
       } else if (settings.mode === 'paged' && manualStarts.length > 0) {
         next =
           intent === 'forward'
@@ -667,7 +684,7 @@ export function ReaderPage() {
       // At the chapter boundary → hop to the adjacent chapter.
       navigateToChapter(intent === 'forward' ? 'next' : 'prev');
     },
-    [page, pageCount, goToPage, navigateToChapter, settings.mode, settings.doublePage, settings.direction, manualStarts],
+    [page, pageCount, goToPage, navigateToChapter, settings.mode, settings.doublePage, settings.direction, manualStarts, spreadStartPage],
   );
 
   /* Jump straight to the adjacent chapter (tap zones on the page / vertical & gallery arrows). */
@@ -1304,7 +1321,10 @@ export function ReaderPage() {
       // merged pair as one spread (T1-1 + manual page merges).
       let next: number | null;
       if (settings.mode === 'paged' && settings.doublePage) {
-        next = nextSpreadPage({ page: current, pageCount }, settings.direction);
+        next =
+          spreadStartPage !== null
+            ? nextSpreadPageAt({ page: current, pageCount }, spreadStartPage)
+            : nextSpreadPage({ page: current, pageCount }, settings.direction);
       } else if (settings.mode === 'paged' && manualStarts.length > 0) {
         next = nextPageWithSpreads({ page: current, pageCount }, manualStarts);
       } else {
@@ -1329,6 +1349,7 @@ export function ReaderPage() {
     settings.direction,
     settings.doublePage,
     manualStarts,
+    spreadStartPage,
     settingsOpen,
     pages.length,
     pageCount,
@@ -1615,6 +1636,7 @@ export function ReaderPage() {
               imageWidth={settings.imageWidth}
               fitToHeight={settings.fitToHeight}
               manualSpreads={manualStarts}
+              spreadStartPage={spreadStartPage}
               onPageError={handlePageError}
               onPageLoad={handlePageLoad}
             />

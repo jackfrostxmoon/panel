@@ -92,13 +92,30 @@ function sanitizeManualSpreads(raw: unknown): Record<string, number[]> {
 }
 
 /**
+ * Sanitize the per-chapter spread start pages (1-based). Invalid entries are
+ * dropped so the field only ever holds a usable page number.
+ */
+function sanitizeSpreadStarts(raw: unknown): Record<string, number> {
+  if (!isRecord(raw)) return {};
+  const result: Record<string, number> = {};
+  for (const [chapterId, value] of Object.entries(raw)) {
+    if (!chapterId || chapterId.length > 200) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    const page = Math.trunc(value);
+    if (page < 1 || page > 10_000) continue;
+    result[chapterId] = page;
+  }
+  return result;
+}
+
+/**
  * Chapter-specific bits that must not leak into a named style: page numbers
  * only make sense in the chapter they were entered for. Comparing/exporting
  * with these cleared keeps the styles dropdown honest and stops applying a
  * style from wiping another chapter's merges.
  */
 function withoutChapterSpreads(settings: ReaderSettings): ReaderSettings {
-  return { ...sanitizeReaderSettings(settings), manualSpreads: {} };
+  return { ...sanitizeReaderSettings(settings), manualSpreads: {}, spreadStarts: {} };
 }
 
 /** Drop unknown keys, fill defaults for missing/invalid fields. */
@@ -155,6 +172,7 @@ export function sanitizeReaderSettings(raw: unknown): ReaderSettings {
       d.mkImageServer ?? 'default',
     ) as 'default' | 'sv2' | 'sv3',
     manualSpreads: sanitizeManualSpreads(raw['manualSpreads']),
+    spreadStarts: sanitizeSpreadStarts(raw['spreadStarts']),
   };
 }
 
@@ -253,7 +271,7 @@ export function readerSettingsEqual(a: ReaderSettings, b: ReaderSettings): boole
   const right = withoutChapterSpreads(b);
   for (const key of Object.keys(left) as (keyof ReaderSettings)[]) {
     // Cleared on both sides above, and each call builds a fresh object.
-    if (key === 'manualSpreads') continue;
+    if (key === 'manualSpreads' || key === 'spreadStarts') continue;
     if (left[key] !== right[key]) return false;
   }
   return true;

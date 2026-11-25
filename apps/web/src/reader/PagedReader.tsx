@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import type { ReadingDirection, SpreadOddPolicy } from './settings';
-import { isOddSpread, spreadPages, halfSideFromClientX, manualSpreadPages, nextPageWithSpreads, nextSpreadPage, prevPageWithSpreads, prevSpreadPage } from './navigation';
+import { isOddSpread, spreadPages, halfSideFromClientX, manualSpreadPages, nextPageWithSpreads, nextSpreadPage, nextSpreadPageAt, prevPageWithSpreads, prevSpreadPage, prevSpreadPageAt, spreadPagesAt } from './navigation';
 import { proxiedPageUrl } from '../utils/format';
 
 /**
@@ -61,6 +61,7 @@ export function PagedReader({
   imageWidth = 100,
   fitToHeight = false,
   manualSpreads,
+  spreadStartPage = null,
   onPageError,
   onPageLoad,
 }: {
@@ -105,6 +106,12 @@ export function PagedReader({
    */
   manualSpreads?: number[];
   /**
+   * Per-chapter first page of the automatic spread (1-based). Pages before
+   * it render solo, so a cover or credits page stays on its own. `null` =
+   * the reader's default pairing.
+   */
+  spreadStartPage?: number | null;
+  /**
    * A page gave up loading (see `ReaderImage`). Lets the parent pin the
    * toolbar when a chapter is failing page after page. Paged mode only
    * mounts the current spread, so this fires for the sheets actually
@@ -119,9 +126,15 @@ export function PagedReader({
      part of an explicit merge, those two sheets render side by side even in
      single mode. `doublePage` keeps its usual meaning (the whole chapter is
      paired), so manual merges are ignored there and automatic pairing
-     applies. */
+     applies. An explicit spread start shifts the automatic pairing and
+     renders the pages before it solo. */
+  const explicitStart = doublePage ? spreadStartPage : null;
   const manualPair = doublePage ? null : manualSpreadPages(page, pages.length, manualSpreads);
-  const spread = manualPair ?? spreadPages(page, pages.length, direction);
+  const spread =
+    manualPair ??
+    (explicitStart !== null
+      ? spreadPagesAt(page, pages.length, explicitStart)
+      : spreadPages(page, pages.length, direction));
 
   /* Preload pages so a page turn is instant.
    *
@@ -189,6 +202,10 @@ export function PagedReader({
     // double-page mode. `manualSpreadPages` is the source of truth for a
     // merged pair's two sheets, so a preload never lands on only half of it.
     const indices: number[] = [];
+    const spreadFor = (target: number) =>
+      explicitStart !== null
+        ? spreadPagesAt(target, pages.length, explicitStart)
+        : spreadPages(target, pages.length, direction);
     const collect = (target: number | null) => {
       if (target === null) return;
       const pair = doublePage
@@ -198,7 +215,7 @@ export function PagedReader({
         indices.push(pair.left as number, pair.right);
         return;
       }
-      const s = spreadPages(target, pages.length, direction);
+      const s = spreadFor(target);
       if (doublePage) {
         if (s.left !== null) indices.push(s.left);
         indices.push(s.right);
@@ -209,12 +226,16 @@ export function PagedReader({
     const state = { page, pageCount: pages.length };
     collect(
       doublePage
-        ? nextSpreadPage(state, direction)
+        ? explicitStart !== null
+          ? nextSpreadPageAt(state, explicitStart)
+          : nextSpreadPage(state, direction)
         : nextPageWithSpreads(state, manualSpreads),
     );
     collect(
       doublePage
-        ? prevSpreadPage(state, direction)
+        ? explicitStart !== null
+          ? prevSpreadPageAt(state, explicitStart)
+          : prevSpreadPage(state, direction)
         : prevPageWithSpreads(state, manualSpreads),
     );
 
@@ -240,7 +261,7 @@ export function PagedReader({
         img.removeAttribute('src');
       }
     };
-  }, [eagerPages, page, pages, direction, doublePage, chapterTag, manualSpreads]);
+  }, [eagerPages, page, pages, direction, doublePage, chapterTag, manualSpreads, explicitStart]);
 
   // Parallel-mode preloader: every page at high priority.
   // Does NOT depend on `page` — the whole chapter is the preload
