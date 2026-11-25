@@ -147,6 +147,10 @@ export function ReaderSettingsPanel({
   const pairFirstIndex = Math.min(Math.max(pairFirst, 1), Math.max(pageCount, 1)) - 1;
   const pairSecondIndex = Math.min(Math.max(pairSecond, 1), Math.max(pageCount, 1)) - 1;
   const pairAdjacent = Math.abs(pairFirstIndex - pairSecondIndex) === 1;
+  /** Merges work in vertical mode and in paged single mode (not Gallery). */
+  const mergeAvailable =
+    settings.mode === 'vertical' ||
+    (settings.mode === 'paged' && !settings.doublePage);
   /** A page can only be in one merge. */
   const pairOverlap = chapterPairs.some(
     ([first, second]) =>
@@ -156,11 +160,7 @@ export function ReaderSettingsPanel({
       second === pairSecondIndex,
   );
   const canMergePages =
-    settings.mode === 'paged' &&
-    !settings.doublePage &&
-    pageCount >= 2 &&
-    pairAdjacent &&
-    !pairOverlap;
+    mergeAvailable && pageCount >= 2 && pairAdjacent && !pairOverlap;
   /** This chapter's explicit spread start (1-based), null = default pairing. */
   const chapterSpreadStart = settings.spreadStarts?.[currentChapterId] ?? null;
 
@@ -573,17 +573,18 @@ export function ReaderSettingsPanel({
             />
           </SettingGroup>
 
+          {settings.mode !== 'gallery' && (
           <SettingGroup
             id="rs-mergePages"
             title="Merge pages"
             hint={
-              settings.mode !== 'paged'
-                ? 'Merge two adjacent pages into one spread. Only available in page (F) reading mode.'
+              settings.mode === 'vertical'
+                ? 'Merge two adjacent pages so they show side by side while scrolling. Page jumps step over both pages. Applies to this chapter only.'
                 : settings.doublePage
                   ? 'Turn off Double-page spread in Advanced (Single) to merge individual page pairs.'
                   : 'Merge two adjacent pages so they show side by side as one spread. Page turns step over both pages. Applies to this chapter only.'
             }
-            disabled={settings.mode !== 'paged' || settings.doublePage}
+            disabled={!mergeAvailable}
           >
             <div className="reader-settings__size-row">
               <NumberField
@@ -593,7 +594,7 @@ export function ReaderSettingsPanel({
                 max={Math.max(pageCount, 1)}
                 step={1}
                 unit="page"
-                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                disabled={!mergeAvailable || pageCount < 2}
                 onChange={(value) => {
                   if (value === null) return;
                   setPairFirst(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
@@ -606,7 +607,7 @@ export function ReaderSettingsPanel({
                 max={Math.max(pageCount, 1)}
                 step={1}
                 unit="page"
-                disabled={settings.mode !== 'paged' || settings.doublePage || pageCount < 2}
+                disabled={!mergeAvailable || pageCount < 2}
                 onChange={(value) => {
                   if (value === null) return;
                   setPairSecond(Math.min(Math.max(value, 1), Math.max(pageCount, 1)));
@@ -657,6 +658,7 @@ export function ReaderSettingsPanel({
               </ul>
             )}
           </SettingGroup>
+          )}
 
           <SettingGroup
             id="rs-chapter"

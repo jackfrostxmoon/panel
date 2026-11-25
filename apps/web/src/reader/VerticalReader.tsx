@@ -1,8 +1,8 @@
-import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
 import type { PanelPage } from '@panel/shared';
 import { ReaderImage } from './ReaderImage';
 import { verticalReaderWidthPercent, type ReadingDirection } from './settings';
-import { halfSideFromClientX } from './navigation';
+import { halfSideFromClientX, type PagePair } from './navigation';
 import { glideScrollTo } from './glideScroll';
 import type { GlidePreset } from './settings';
 
@@ -54,6 +54,12 @@ direction?: ReadingDirection;
     onPageError?: (page: PanelPage) => void;
     /** A page displayed, including one that recovered after a manual Reload. */
     onPageLoad?: (page: PanelPage) => void;
+    /**
+     * Manual page merges for this chapter as ordered adjacent pairs. A pair
+     * renders as one side-by-side row in the scrolling column; page jumps
+     * land on the row and step over both sheets.
+     */
+    manualSpreads?: readonly PagePair[];
   }
 >(function VerticalReader(
   {
@@ -73,11 +79,12 @@ direction?: ReadingDirection;
     initialPage = 0,
 onPageError,
     onPageLoad,
+    manualSpreads,
   },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const glideAnimRef = useRef(0);
   /** 0-based index of the page at the viewport center (drives preloading). */
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -90,9 +97,43 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const initialPageRef = useRef(initialPage);
   initialPageRef.current = initialPage;
 
+  /**
+   * Rows to render top to bottom. A merged pair becomes one row holding both
+   * pages side by side (ordered by the pair, mirrored for RTL), so scroll
+   * tracking and page jumps treat the pair as a single position.
+   */
+  const rows = useMemo(() => {
+    const pairs = manualSpreads ?? [];
+    const pairByFirst = new Map<number, PagePair>();
+    const covered = new Set<number>();
+    for (const pair of pairs) {
+      const [first, second] = pair;
+      if (Math.abs(first - second) !== 1) continue;
+      if (first < 0 || second < 0 || first >= pages.length || second >= pages.length) continue;
+      if (covered.has(first) || covered.has(second)) continue;
+      covered.add(first);
+      covered.add(second);
+      pairByFirst.set(Math.min(first, second), pair);
+    }
+    const out: Array<{ key: string; indices: number[] }> = [];
+    for (let index = 0; index < pages.length; index += 1) {
+      const pair = pairByFirst.get(index);
+      if (pair) {
+        out.push({ key: `pair:${pair[0]}:${pair[1]}`, indices: [pair[0], pair[1]] });
+        continue;
+      }
+      if (covered.has(index)) continue;
+      out.push({ key: `page:${index}`, indices: [index] });
+    }
+    return out;
+  }, [pages.length, manualSpreads]);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+
   useImperativeHandle(ref, () => ({
     scrollToPage(page: number, preset: GlidePreset = 'quick') {
-      const el = pageRefs.current[page];
+      const rowIndex = rowsRef.current.findIndex((row) => row.indices.includes(page));
+      const el = rowRefs.current[rowIndex];
       if (!el) return;
       const scroller = el.closest('.reader-content') as HTMLElement | null;
       if (scroller) {
@@ -118,38 +159,43 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
     // the preserved position. Runs once; aspect-ratio boxes keep offsets
     // stable even before images finish loading.
     if (!restoredRef.current) {
-      const want = Math.max(
-        0,
-        Math.min(initialPageRef.current, pageRefs.current.length - 1),
-      );
-      const el = pageRefs.current[want];
+      const wanted = initialPageRef.current;
+      const found = rowsRef.current.findIndex((row) => row.indices.includes(wanted));
+      const rowIndex = found >= 0 ? found : Math.max(rowsRef.current.length - 1, 0);
+      const el = rowRefs.current[rowIndex];
       if (el && scroller) {
         scroller.scrollTop = el.offsetTop - (scroller.clientTop || 0);
         restoredRef.current = true;
-      } else if (pageRefs.current.length > 0) {
+      } else if (rowRefs.current.length > 0) {
         restoredRef.current = true;
       }
     }
 
     const update = () => {
       ticking = false;
-      const refs = pageRefs.current;
-      if (refs.length === 0) return;
+      const refs = rowRefs.current;
+      /* Trim to the live row count: merging two pages shrinks the list and
+         leaves stale (null) slots past the end. */
+      const count = Math.min(refs.length, rowsRef.current.length);
+      if (count <= 0) return;
 
       const viewportCenter = (scroller?.clientHeight ?? window.innerHeight) / 2;
       const scrollerTop = scroller?.getBoundingClientRect().top ?? 0;
-      let best = refs.length - 1;
-      for (let i = 0; i < refs.length; i++) {
+      let best = count - 1;
+      for (let i = 0; i < count; i++) {
         const el = refs[i];
         if (!el) continue;
         const top = el.getBoundingClientRect().top - scrollerTop;
         if (top <= viewportCenter) best = i;
         else break;
       }
-      onPageChangeRef.current(best);
-      setCurrentIndex((prev) => (prev === best ? prev : best));
+      /* A merged row reports its first page (the entered reading order), so
+         the page counter/progress stays on the merged spread. */
+      const anchor = rowsRef.current[best]?.indices[0] ?? best;
+      onPageChangeRef.current(anchor);
+      setCurrentIndex((prev) => (prev === anchor ? prev : anchor));
 
-      // Calculate scroll ratio within the current page for smooth progress
+      // Calculate scroll ratio within the current row for smooth progress
       const currentEl = refs[best];
       if (currentEl && onProgressRef.current) {
         const rect = currentEl.getBoundingClientRect();
@@ -162,7 +208,7 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
             0,
             Math.min(1, (viewportCenter - pageTop) / pageHeight),
           );
-          onProgressRef.current(best, progressThroughPage);
+          onProgressRef.current(anchor, progressThroughPage);
         }
       }
     };
@@ -197,6 +243,23 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
     onChapterNavigate(forward ? 'next' : 'prev');
   };
 
+  /** One page image, with the shared preload/lazy rules. */
+  const renderPage = (page: PanelPage | undefined, rowIndex: number) => {
+    if (!page) return null;
+    return (
+      <ReaderImage
+        key={`${chapterTag ?? ''}:${page.index}`}
+        page={page}
+        eager={eagerPages || rowIndex <= (currentIndex + 1) * preloadAhead}
+        widthPx={fitToWidth ? null : imageWidthPx}
+        heightPx={fitToWidth ? null : imageHeightPx}
+        chapterTag={chapterTag}
+        onError={onPageError}
+        onLoad={onPageLoad}
+      />
+    );
+  };
+
   return (
     <div
       className={`vertical-reader${
@@ -216,24 +279,28 @@ const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
         }
         aria-label="Previous chapter"
       />
-      {pages.map((page, index) => (
+      {rows.map((row, rowIndex) => (
         <div
-          key={`${chapterTag ?? ''}:${page.index}`}
-          data-page-index={index}
+          key={row.key}
+          data-page-index={row.indices[0]}
           ref={(el) => {
-            pageRefs.current[index] = el;
+            rowRefs.current[rowIndex] = el;
           }}
           className="vertical-reader__page"
         >
-          <ReaderImage
-            page={page}
-            eager={eagerPages || index <= (currentIndex + 1) * preloadAhead}
-            widthPx={fitToWidth ? null : imageWidthPx}
-            heightPx={fitToWidth ? null : imageHeightPx}
-            chapterTag={chapterTag}
-            onError={onPageError}
-            onLoad={onPageLoad}
-          />
+          {row.indices.length > 1 ? (
+            <div className="vertical-reader__merged-row">
+              {(direction === 'rtl' ? [...row.indices].reverse() : row.indices).map(
+                (index) => (
+                  <div key={index} className="vertical-reader__merged-sheet">
+                    {renderPage(pages[index], rowIndex)}
+                  </div>
+                ),
+              )}
+            </div>
+          ) : (
+            renderPage(pages[row.indices[0] ?? -1], rowIndex)
+          )}
         </div>
       ))}
       <button

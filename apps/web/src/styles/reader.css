@@ -292,6 +292,24 @@
   width: 100%;
 }
 
+/* Manual page merges: a pair renders as one side-by-side row in the column,
+   so scroll position and page jumps treat both sheets as one entry. */
+.vertical-reader__merged-row {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.vertical-reader__merged-sheet {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Respect the image-gap setting between the two merged sheets too. */
+.vertical-reader--gap .vertical-reader__merged-row {
+  gap: var(--space-2);
+}
+
 /* Gallery mode: responsive grid of all pages; column floor set inline from the
    width slider (fit 200px ↔ full 480px). */
 .gallery-reader {

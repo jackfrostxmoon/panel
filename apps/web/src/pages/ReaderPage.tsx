@@ -672,7 +672,10 @@ export function ReaderPage() {
               ? nextSpreadPage({ page, pageCount }, settings.direction)
               : prevSpreadPage({ page, pageCount }, settings.direction);
         }
-      } else if (settings.mode === 'paged' && manualStarts.length > 0) {
+      } else if (
+        (settings.mode === 'paged' || settings.mode === 'vertical') &&
+        manualStarts.length > 0
+      ) {
         next =
           intent === 'forward'
             ? nextPageWithSpreads({ page, pageCount }, manualStarts)
@@ -1585,6 +1588,7 @@ export function ReaderPage() {
               initialPage={hopInitialPage}
               onPageError={handlePageError}
               onPageLoad={handlePageLoad}
+              manualSpreads={manualStarts}
             />
           ) : settings.mode === 'gallery' ? (
             <GalleryReader
