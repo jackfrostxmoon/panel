@@ -268,41 +268,52 @@ export function parseListPage(html: string, baseUrl: string): RawListItem[] {
 }
 
 /**
- * Full genre catalog from the nav `Genre` dropdown (`/genre/<id>/<name>`
- * links, rendered on every page). The link `title` attribute carries the
- * display label; anchor text is the fallback. Site order is kept;
- * duplicates are dropped.
+ * Genre catalog + label → archive-URL index from the site's `tags.xml`
+ * sitemap (`/genre/sa<tagId>/<label>` entries).
+ *
+ * The nav `Genre` dropdown used to carry this index server-side, but it is
+ * now populated client-side and ships empty, so the sitemap is the only
+ * stable genre index the site publishes. The archive path embeds an opaque
+ * numeric id, so labels can only be resolved through this index — never by
+ * guessing URLs. Site order is kept; duplicates are dropped
+ * case-insensitively.
  */
-export function parseGenreCatalog(html: string): string[] {
-  const root = parseHtml(html);
-  const seen = new Set<string>();
-  const genres: string[] = [];
-  for (const a of root.querySelectorAll('li.genres .dropdown .inner a')) {
-    const href = a.getAttribute('href') ?? '';
-    if (!href.startsWith('/genre/')) continue;
-    const label = cleanGenreLabel(a.getAttribute('title')?.trim() || textOf(a));
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
-    genres.push(label);
-  }
-  return genres;
-}
-
-/**
- * Nav genre index as label → absolute archive-URL pairs (same markup as
- * the catalog). The archive path embeds an opaque numeric id, so labels
- * can only be resolved through this index — never by guessing URLs.
- * Labels are cleaned identically so dropdown values resolve exactly.
- */
-export function parseGenreLinks(html: string, baseUrl: string): Array<{ label: string; href: string }> {
-  const root = parseHtml(html);
+export function parseGenreSitemap(
+  xml: string,
+  baseUrl: string,
+): Array<{ label: string; href: string }> {
   const links: Array<{ label: string; href: string }> = [];
-  for (const a of root.querySelectorAll('li.genres .dropdown .inner a')) {
-    const rawHref = a.getAttribute('href') ?? '';
-    if (!rawHref.startsWith('/genre/')) continue;
-    const label = cleanGenreLabel(a.getAttribute('title')?.trim() || textOf(a));
-    const href = absoluteUrl(rawHref, baseUrl);
-    if (!label || !href) continue;
+  const seen = new Set<string>();
+  for (const match of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
+    const raw = decodeEntities(match[1]?.trim() ?? '');
+    if (!raw) continue;
+    const href = absoluteUrl(raw, baseUrl);
+    if (!href) continue;
+    let pathname: string;
+    try {
+      pathname = new URL(href).pathname;
+    } catch {
+      continue;
+    }
+    if (!/\/genre\//i.test(pathname)) continue;
+    const segments = pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (!last || last.toLowerCase() === 'all') continue;
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(last);
+    } catch {
+      decoded = last;
+    }
+    // Sitemap slugs are mixed-case ("action", "Police", "Girls' Love");
+    // show a consistent title-cased display label.
+    const label = cleanGenreLabel(decoded.replace(/[_+]/g, ' ')).replace(
+      /\b[a-z]/g,
+      (char) => char.toUpperCase(),
+    );
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
     links.push({ label, href });
   }
   return links;
