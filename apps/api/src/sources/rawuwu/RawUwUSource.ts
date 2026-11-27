@@ -29,8 +29,7 @@ import {
   parseApiResponse,
   parseChapterList,
   parseChapterReaderPage,
-  parseGenreCatalog,
-  parseGenreLinks,
+  parseGenreSitemap,
   parseListPage,
   parsePanelApiResponse,
   parsePanelPage,
@@ -248,26 +247,29 @@ export class RawUwUSource implements PanelSource {
   }
 
   /**
-   * Full genre catalog from the nav `Genre` dropdown. Backs the filter
+   * Full genre catalog from the site's `tags.xml` sitemap. Backs the filter
    * dropdowns so they offer every genre, not just the ones on the current
-   * result page.
+   * result page. Sorted alphabetically because the sitemap order is
+   * arbitrary.
    */
   async getGenreList(): Promise<string[]> {
     this.assertEnabled();
-    const { body } = await this.http.fetchText(`${this.baseUrl}/latest`);
-    return parseGenreCatalog(body);
+    const { body } = await this.http.fetchText(`${this.baseUrl}/tags.xml`);
+    return parseGenreSitemap(body, this.baseUrl)
+      .map((entry) => entry.label)
+      .sort((a, b) => a.localeCompare(b));
   }
 
   /**
    * Server-side genre filtering via the site's genre archives
-   * (`/genre/<id>/<name>`). Include semantics are OR: several includes
+   * (`/genre/<tagId>/<label>`). Include semantics are OR: several includes
    * fetch one archive each and union (approximate paging). The dropdown
-   * label resolves to the exact archive URL through the nav genre index
-   * (the numeric id is opaque, so URLs can't be guessed); an unresolvable
-   * label fails closed (empty page) — this site publishes no genre index,
-   * so an unfiltered fallback would leak non-matching titles. Exclusion is
-   * applied centrally by the service (cards are enriched to full genres
-   * first).
+   * label resolves to the exact archive URL through the `tags.xml` genre
+   * index (the numeric tag id is opaque, so URLs can't be guessed); an
+   * unresolvable label fails closed (empty page) — this site publishes no
+   * other genre index, so an unfiltered fallback would leak non-matching
+   * titles. Exclusion is applied centrally by the service (cards are
+   * enriched to full genres first).
    */
   async latestByGenre(
     genres: string[] | null,
@@ -279,8 +281,8 @@ export class RawUwUSource implements PanelSource {
     const p = page >= 1 ? page : 1;
     const includes = genres ?? [];
     if (includes.length === 0) return this.latest(p);
-    const { body: indexHtml } = await this.http.fetchText(`${this.baseUrl}/latest`);
-    const links = parseGenreLinks(indexHtml, this.baseUrl);
+    const { body: indexXml } = await this.http.fetchText(`${this.baseUrl}/tags.xml`);
+    const links = parseGenreSitemap(indexXml, this.baseUrl);
     const hrefs: string[] = [];
     for (const label of includes) {
       const href = links.find(
